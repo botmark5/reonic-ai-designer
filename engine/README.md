@@ -31,6 +31,8 @@ If `engine/artifacts/design_model.joblib` is missing, the API trains a model on 
 | `config/economics.toml` | price assumptions (all placeholders) |
 
 ## How a design is made
+0. **Offer type:** no new PV → battery retrofit / wallbox only / other (classifier); the optional answer
+   "Is there already PV on the roof?" is the strongest input for this.
 1. **Heat pump = customer option:** if the home heats with gas/oil and the installer sells heat pumps, a heat pump is
    OFFERED (heat demand / 2,450 h, snapped to a catalogue size) but not included by default; the customer chooses based
    on budget and needs. `/design` returns `options.heatpump` with the full design **with and without** it (PV/battery
@@ -46,19 +48,35 @@ If `engine/artifacts/design_model.joblib` is missing, the API trains a model on 
 ## Results (held-out 20 %, 323 projects never seen in training, split by customer; interim labels)
 | metric | model | band median | kWp = kWh/1000 |
 |---|---|---|---|
-| PV kWp MAE, ALL projects (unwanted PV counts too) | **2.97** | 3.91 | 5.08 |
-| PV kWp MAE, only projects with expert PV | 3.36 | **2.93** | 5.29 |
-| PV kWp MAE, where both have PV | **2.70** | 2.93 | 5.22 |
-| PV inside the variant range ± 1 kWp | **41 %** | 28 % | 11 % |
-| battery kWh MAE, where both have one | **2.86** | 3.08 | 3.07 |
+| PV kWp MAE, ALL projects (unwanted PV counts too) | **2.89** | 3.91 | 5.08 |
+| PV kWp MAE, only projects with expert PV | 3.33 | **2.93** | 5.29 |
+| PV kWp MAE, where both have PV | **2.67** | 2.93 | 5.22 |
+| PV inside the variant range ± 1 kWp | **43 %** | 28 % | 11 % |
+| battery kWh MAE, where both have one | **2.83** | 3.08 | 3.07 |
 | battery within one catalogue step | **53 %** | 51 % | 42 % |
-| battery inside the variant range ± 1 step | **54 %** | 50 % | 41 % |
+| battery inside the variant range ± 1 step | **56 %** | 50 % | 41 % |
 | PV yes/no accuracy | **90 %** | 81 % | 81 % |
 | battery yes/no accuracy | 89 % | 89 % | 89 % |
-| wallbox yes/no accuracy | **73 %** | 72 % | 72 % |
+| wallbox yes/no accuracy | 71 % | 72 % | 72 % |
 | heat pump yes/no accuracy | 99 % | 99 % | 99 % |
 
-Installer transfer (train on one, test on the other), PV MAE where both have PV: 2.97 vs 3.06 (23c108b7->2a8ba8e2) and 2.90 vs 3.53 (2a8ba8e2->23c108b7) for model vs band median.
+Installer transfer (train on one, test on the other), PV MAE where both have PV: 2.94 vs 3.06 (23c108b7->2a8ba8e2) and 2.89 vs 3.53 (2a8ba8e2->23c108b7) for model vs band median.
+
+## The one question that matters most: "Is there already PV on the roof?"
+About 12 % of projects are battery-only add-ons to an existing PV system, but the data records existing PV for only
+5 % of them, so the model must guess "new system or retrofit". The engine therefore takes an optional answer
+(`home.has_existing_pv`: true / false / null, or `existing_pv_kwp`, 0 = none) and learns both modes (every training
+project is used once answered, once unanswered). Offer types: new PV system / battery retrofit / wallbox only / other.
+
+| same 323 held-out projects | not answered | planner answers | band median |
+|---|---|---|---|
+| PV kWp MAE, all projects | 2.89 | **2.26** | 3.91 |
+| PV yes/no accuracy | 90 % | **100 %** | 81 % |
+| battery yes/no accuracy | 89 % | **96 %** | 89 % |
+| offer type correct | 84 % | **97 %** | – |
+
+The answered column assumes the planner answers correctly and that a battery-only offer means PV is already there
+(we derive the answer from the offer type). It shows what the question is worth, not a guarantee.
 
 ## Known limitations (be honest in the pitch)
 - **Labels are interim** (my parser) until engine/labels lands; PV for installer 2a8ba8e2 is panel count × an assumed 450 W.
@@ -69,7 +87,7 @@ Installer transfer (train on one, test on the other), PV MAE where both have PV:
 - **Economics use placeholder prices.**
 
 ## API additions vs docs/api.md v0 (all optional, nothing removed)
-`economics` block; `options.heatpump` (with/without comparison); `heatpump.option`; `physics.flags/assumptions/load_kwh/...`; `battery.alternatives`; `installer` and
+`economics` block; `options.heatpump` (with/without comparison); `heatpump.option`; `physics.flags/assumptions/load_kwh/...`; `battery.alternatives`; `installer`, `has_existing_pv` and
 `offer_date`/`orientation_deg`/`tilt_deg`/`existing_wallbox` as optional request fields; `/installers`, `/health`.
 `/refine` returns `{changes, summary, parsed_by, home, locks, design}`.
 

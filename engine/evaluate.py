@@ -59,6 +59,31 @@ def load_labels(path: Path | str) -> pd.DataFrame:
     return df
 
 
+# Offer types (engine/labels v1.1 names) and the coarser groups the model decides between
+OFFER_GROUP = {"new_system": "pv", "pv_extension": "pv", "battery_retrofit": "battery_retrofit",
+               "wallbox_only": "wallbox_only", "heatpump_only": "other", "no_components": "other"}
+
+
+def derive_offer_type(t: pd.DataFrame) -> pd.Series:
+    """offer_type from the design (+ recorded existing PV), for labels that do not carry it (interim labels)."""
+    existing = t["existing_pv"].fillna(0).astype(float) > 0 if "existing_pv" in t else pd.Series(False, index=t.index)
+    return pd.Series(np.select(
+        [t.has_pv & existing, t.has_pv, t.has_battery, t.has_wallbox, t.has_heatpump],
+        ["pv_extension", "new_system", "battery_retrofit", "wallbox_only", "heatpump_only"], "no_components"),
+        index=t.index)
+
+
+def planner_answer(t: pd.DataFrame) -> pd.Series:
+    """
+    What a planner would answer to "Is there already PV on the roof?" for a TRAINING / TEST project:
+    yes for battery retrofits and PV extensions (a battery without PV makes no sense), no for new systems,
+    unknown for wallbox-only and other offers. Used to train the answered mode and to evaluate it.
+    """
+    yes = t.offer_type.isin(["battery_retrofit", "pv_extension"])
+    no = t.offer_type == "new_system"
+    return pd.Series(np.where(yes, 1.0, np.where(no, 0.0, np.nan)), index=t.index)
+
+
 # engine/labels schema v1.1 uses battery / wallbox / heatpump and has no has_pv column
 LABEL_ALIASES = {"battery": "has_battery", "wallbox": "has_wallbox", "heatpump": "has_heatpump"}
 
@@ -119,7 +144,9 @@ def load_inputs(raw_dir: Path | str = RAW_DIR) -> pd.DataFrame:
             "ev_km_year": sq.ev_annual_drive_distance_km,
             "heating": sq.heating_existing_type,
             "heating_demand_kwh": sq.heating_existing_heating_demand_wh / 1000,
-            "existing_pv": sq.has_solar.astype(bool), "existing_battery": sq.has_storage.astype(bool),
+            # has_solar False in the data = "not answered", not "no": unknown (NaN) unless recorded True
+            "existing_pv": sq.has_solar.astype(bool).map({True: 1.0, False: np.nan}),
+            "existing_battery": sq.has_storage.astype(bool),
             "existing_wallbox": sq.has_wallbox.astype(bool),
             "offer_date": pd.to_datetime(sq.offer_created_at, format="mixed", errors="coerce"),
         }))
@@ -164,11 +191,14 @@ def build_eval_table(labels: pd.DataFrame, inputs: pd.DataFrame) -> pd.DataFrame
     primary = labels[labels.is_primary.astype(bool)]
     keep = ["project_id", "installer"] + [c for c in REQUIRED_LABEL_COLUMNS if c not in ("project_id", "installer",
                                                                                            "option_number", "is_primary")]
+    keep += [c for c in ("offer_type",) if c in primary.columns]
     table = primary[keep].merge(ranges, on="project_id")
     # installer comes from the labels; the inputs only add the home's facts
     table = table.merge(inputs.drop(columns=["installer"], errors="ignore"), on="project_id", how="left")
     for c in BOOL_COMPONENTS:
         table[c] = table[c].astype(bool)
+    if "offer_type" not in table.columns:
+        table["offer_type"] = derive_offer_type(table)
     return table.reset_index(drop=True)
 
 
@@ -349,6 +379,8 @@ def compute_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) ->
     m["battery_variant_hit_strict_pct"] = _rate(strict)
     m["battery_variant_hit_tolerant_pct"] = _rate(tolerant)
     m["n_multi_option_projects"] = int((truth.n_options > 1).sum())
+    if "offer_type" in pred.columns and "offer_type" in truth.columns:
+        m["offer_type_accuracy"] = _rate((pred.offer_type == truth.offer_type.map(OFFER_GROUP)).to_numpy())
     return m
 
 
