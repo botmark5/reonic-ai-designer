@@ -73,12 +73,9 @@ drop policy if exists "anon read shares"  on public.shares;
 create policy "anon read designs" on public.designs for select to anon, authenticated using (true);
 create policy "anon read shares"  on public.shares  for select to anon, authenticated using (true);
 
--- Realtime: the planner inbox subscribes to calls and designs.
+-- Realtime: the planner inbox subscribes to designs (calls are server-only, see migrations/20261107_calls_private.sql).
 do $$
 begin
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'calls') then
-    alter publication supabase_realtime add table public.calls;
-  end if;
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'designs') then
     alter publication supabase_realtime add table public.designs;
   end if;
