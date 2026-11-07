@@ -46,23 +46,24 @@ If `engine/artifacts/design_model.joblib` is missing, the API trains a model on 
 ## Results (held-out 20 %, 323 projects never seen in training, split by customer; interim labels)
 | metric | model | band median | kWp = kWh/1000 |
 |---|---|---|---|
-| PV kWp MAE, end to end | 3.33 | **2.93** | 5.29 |
+| PV kWp MAE, ALL projects (unwanted PV counts too) | **2.97** | 3.91 | 5.08 |
+| PV kWp MAE, only projects with expert PV | 3.36 | **2.93** | 5.29 |
 | PV kWp MAE, where both have PV | **2.70** | 2.93 | 5.22 |
-| PV inside the variant range ± 1 kWp | **40 %** | 28 % | 11 % |
-| battery kWh MAE, where both have one | **2.84** | 3.08 | 3.07 |
+| PV inside the variant range ± 1 kWp | **41 %** | 28 % | 11 % |
+| battery kWh MAE, where both have one | **2.86** | 3.08 | 3.07 |
 | battery within one catalogue step | **53 %** | 51 % | 42 % |
 | battery inside the variant range ± 1 step | **54 %** | 50 % | 41 % |
-| PV yes/no accuracy | **89 %** | 81 % | 81 % |
+| PV yes/no accuracy | **90 %** | 81 % | 81 % |
 | battery yes/no accuracy | 89 % | 89 % | 89 % |
 | wallbox yes/no accuracy | **73 %** | 72 % | 72 % |
 | heat pump yes/no accuracy | 99 % | 99 % | 99 % |
 
-Installer transfer (train on one, test on the other), PV MAE where both have PV: 2.97 vs 3.06 (23c108b7->2a8ba8e2) and 2.88 vs 3.53 (2a8ba8e2->23c108b7) for model vs band median.
+Installer transfer (train on one, test on the other), PV MAE where both have PV: 2.97 vs 3.06 (23c108b7->2a8ba8e2) and 2.90 vs 3.53 (2a8ba8e2->23c108b7) for model vs band median.
 
 ## Known limitations (be honest in the pitch)
 - **Labels are interim** (my parser) until engine/labels lands; PV for installer 2a8ba8e2 is panel count × an assumed 450 W.
 - **PV size is barely predictable beyond consumption bands** (CV: 2.60 vs 2.69 kWp). The data has no roof size/orientation, which probably drives the expert choice.
-- **End-to-end PV MAE loses to the baseline**: a few percent of test projects are wrongly predicted "no PV" (battery-only retrofits are hard to tell apart).
+- **PV size is scored three ways.** Over ALL projects (an unwanted PV system counts as an error) the model wins clearly. Scored only on projects where the expert installed PV, it loses to the band median: wrong "no PV" answers (battery-only retrofits are hard to tell apart) cost a whole system there, while the baseline says "PV" for almost everyone and is never penalised for retrofits. Size alone (both have PV) the model wins. The yes/no cut-off is learned out-of-fold on training data by kWp cost (currently 0.6). Ratio (kWp/MWh) and residual (vs kWh/1000) targets were tested and were not better (CV MAE 2.63-2.69 vs 2.60 kWp).
 - **Wallbox ≈ coin flip** without EV information. **Heat pump** is offered (not chosen) for gas/oil homes; experts added one in 11 of 24 cases.
 - **Time trend:** new projects use a date capped at the 90th percentile of training dates (~Mar 2026), because the last month is an unusual batch of battery-only retrofits.
 - **Economics use placeholder prices.**
@@ -81,3 +82,8 @@ So a host that builds straight from the GitHub repo will not work out of the box
 2. **Demo from this laptop through a tunnel** (`cloudflared tunnel --url http://localhost:8000`): no data leaves the
    machine, but the laptop must stay on.
 Then set `NEXT_PUBLIC_ENGINE_URL` in the web app (Vercel) to the engine URL.
+
+**Access key:** when the engine is reachable from outside, start it with `ENGINE_API_KEY=<random>`; every request
+(except `/health`) must then send `X-Engine-Key: <key>`. In the web app, call the engine from a Next.js server route
+(`app/api/.../route.ts`) and keep the key in a server-side env var (`ENGINE_API_KEY`, no `NEXT_PUBLIC_` prefix),
+so the browser never sees it.

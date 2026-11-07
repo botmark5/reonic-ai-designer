@@ -11,6 +11,7 @@ Endpoints
     GET  /eval      metrics on held-out projects (written by `python -m engine.train`)
     GET  /project/{id}   a real project: home, expert design, all variants, and our proposal
     GET  /installers     known installers and what they sell;  GET /health
+Access: if ENGINE_API_KEY is set, send `X-Engine-Key: <key>` with every request (all except /health).
 The engine decides every size; Claude only parses text and writes explanations.
 """
 from __future__ import annotations
@@ -24,7 +25,9 @@ from typing import Literal, Optional
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+import secrets
+
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -148,6 +151,17 @@ def _check_installer(model: DesignModel, installer: str):
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
+def require_key(x_engine_key: Optional[str] = Header(None)):
+    """
+    Optional access key. When ENGINE_API_KEY is set (e.g. behind a public tunnel), every request except
+    /health and /docs must send the header `X-Engine-Key: <key>`. Unset (local development) = open.
+    Protects the Reonic-derived data (/project, similar homes) and the Claude credits (/refine, /explain).
+    """
+    expected = os.environ.get("ENGINE_API_KEY")
+    if expected and not (x_engine_key and secrets.compare_digest(x_engine_key, expected)):
+        raise HTTPException(401, "Missing or wrong X-Engine-Key header.")
+
+
 app = FastAPI(title="Reonic AI Designer engine", version=MODEL_VERSION)
 app.add_middleware(CORSMiddleware, allow_origins=os.environ.get("ENGINE_CORS_ORIGINS", "*").split(","),
                    allow_methods=["*"], allow_headers=["*"])
@@ -160,7 +174,7 @@ def health():
                 trained_on_projects=model.n_train_, claude=llm.claude_available())
 
 
-@app.get("/installers")
+@app.get("/installers", dependencies=[Depends(require_key)])
 def installers():
     model = get_model()
     return {i: model.catalogue_.get(i, {}) for i in model.installers_}
@@ -234,19 +248,19 @@ def design_response(installer: str, home: dict, locks: dict) -> dict:
     ))
 
 
-@app.post("/design")
+@app.post("/design", dependencies=[Depends(require_key)])
 def design(req: DesignRequest):
     return design_response(req.installer, req.home.model_dump(), req.locks.model_dump())
 
 
-@app.post("/validate")
+@app.post("/validate", dependencies=[Depends(require_key)])
 def validate(req: ValidateRequest):
     model = get_model()
     _check_installer(model, req.installer)
     return _py({"flags": model.validate(req.home.model_dump(), req.installer, req.design.model_dump())})
 
 
-@app.post("/refine")
+@app.post("/refine", dependencies=[Depends(require_key)])
 def refine(req: RefineRequest):
     model = get_model()
     installer = req.installer or max(model.installers_, key=lambda i: (model.reference_.installer == i).sum())
@@ -264,13 +278,13 @@ def refine(req: RefineRequest):
                 parsed_by=parsed["source"], home=home, locks=locks, design=design_response(installer, home, locks))
 
 
-@app.post("/explain")
+@app.post("/explain", dependencies=[Depends(require_key)])
 def explain(req: ExplainRequest):
     return StreamingResponse(llm.explain_stream(req.design_response, req.audience, req.language),
                              media_type="text/plain; charset=utf-8")
 
 
-@app.get("/eval")
+@app.get("/eval", dependencies=[Depends(require_key)])
 def eval_results():
     path = ARTIFACTS / "eval_results.json"
     if not path.exists():
@@ -278,7 +292,7 @@ def eval_results():
     return json.loads(path.read_text())
 
 
-@app.get("/project/{project_id}")
+@app.get("/project/{project_id}", dependencies=[Depends(require_key)])
 def project(project_id: str):
     inputs, labels = get_projects()
     row = inputs[inputs.project_id == project_id]

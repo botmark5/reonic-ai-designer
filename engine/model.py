@@ -21,6 +21,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier, LGBMRegressor
+from sklearn.model_selection import GroupKFold
 
 from engine import physics
 from engine.evaluate import DESIGN_COLUMNS
@@ -70,6 +71,7 @@ class DesignModel:
         self.wallbox_features_ = [c for c in X.columns if c.startswith("inst_")] + ["has_ev", "ev_km", "existing_wallbox"]
 
         self.has_pv_ = LGBMClassifier(**_lgb()).fit(X, t.has_pv.astype(int))
+        self.pv_threshold_ = self._learn_pv_threshold(X, t)
         pv = t.has_pv.astype(bool).to_numpy()
         # PV size: simpler trees + Huber loss (robust to outliers like MAE) + monotonic constraints:
         # more consumption / an EV / more driving never makes the PV smaller (without them, the few EV
@@ -101,6 +103,32 @@ class DesignModel:
         self.reference_ = t[[c for c in keep if c in t]].assign(total_demand_kwh=X.total_demand_kwh.to_numpy())
         self.n_train_ = len(t)
         return self
+
+    @staticmethod
+    def _learn_pv_threshold(X: pd.DataFrame, t: pd.DataFrame) -> float:
+        """
+        Probability cut-off for "PV yes", chosen on OUT-OF-FOLD training predictions (never on test data).
+        Objective = PV error in kWp, not plain accuracy, because the two mistakes are not equal:
+            wrong "no PV"  -> the offer misses a whole system  (cost = the expert's kWp)
+            wrong "PV yes" -> an unwanted system the planner removes (cost = a typical system, the median kWp)
+        Ties go to the lower threshold. Falls back to 0.5 when there is too little data.
+        """
+        y = t.has_pv.astype(int).to_numpy()
+        groups = (t.customer_contact_id if "customer_contact_id" in t else t.project_id).fillna(t.project_id)
+        if len(t) < 100 or y.min() == y.max() or groups.nunique() < 5:
+            return 0.5
+        oof = np.zeros(len(t))
+        for tr, te in GroupKFold(5).split(X, groups=groups):
+            if len(set(y[tr])) < 2:
+                return 0.5
+            oof[te] = LGBMClassifier(**_lgb()).fit(X.iloc[tr], y[tr]).predict_proba(X.iloc[te])[:, 1]
+        kwp = t.pv_kwp.fillna(0).to_numpy()
+        typical = float(np.median(kwp[y == 1]))
+        candidates = np.round(np.arange(0.20, 0.61, 0.05), 2)
+        cost = [np.where((oof < c) & (y == 1), kwp, 0).sum() + ((oof >= c) & (y == 0)).sum() * typical
+                for c in candidates]
+        best = min(cost)
+        return float(min(c for c, k in zip(candidates, cost) if k <= best + 1e-9))
 
     # ------------------------------------------------------------------ the chain
     def _heatpump(self, row) -> tuple[float, list[str], float]:
@@ -147,7 +175,7 @@ class DesignModel:
             out["has_pv"] = float(locks["pv_kwp"]) > 0
             out["pv_kwp"] = float(locks["pv_kwp"])
         else:
-            out["has_pv"] = out.p_has_pv >= 0.5
+            out["has_pv"] = out.p_has_pv >= getattr(self, "pv_threshold_", 0.5)
             out["pv_kwp"] = np.where(out.has_pv, [snap_pv(v) for v in out.pv_raw], 0.0)
         Xb = X.assign(pv_kwp_planned=out.pv_kwp.to_numpy())
         out["p_has_battery"] = self.has_battery_.predict_proba(Xb)[:, 1]
