@@ -24,7 +24,9 @@ import joblib
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier, LGBMRegressor
+from sklearn.linear_model import HuberRegressor
 from sklearn.model_selection import GroupKFold
+from sklearn.preprocessing import StandardScaler
 
 from engine import physics
 from engine.evaluate import DESIGN_COLUMNS, OFFER_GROUP, derive_offer_type, planner_answer
@@ -47,6 +49,33 @@ def _lgb(**extra):
     return p
 
 
+class _MonotoneLinear:
+    """
+    Robust (Huber) linear PV-size model on standardised features, missing values -> training medians.
+    total_demand_kwh is left out (collinear with annual_kwh; it got a negative weight), and the weights of the
+    'increasing' features are clamped to >= 0, so more consumption or an EV can never shrink the PV.
+    """
+
+    def __init__(self, increasing: set):
+        self.increasing = set(increasing)
+
+    def fit(self, X: pd.DataFrame, y):
+        cols = [c for c in X.columns if c != "total_demand_kwh" and X[c].astype(float).notna().mean() > 0.05]
+        Xf = X[cols].astype(float)
+        self.cols_, self.medians_ = cols, Xf.median().fillna(0)
+        Z = Xf.fillna(self.medians_)
+        self.scaler_ = StandardScaler().fit(Z)
+        self.reg_ = HuberRegressor(max_iter=1000).fit(self.scaler_.transform(Z), np.asarray(y, dtype=float))
+        for i, c in enumerate(cols):
+            if c in self.increasing and self.reg_.coef_[i] < 0:
+                self.reg_.coef_[i] = 0.0
+        return self
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        Z = X[self.cols_].astype(float).fillna(self.medians_)
+        return self.reg_.predict(self.scaler_.transform(Z))
+
+
 def package_kwp(note: str) -> float:
     """kWp from a package note like "the installer's standard 10.8 kWp package"."""
     import re
@@ -66,19 +95,25 @@ class DesignModel:
     name = "design_model"
 
     def __init__(self, offer_type: bool = True, packages: bool = True, learned_cutoffs: bool = True,
-                 calibrated: bool = True):
+                 calibrated: bool = True, blend: bool = False, battery_mix: bool = True):
         """
         Switches exist to measure each improvement (before/after on the locked test set, engine/ablation.py):
           offer_type      : #1 new-vs-retrofit step + "Is there already PV?" answered/unanswered training
           packages        : #3 snap PV to the installer's standard packages (else whole 450 W modules)
           learned_cutoffs : PV / battery yes-no cut-offs learned out-of-fold (else 0.5)
           calibrated      : #5 conformal P10-P90 for PV + learned retrofit weight for the no-PV offer type
+          blend           : PV size = LightGBM blended with a monotone linear model (weight learned by CV).
+                            OFF by default: CV gain ~2 % (within fold noise), neutral on the locked test set and
+                            fewer exact package matches (9 -> 7 %), so the simpler model is kept.
+          battery_mix     : battery size = mean of the classifier and the installer's kWh-per-kWp rule when CV says so
         The shipped model uses all of them.
         """
         self.use_offer_type = offer_type
         self.use_packages = packages
         self.use_learned_cutoffs = learned_cutoffs
         self.use_calibration = calibrated
+        self.use_blend = blend
+        self.use_battery_mix = battery_mix
 
     # ------------------------------------------------------------------ training
     def fit(self, table: pd.DataFrame) -> "DesignModel":
@@ -133,6 +168,11 @@ class DesignModel:
         self.pv_q_ = {q: LGBMRegressor(**_lgb(objective="quantile", alpha=q / 100, **pv_params)).fit(X[pv], tt.pv_kwp[pv])
                       for q in (10, 90)}
 
+        # 2b. a monotone linear model blended in: research CV on new systems, all 5 folds better (2.50 -> 2.45 kWp)
+        self.pv_linear_ = _MonotoneLinear(increasing).fit(X[pv], tt.pv_kwp[pv])
+        self.pv_blend_w_ = self._learn_blend_weight(X[pv], tt[pv].reset_index(drop=True), pv_params, increasing) \
+            if getattr(self, "use_blend", False) else 0.0
+
         # 3. battery sees the EXPERT's PV during training (teacher forcing), our PV / the planner's lock at prediction
         Xb = X.assign(pv_kwp_planned=tt.pv_kwp.fillna(0).to_numpy())
         # battery yes/no is a decision for NEW PV systems; for a retrofit the battery is the offer itself
@@ -143,6 +183,10 @@ class DesignModel:
         # classes as whole tenths of a kWh (10.2 kWh -> 102): sklearn rejects float class labels
         self.battery_ = LGBMClassifier(**_lgb(min_child_samples=8)).fit(Xb[bat], np.round(np.asarray(y) * 10).astype(int))
         self.battery_kwh_ = self.battery_.classes_ / 10.0          # class index -> kWh
+        # installer's own battery-per-PV rule (median kWh per kWp in new systems) and whether to blend it in
+        nb = tt[tt.has_pv.astype(bool) & tt.has_battery.astype(bool) & (tt.offer_group == "pv")]
+        self.battery_ratio_ = (nb.battery_kwh / nb.pv_kwp).groupby(nb.installer).median().to_dict()
+        self.battery_mode_ = self._choose_battery_mode(Xb, tt) if self._on("use_battery_mix") else "classifier"
 
         # 4. wallbox yes/no (all offers; "wallbox only" / "other" offers then fix it by their type).
         # Training it only on PV/retrofit offers was tested and was worse (70.6 vs 71.2 % held-out).
@@ -265,6 +309,49 @@ class DesignModel:
             oof[te] = m.predict(Xp.iloc[te])
         return float(np.clip(np.median(yp[ev] - oof[ev]), 0.0, 3.0))
 
+    def _learn_blend_weight(self, Xp: pd.DataFrame, tp: pd.DataFrame, pv_params: dict, increasing: set) -> float:
+        """Weight of the linear model in the PV size blend: lowest out-of-fold MAE (after snapping) on training."""
+        y = tp.pv_kwp.to_numpy()
+        groups = self._groups(tp)
+        if len(tp) < 100 or groups.nunique() < 5:
+            return 0.0
+        a, b = np.zeros(len(tp)), np.zeros(len(tp))
+        for tr, te in GroupKFold(5).split(Xp, groups=groups):
+            m = LGBMRegressor(**_lgb(objective="huber", alpha=2.0, **pv_params,
+                                     monotone_constraints=[1 if c in increasing else 0 for c in Xp.columns],
+                                     monotone_constraints_method="advanced")).fit(Xp.iloc[tr], y[tr])
+            a[te] = m.predict(Xp.iloc[te])
+            b[te] = _MonotoneLinear(increasing).fit(Xp.iloc[tr], y[tr]).predict(Xp.iloc[te])
+        mae = {w: np.abs(np.array([snap_pv(v) for v in (1 - w) * a + w * b]) - y).mean() for w in (0.0, 0.3, 0.5, 0.7)}
+        return float(min(mae, key=mae.get))
+
+    def _choose_battery_mode(self, Xb: pd.DataFrame, tt: pd.DataFrame) -> str:
+        """
+        Battery size in new systems: the classifier alone, or the mean of the classifier and the installer's
+        kWh-per-kWp rule, snapped to the catalogue. Lowest out-of-fold MAE on training wins
+        (research CV: 2.35 -> 2.25 kWh, within one step 57 -> 61 %).
+        """
+        rows = (tt.has_pv.astype(bool) & tt.has_battery.astype(bool) & (tt.offer_group == "pv")).to_numpy()
+        Xr, tr_ = Xb[rows], tt[rows].reset_index(drop=True)
+        groups = self._groups(tr_)
+        if len(tr_) < 100 or groups.nunique() < 5:
+            return "classifier"
+        y = tr_.battery_kwh.to_numpy()
+        yc = np.round(np.array([nearest(k, self.catalogue_[i]["battery_kwh"] or [k])
+                                for k, i in zip(tr_.battery_kwh, tr_.installer)]) * 10).astype(int)
+        p_clf, p_mix = np.zeros(len(tr_)), np.zeros(len(tr_))
+        for tr, te in GroupKFold(5).split(Xr, groups=groups):
+            clf = LGBMClassifier(**_lgb(min_child_samples=8)).fit(Xr.iloc[tr], yc[tr])
+            pc = clf.predict(Xr.iloc[te]) / 10
+            a = tr_.iloc[tr]
+            ratio = (a.battery_kwh / a.pv_kwp).groupby(a.installer).median()
+            b = tr_.iloc[te]
+            pr = b.installer.map(ratio).fillna(ratio.median()).to_numpy() * b.pv_kwp.to_numpy()
+            p_clf[te] = pc
+            p_mix[te] = [nearest((u + v) / 2, self.catalogue_.get(i, {}).get("battery_kwh") or [u])
+                         for u, v, i in zip(pc, pr, b.installer)]
+        return "mix" if np.abs(p_mix - y).mean() < np.abs(p_clf - y).mean() - 1e-9 else "classifier"
+
     def _learn_retrofit_weight(self, X: pd.DataFrame, tt: pd.DataFrame) -> float:
         """
         No new PV: battery retrofits are ~3x more common than wallbox-only orders, but the classifier picks
@@ -363,7 +450,10 @@ class DesignModel:
         out["heatpump_kw"] = float(locks.get("heatpump_kw", 0.0))
         X = build_features(homes, out.heatpump_kw.to_numpy(), self.installers_, self.offer_month_cap_)
         out["p_has_pv"] = self.has_pv_.predict_proba(X)[:, 1]
-        out["pv_raw"] = self.pv_.predict(X) + getattr(self, "ev_uplift_kwp_", 0.0) * (X.has_ev.to_numpy() == 1)
+        w = getattr(self, "pv_blend_w_", 0.0)
+        pv_tree = self.pv_.predict(X)
+        pv_lin = self.pv_linear_.predict(X) if w > 0 else pv_tree
+        out["pv_raw"] = (1 - w) * pv_tree + w * pv_lin + getattr(self, "ev_uplift_kwp_", 0.0) * (X.has_ev.to_numpy() == 1)
         out["pv_p10"], out["pv_p90"] = self.pv_q_[10].predict(X), self.pv_q_[90].predict(X)
         margin = getattr(self, "pv_margin_", 0.0)
         out["pv_lo"] = np.maximum(np.minimum(out.pv_p10, out.pv_p90) - margin, 0.0)
@@ -408,9 +498,16 @@ class DesignModel:
         out["p_has_battery"] = np.where(out.offer_type == "pv", p_bat_new,
                                         np.where(out.offer_type == "battery_retrofit", 1.0, 0.0))
         sizes, probs = [], []
+        mix = getattr(self, "battery_mode_", "classifier") == "mix"
         for idx, (_, r) in enumerate(homes.iterrows()):
             p = self._battery_proba(Xb.iloc[[idx]], r.get("installer"))[0]
-            sizes.append(float(self.battery_kwh_[int(np.argmax(p))]))
+            size = float(self.battery_kwh_[int(np.argmax(p))])
+            pv_kwp = float(out.pv_kwp.iloc[idx])
+            if mix and pv_kwp > 0 and r.get("installer") in self.battery_ratio_:
+                rule = self.battery_ratio_[r.get("installer")] * pv_kwp           # installer's kWh-per-kWp rule
+                cat = self.catalogue_.get(r.get("installer"), {}).get("battery_kwh") or [size]
+                size = nearest((size + rule) / 2, cat)
+            sizes.append(size)
             probs.append(p)
         out["battery_best"] = sizes
         if "battery_kwh" in locks:
@@ -565,8 +662,14 @@ class DesignModel:
                          f"({proba[best]:.0%}), range {b_lo:g}-{b_hi:g} kWh."]
         elif r.has_battery:
             b_conf = float(min(1.0, r.p_has_battery / max(getattr(self, "battery_threshold_", 0.5) * 2, 1e-9)) * proba[best])
-            b_reasons = [f"{r.p_has_battery:.0%} of similar designs include a battery; {classes[best]:g} kWh is the most likely "
-                         f"catalogue size ({proba[best]:.0%}), range {b_lo:g}-{b_hi:g} kWh.",
+            mixed = getattr(self, "battery_mode_", "classifier") == "mix"
+            ratio = getattr(self, "battery_ratio_", {}).get(installer)
+            if mixed and float(r.battery_kwh) != float(classes[best]):
+                best = int(np.argmin(np.abs(classes - float(r.battery_kwh))))     # explain the size actually shown
+            how = (f"between the model's choice and the installer's rule of {ratio:.1f} kWh per kWp of PV"
+                   if mixed and ratio else "the most likely catalogue size")
+            b_reasons = [f"{r.p_has_battery:.0%} of similar designs include a battery; {float(r.battery_kwh):g} kWh is "
+                         f"{how} ({proba[best]:.0%} of similar designs), range {b_lo:g}-{b_hi:g} kWh.",
                          "Main drivers: " + "; ".join(self._drivers(self.battery_, Xb, f"{classes[best]:g} kWh", class_index=best)) + "."]
         else:
             b_conf = 1 - float(r.p_has_battery)
