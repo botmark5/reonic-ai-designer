@@ -57,7 +57,7 @@ def clean_inputs(df: pd.DataFrame) -> pd.DataFrame:
     """Dirty values -> unknown (NaN): demand <= 0, price <= 0 or > 1 EUR/kWh."""
     df = df.copy()
     if "annual_kwh" in df:
-        df.loc[df.annual_kwh <= 0, "annual_kwh"] = np.nan
+        df.loc[df.annual_kwh < 1500, "annual_kwh"] = np.nan       # invalid entries (21 projects at 0-1 kWh)
     if "price_eur_kwh" in df:
         bad = (df.price_eur_kwh <= 0) | (df.price_eur_kwh > 1)
         df.loc[bad, "price_eur_kwh"] = np.nan
@@ -83,7 +83,8 @@ def build_features(df: pd.DataFrame, heatpump_kw, installers: list[str], offer_m
     for i in installers:
         X[f"inst_{i}"] = (inst == i).astype(int)
     X["annual_kwh"] = _col(df, "annual_kwh", np.nan).astype(float)
-    X["demand_is_default"] = (X.annual_kwh == DEFAULT_DEMAND_KWH).astype(int)
+    flag = _col(df, "demand_is_default", np.nan)
+    X["demand_is_default"] = np.where(flag.notna(), flag.fillna(False).astype(bool), X.annual_kwh == DEFAULT_DEMAND_KWH).astype(int)
     X["price_eur_kwh"] = _col(df, "price_eur_kwh", np.nan).astype(float)
     X["has_ev"] = _col(df, "has_ev", False).fillna(False).astype(bool).astype(int)
     km = _col(df, "ev_km_year", np.nan).astype(float)

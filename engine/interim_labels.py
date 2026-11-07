@@ -141,7 +141,10 @@ def build_catalogue(labels: pd.DataFrame, min_count: int = 5) -> dict:
         sizes = sorted(float(s) for s in counts[counts >= min_count].index) or sorted(float(s) for s in counts.index)
         m = mark.get(inst)
         if m:
-            sizes = sorted(float(x) for x in (m.get("battery_kwh", []) if isinstance(m, dict) else m) if float(x) > 0) or sizes
+            raw = m.get("battery_kwh", []) if isinstance(m, dict) else m
+            if isinstance(raw, dict):                         # engine/labels v1.1: {size: how often sold}
+                raw = [k for k, n in raw.items() if n >= 3] or list(raw)
+            sizes = sorted(float(x) for x in raw if float(x) > 0) or sizes
         hp = g.loc[g.heatpump_kw > 0, "heatpump_kw"].round().value_counts()
         wb = g.wallbox_kw.dropna() if "wallbox_kw" in g else pd.Series(dtype=float)
         cat[inst] = dict(battery_kwh=sizes, heatpump_kw=sorted(float(k) for k in hp.index),

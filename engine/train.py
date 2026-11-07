@@ -20,7 +20,8 @@ import warnings
 
 import pandas as pd
 
-from engine.evaluate import ARTIFACTS, build_eval_table, load_inputs, planner_answer, run_evaluation, summary_table
+from engine.evaluate import (ARTIFACTS, BASELINES, build_eval_table, inputs_from_labels, load_inputs, planner_answer,
+                             run_evaluation, summary_table)
 from engine.interim_labels import build_catalogue, get_labels
 from engine.model import MODEL_PATH, DesignModel
 
@@ -38,14 +39,18 @@ def main(argv=None):
     t0 = time.time()
 
     labels, source = get_labels(rebuild=args.rebuild)
-    inputs = load_inputs()
+    inputs = inputs_from_labels(labels)
+    inputs_source = "cleaned home columns of the label parquet" if inputs is not None else "data/raw status quo"
+    inputs = inputs if inputs is not None else load_inputs()
+    test_ids = ARTIFACTS / ("test_ids.json" if "expert_designs" in source else "test_ids_interim.json")
     catalogue = build_catalogue(labels)
     (ARTIFACTS / "catalogue_used.json").write_text(json.dumps(catalogue, indent=2))
-    print(f"[labels] {source}: {len(labels)} options, {labels.project_id.nunique()} projects")
+    print(f"[labels] {source}: {len(labels)} options, {labels.project_id.nunique()} projects; inputs: {inputs_source}")
+    print(f"[test set] locked in {test_ids.name} (created on first run, never tuned on)")
 
     tidy, results = run_evaluation(labels, {DesignModel.name: DesignModel}, inputs=inputs,
                                    catalogue={k: v["battery_kwh"] for k, v in catalogue.items()},
-                                   out_path=ARTIFACTS / "eval_results.json")
+                                   out_path=ARTIFACTS / "eval_results.json", test_ids_path=test_ids)
     results["labels_source"] = source
 
     # same evaluation, but the planner answered "Is there already PV on the roof?" (derived from the offer type)
@@ -53,14 +58,19 @@ def main(argv=None):
     answers = dict(zip(table.project_id, planner_answer(table)))
     inputs_q = inputs.assign(existing_pv=inputs.project_id.map(answers))
     tidy_q, res_q = run_evaluation(labels, {DesignModel.name: DesignModel}, inputs=inputs_q,
-                                   catalogue={k: v["battery_kwh"] for k, v in catalogue.items()}, out_path=None)
-    results["with_existing_pv_answer"] = {k: res_q[k] for k in ("metrics", "by_installer")}
+                                   catalogue={k: v["battery_kwh"] for k, v in catalogue.items()}, out_path=None,
+                                   test_ids_path=test_ids)
+    results["with_existing_pv_answer"] = {k: res_q[k] for k in ("metrics", "by_installer", "segments")}
     (ARTIFACTS / "eval_results.json").write_text(json.dumps(results, indent=2, default=float))
 
     pd.set_option("display.width", 200)
-    cols = [DesignModel.name, "baseline_band_median", "baseline_kwh_per_1000"]
+    cols = [DesignModel.name] + list(BASELINES)
     print("\n=== held-out projects (never seen in training), all installers ===")
     print(summary_table(tidy).loc[HEADLINE + ["offer_type_accuracy"], cols].round(2).to_string())
+    for seg in ("full_designs", "known_consumption", "full_designs_known_consumption"):
+        if f"held_out:{seg}" in set(tidy["eval"]):
+            print(f"\n=== held-out, segment: {seg} ===")
+            print(summary_table(tidy, eval_name=f"held_out:{seg}").loc[HEADLINE, cols].round(2).to_string())
     print("\n=== same held-out projects, planner answered 'Is there already PV on the roof?' ===")
     print(summary_table(tidy_q).loc[HEADLINE + ["offer_type_accuracy"], [DesignModel.name]].round(2).to_string())
     for inst in sorted(labels.installer.unique()):
@@ -72,6 +82,7 @@ def main(argv=None):
         print(tr.round(2).to_string())
 
     model = DesignModel().fit(build_eval_table(labels, inputs))
+    model.inputs_source_ = inputs_source
     model.labels_source_ = source
     model.save(MODEL_PATH)
     print(f"\n[saved] {MODEL_PATH} (trained on {model.n_train_} projects), eval_results.json  ({time.time() - t0:.0f}s)")

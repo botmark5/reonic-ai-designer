@@ -48,6 +48,9 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
 
 ## Decisions
+- Sat 20:10 · Engine trains on engine/labels expert_designs.parquet with its cleaned home columns (default 4,500 kWh kept WITH its flag; < 1,500 kWh invalid)
+- Sat 20:10 · Test set locked in engine/artifacts/test_ids.json (grouped by customer, seed 42); all tuning by CV on the training part
+- Sat 20:10 · Claims only against the BEST baseline per metric (kWh/1000, band median, installer kWp/MWh); results reported for all projects, full designs, real consumption
 - Sat 19:40 · Offer type is its own decision (new PV / battery retrofit / wallbox only / other); optional planner input 'Is there already PV on the roof?' (biggest single error source)
 - Sat 19:00 · Heat pump is a customer OPTION (offered for gas/oil homes, not included by default); /design returns the full design with and without it so the customer can choose by budget/needs
 - Sat 18:40 · Model trains on interim labels (engine/interim_labels.py) until engine/labels lands; swap is automatic

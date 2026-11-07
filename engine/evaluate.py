@@ -45,6 +45,7 @@ PV_TOLERANCE_KWP = 1.0          # variant hit: PV within [min - 1, max + 1] kWp
 BATTERY_TOLERANCE_STEPS = 1     # variant hit: battery within one catalogue step of the range
 CONSUMPTION_BANDS_KWH = [0, 2500, 3500, 4500, 5500, 7000, 9000, np.inf]
 MIN_COUNT_FOR_CATALOGUE = 5
+MIN_COUNT_FOR_STEPS = 3          # catalogue.json sizes sold fewer times are not catalogue "steps"
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +140,8 @@ def load_inputs(raw_dir: Path | str = RAW_DIR) -> pd.DataFrame:
         frames.append(pd.DataFrame({
             "project_id": sq.project_id, "installer": d.name, "customer_contact_id": sq.customer_contact_id,
             "annual_kwh": sq.energy_demand_wh / 1000,
+            "demand_is_default": sq.energy_demand_wh == 4_500_000,
+            "consumption_known": (sq.energy_demand_wh != 4_500_000) & (sq.energy_demand_wh >= 1_500_000),
             "price_eur_kwh": sq.energy_price_per_wh * 1000,
             "load_profile": sq.load_profile, "has_ev": sq.has_ev.astype(bool),
             "ev_km_year": sq.ev_annual_drive_distance_km,
@@ -155,6 +158,37 @@ def load_inputs(raw_dir: Path | str = RAW_DIR) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+HOME_COLUMNS_V11 = {"annual_kwh_raw", "price_eur_kwh", "demand_is_default", "heating_type", "has_existing_wallbox"}
+
+
+def inputs_from_labels(labels: pd.DataFrame) -> pd.DataFrame | None:
+    """
+    Home inputs from engine/labels' cleaned columns (schema v1.1), one row per project, api.md names.
+    Consumption: invalid entries (< 1,500 kWh) -> unknown; the 4,500 kWh DEFAULT is kept with its flag
+    (demand_is_default), because "planner left the default" is itself a strong signal (battery retrofits).
+    Returns None when the labels carry no home columns (interim labels): use load_inputs() then.
+    """
+    if not HOME_COLUMNS_V11 <= set(labels.columns):
+        return None
+    p = labels[labels.is_primary.astype(bool)].drop_duplicates("project_id")
+    annual = p.annual_kwh_raw.where(~p.demand_is_invalid.fillna(False).astype(bool))
+    existing_pv = ((p.existing_pv_kwp.fillna(0) > 0) | p.has_solar.fillna(False).astype(bool)).map({True: 1.0, False: np.nan})
+    return pd.DataFrame({
+        "project_id": p.project_id.to_numpy(), "installer": p.installer.to_numpy(),
+        "customer_contact_id": p.customer_contact_id.to_numpy(),
+        "annual_kwh": annual.to_numpy(), "demand_is_default": p.demand_is_default.fillna(False).astype(bool).to_numpy(),
+        "consumption_known": p.consumption_known.fillna(False).astype(bool).to_numpy(),
+        "price_eur_kwh": p.price_eur_kwh.to_numpy(), "load_profile": p.load_profile.to_numpy(),
+        "has_ev": p.has_ev.fillna(False).astype(bool).to_numpy(), "ev_km_year": p.ev_km_year.to_numpy(),
+        "heating": p.heating_type.replace({"Unknown": None}).to_numpy(),
+        "heating_demand_kwh": p.heating_demand_kwh.to_numpy(),
+        "existing_pv": existing_pv.to_numpy(),
+        "existing_battery": (p.existing_battery_kwh.fillna(0) > 0).to_numpy(),
+        "existing_wallbox": p.has_existing_wallbox.fillna(False).astype(bool).to_numpy(),
+        "offer_date": pd.to_datetime(p.offer_created_at, errors="coerce").to_numpy(),
+    })
+
+
 def load_catalogue(labels: pd.DataFrame, path: Path | str | None = ARTIFACTS / "catalogue.json") -> dict:
     """
     Battery sizes each installer sells: {installer: [sizes...]}.
@@ -166,6 +200,8 @@ def load_catalogue(labels: pd.DataFrame, path: Path | str | None = ARTIFACTS / "
         cat = {}
         for inst, v in raw.items():
             sizes = v.get("battery_kwh", []) if isinstance(v, dict) else v
+            if isinstance(sizes, dict):                       # engine/labels v1.1: {size: how often sold}
+                sizes = [k for k, n in sizes.items() if n >= MIN_COUNT_FOR_STEPS] or list(sizes)
             cat[inst] = sorted(float(x) for x in sizes if x and float(x) > 0)
         if cat:
             return cat
@@ -217,6 +253,36 @@ def grouped_split(table: pd.DataFrame, test_size: float = 0.2, seed: int = SEED)
     train_ids, test_ids = train_test_split(ids[key], test_size=test_size, random_state=seed, stratify=strat)
     return (table[table[key].isin(set(train_ids))].reset_index(drop=True),
             table[table[key].isin(set(test_ids))].reset_index(drop=True))
+
+
+def locked_split(table: pd.DataFrame, path: Path | str | None, test_size: float = 0.2, seed: int = SEED):
+    """
+    The TEST set is fixed once (grouped by customer, seed 42) and saved to `path` (test_ids.json); every later
+    run reuses it, so nothing is ever tuned on it. Projects not in the file (e.g. new labels) go to training.
+    Delete the file to draw a new test set (e.g. when the label source changes).
+    """
+    if path is not None and Path(path).exists():
+        test_ids = set(json.loads(Path(path).read_text())["test_project_ids"])
+        return (table[~table.project_id.isin(test_ids)].reset_index(drop=True),
+                table[table.project_id.isin(test_ids)].reset_index(drop=True))
+    train, test = grouped_split(table, test_size, seed)
+    if path is not None:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(json.dumps({"seed": seed, "grouped_by": "customer_contact_id",
+                                          "test_project_ids": sorted(test.project_id)}, indent=0))
+    return train, test
+
+
+def segments(test: pd.DataFrame) -> dict:
+    """Report slices (cala-physics-eval.md): new systems only, and homes with real (non-default) consumption."""
+    seg = {}
+    if "offer_type" in test:
+        seg["full_designs"] = (test.offer_type == "new_system").to_numpy()
+    if "consumption_known" in test:
+        seg["known_consumption"] = test.consumption_known.fillna(False).astype(bool).to_numpy()
+    if "offer_type" in test and "consumption_known" in test:
+        seg["full_designs_known_consumption"] = seg["full_designs"] & seg["known_consumption"]
+    return seg
 
 
 def installer_transfer(table: pd.DataFrame):
@@ -294,7 +360,33 @@ class BandMedianBaseline:
         return pd.DataFrame(rows, index=df.index)
 
 
-BASELINES = {KwhPer1000Baseline.name: KwhPer1000Baseline, BandMedianBaseline.name: BandMedianBaseline}
+class RatioBaseline(KwhPer1000Baseline):
+    """
+    Installer's own rule: PV kWp = (median kWp per MWh of that installer) x yearly MWh. Learned from the
+    training projects with PV and real consumption (~2 kWp/MWh; kWh/1000 undersizes by half).
+    Battery = installer's most common size; yes/no = majority.
+    """
+    name = "baseline_kwp_per_mwh"
+
+    def fit(self, train: pd.DataFrame):
+        super().fit(train)
+        ok = train.has_pv & (train.annual_kwh > 0)
+        if "consumption_known" in train:
+            ok &= train.consumption_known.fillna(False).astype(bool)
+        ratio = (train.pv_kwp / (train.annual_kwh / 1000))[ok]
+        self.ratio_global_ = float(ratio.median()) if len(ratio) else 2.0
+        self.ratio_ = {i: float(r.median()) for i, r in ratio.groupby(train.installer[ok])}
+        return self
+
+    def predict(self, df: pd.DataFrame) -> pd.DataFrame:
+        out = super().predict(df)
+        ratio = df.installer.map(self.ratio_).fillna(self.ratio_global_)
+        out["pv_kwp"] = np.where(out.has_pv, ratio * df.annual_kwh.fillna(4500) / 1000, 0.0)
+        return out
+
+
+BASELINES = {KwhPer1000Baseline.name: KwhPer1000Baseline, BandMedianBaseline.name: BandMedianBaseline,
+             RatioBaseline.name: RatioBaseline}
 
 
 # ---------------------------------------------------------------------------
@@ -387,7 +479,7 @@ def compute_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) ->
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
-def _evaluate_one(factory, train, test, catalogue):
+def _evaluate_one(factory, train, test, catalogue, with_segments=False):
     model = factory().fit(train)
     pred = model.predict(test) if len(test) else pd.DataFrame(columns=DESIGN_COLUMNS)
     missing = [c for c in DESIGN_COLUMNS if c not in pred.columns]
@@ -396,31 +488,40 @@ def _evaluate_one(factory, train, test, catalogue):
     overall = compute_metrics(test, pred, catalogue)
     by_inst = {i: compute_metrics(test[test.installer == i], pred[test.installer == i], catalogue)
                for i in sorted(test.installer.unique())}
+    if with_segments:
+        segs = {name: compute_metrics(test[mask], pred[mask], catalogue) for name, mask in segments(test).items()}
+        return overall, by_inst, segs
     return overall, by_inst
 
 
 def run_evaluation(labels: pd.DataFrame, predictors: dict, inputs: pd.DataFrame | None = None,
                    catalogue: dict | None = None, out_path: Path | str | None = ARTIFACTS / "eval_results.json",
-                   test_size: float = 0.2, seed: int = SEED):
+                   test_size: float = 0.2, seed: int = SEED, test_ids_path: Path | str | None = None):
     """
     predictors: {name: factory} where factory() returns an object with fit/predict. Baselines are always added.
     Returns (tidy DataFrame, results dict shaped like GET /eval) and writes the dict to out_path.
     """
-    inputs = load_inputs() if inputs is None else inputs
+    if inputs is None:
+        inputs = inputs_from_labels(labels)
+        inputs = load_inputs() if inputs is None else inputs
     catalogue = catalogue if catalogue is not None else load_catalogue(labels)
     table = build_eval_table(labels, inputs)
-    train, test = grouped_split(table, test_size, seed)
+    train, test = locked_split(table, test_ids_path, test_size, seed)
     assert not set(train.project_id) & set(test.project_id), "project leak between train and test"
     all_preds = {**BASELINES, **predictors}
 
     results = {"protocol": dict(split="grouped by customer_contact_id (else project_id), stratified by installer", test_size=test_size, seed=seed,
                                 n_train=len(train), n_test=len(test), pv_tolerance_kwp=PV_TOLERANCE_KWP,
                                 battery_tolerance_steps=BATTERY_TOLERANCE_STEPS, catalogue=catalogue),
-               "metrics": {}, "by_installer": {}, "transfer": {}, "baselines": list(BASELINES)}
+               "metrics": {}, "by_installer": {}, "segments": {}, "transfer": {}, "baselines": list(BASELINES)}
     rows = []
     for name, factory in all_preds.items():
-        overall, by_inst = _evaluate_one(factory, train, test, catalogue)
+        overall, by_inst, segs = _evaluate_one(factory, train, test, catalogue, with_segments=True)
         results["metrics"][name], results["by_installer"][name] = overall, by_inst
+        for seg_name, mm in segs.items():
+            results["segments"].setdefault(seg_name, {})[name] = mm
+            rows += [dict(eval=f"held_out:{seg_name}", predictor=name, installer="all", metric=k, value=v)
+                     for k, v in mm.items()]
         rows += [dict(eval="held_out", predictor=name, installer="all", metric=k, value=v) for k, v in overall.items()]
         for inst, mm in by_inst.items():
             rows += [dict(eval="held_out", predictor=name, installer=inst, metric=k, value=v) for k, v in mm.items()]
@@ -452,7 +553,8 @@ def main(argv=None):
         labels = load_labels(args.labels)
     except FileNotFoundError as e:
         raise SystemExit(str(e))
-    tidy, _ = run_evaluation(labels, {}, inputs=load_inputs(args.raw_dir),
+    inputs = inputs_from_labels(labels)
+    tidy, _ = run_evaluation(labels, {}, inputs=inputs if inputs is not None else load_inputs(args.raw_dir),
                              catalogue=load_catalogue(labels, args.catalogue), out_path=args.out)
     pd.set_option("display.width", 200)
     print("== held-out (all installers) ==")

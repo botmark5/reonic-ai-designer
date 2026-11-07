@@ -45,22 +45,49 @@ If `engine/artifacts/design_model.joblib` is missing, the API trains a model on 
 6. **Locks:** any component the planner fixes is kept, and the later steps adapt to it.
 7. **Reasons:** per-decision SHAP contributions (LightGBM `pred_contrib`) turned into sentences.
 
-## Results (held-out 20 %, 323 projects never seen in training, split by customer; interim labels)
-| metric | model | band median | kWp = kWh/1000 |
-|---|---|---|---|
-| PV kWp MAE, ALL projects (unwanted PV counts too) | **2.89** | 3.91 | 5.08 |
-| PV kWp MAE, only projects with expert PV | 3.33 | **2.93** | 5.29 |
-| PV kWp MAE, where both have PV | **2.67** | 2.93 | 5.22 |
-| PV inside the variant range ± 1 kWp | **43 %** | 28 % | 11 % |
-| battery kWh MAE, where both have one | **2.83** | 3.08 | 3.07 |
-| battery within one catalogue step | **53 %** | 51 % | 42 % |
-| battery inside the variant range ± 1 step | **56 %** | 50 % | 41 % |
-| PV yes/no accuracy | **90 %** | 81 % | 81 % |
-| battery yes/no accuracy | 89 % | 89 % | 89 % |
-| wallbox yes/no accuracy | 71 % | 72 % | 72 % |
-| heat pump yes/no accuracy | 99 % | 99 % | 99 % |
+## Results (locked test set: 315 projects never used for training or tuning, split by customer; labels: engine/labels (expert_designs.parquet))
+Every claim is against the BEST of three baselines for that metric: kWh/1000, median per installer x consumption band, and the installer's own kWp-per-MWh ratio (~2).
 
-Installer transfer (train on one, test on the other), PV MAE where both have PV: 2.94 vs 3.06 (23c108b7->2a8ba8e2) and 2.89 vs 3.53 (2a8ba8e2->23c108b7) for model vs band median.
+**All projects** (model without the existing-PV answer):
+| metric | model | best baseline | which baseline |
+|---|---|---|---|
+| PV kWp MAE, all projects (unwanted PV counts) | **2.93** | 3.77 | band median |
+| PV kWp MAE, where both have PV (size only) | **2.47** | 2.64 | band median |
+| PV within ± 1.5 kWp | 40 % | **43 %** | band median |
+| PV inside the expert's variant range ± 1 kWp | **42 %** | 30 % | band median |
+| battery kWh MAE, where both have one | **2.50** | 2.71 | band median |
+| battery within one catalogue step | 51 % | 51 % | band median |
+| PV yes/no accuracy | **88 %** | 82 % | installer's most common choice (all baselines) |
+| battery yes/no accuracy | 86 % | **90 %** | installer's most common choice (all baselines) |
+| wallbox yes/no accuracy | 70 % | **73 %** | installer's most common choice (all baselines) |
+
+**Full new-system designs** (253 projects; the planner knows it is a new system, so the model gets the answer "no PV on the roof yet"):
+| metric | model (answered) | best baseline | which baseline |
+|---|---|---|---|
+| PV kWp MAE, all projects (unwanted PV counts) | **2.49** | 2.62 | band median |
+| PV kWp MAE, where both have PV (size only) | **2.49** | 2.62 | band median |
+| PV within ± 1.5 kWp | **45 %** | 43 % | band median |
+| PV inside the expert's variant range ± 1 kWp | **38 %** | 37 % | band median |
+| battery kWh MAE, where both have one | 2.70 | **2.64** | kWh/1000 |
+| battery within one catalogue step | **49 %** | 46 % | band median |
+| PV yes/no accuracy | 100 % | 100 % | installer's most common choice (all baselines) |
+| battery yes/no accuracy | 94 % | **95 %** | installer's most common choice (all baselines) |
+| wallbox yes/no accuracy | 72 % | 72 % | installer's most common choice (all baselines) |
+
+**Full designs with real consumption** (205 projects, no 4,500 kWh default):
+| metric | model (answered) | best baseline | which baseline |
+|---|---|---|---|
+| PV kWp MAE, all projects (unwanted PV counts) | **2.37** | 2.49 | band median |
+| PV kWp MAE, where both have PV (size only) | **2.37** | 2.49 | band median |
+| PV within ± 1.5 kWp | **45 %** | 44 % | band median |
+| PV inside the expert's variant range ± 1 kWp | 37 % | **39 %** | band median |
+| battery kWh MAE, where both have one | 2.64 | **2.55** | kWh/1000 |
+| battery within one catalogue step | **50 %** | 47 % | kWh/1000 |
+| PV yes/no accuracy | 100 % | 100 % | installer's most common choice (all baselines) |
+| battery yes/no accuracy | 95 % | **96 %** | installer's most common choice (all baselines) |
+| wallbox yes/no accuracy | **74 %** | 73 % | installer's most common choice (all baselines) |
+
+Installer transfer (train on one installer, test on the other), PV kWp MAE where both have PV, model vs band median: 23c108b7->2a8ba8e2: 2.91 vs 3.00; 2a8ba8e2->23c108b7: 2.79 vs 3.15.
 
 ## The one question that matters most: "Is there already PV on the roof?"
 About 12 % of projects are battery-only add-ons to an existing PV system, but the data records existing PV for only
