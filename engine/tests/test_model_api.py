@@ -398,4 +398,20 @@ def test_snap_to_installer_package(trained):
     assert model.snap_pv_to_catalogue(12.0, "instA")[1] is None                  # > 1 kWp from any package
     assert model.snap_pv_to_catalogue(12.0, "instA")[0] == 12.15                 # 26.7 -> 27 modules
     assert model.snap_pv_to_catalogue(0, "instA") == (0.0, None)
-    assert 0.05 <= model.battery_threshold_ <= 0.55
+    assert 0.0 <= model.battery_threshold_ <= 0.55                              # 0.0 = rule "always a battery" won
+
+
+# ---------------------------------------------------------------- Mark's demo bugs + model-or-rule
+def test_typed_4500_is_a_real_value(trained):
+    from engine.model import home_to_row
+    assert home_to_row({"annual_kwh": 4500}, "instA")["demand_is_default"] is False
+
+
+def test_ev_adds_wallbox_and_pv(trained):
+    model, _ = trained
+    base = model.propose({"annual_kwh": 5000, "has_existing_pv": False}, "instA")["design"]
+    ev = model.propose({"annual_kwh": 5000, "has_existing_pv": False, "has_ev": True, "ev_km_year": 15000}, "instA")["design"]
+    assert (ev["pv"]["kwp"] or 0) >= (base["pv"]["kwp"] or 0)
+    if model.wallbox_mode_ == "ev_rule":
+        assert ev["wallbox"]["include"] is True
+    assert model.wallbox_mode_ in ("model", "ev_rule", "never") and 0 <= model.ev_uplift_kwp_ <= 3

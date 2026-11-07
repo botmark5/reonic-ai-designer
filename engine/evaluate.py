@@ -278,6 +278,7 @@ def segments(test: pd.DataFrame) -> dict:
     seg = {}
     if "offer_type" in test:
         seg["full_designs"] = (test.offer_type == "new_system").to_numpy()
+        seg["add_ons"] = (test.offer_type != "new_system").to_numpy()      # retrofits, extensions, wallbox-only, ...
     if "consumption_known" in test:
         seg["known_consumption"] = test.consumption_known.fillna(False).astype(bool).to_numpy()
     if "offer_type" in test and "consumption_known" in test:

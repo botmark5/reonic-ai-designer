@@ -67,7 +67,7 @@ def main(argv=None):
     cols = [DesignModel.name] + list(BASELINES)
     print("\n=== held-out projects (never seen in training), all installers ===")
     print(summary_table(tidy).loc[HEADLINE + ["offer_type_accuracy"], cols].round(2).to_string())
-    for seg in ("full_designs", "known_consumption", "full_designs_known_consumption"):
+    for seg in ("full_designs", "full_designs_known_consumption", "add_ons", "known_consumption"):
         if f"held_out:{seg}" in set(tidy["eval"]):
             print(f"\n=== held-out, segment: {seg} ===")
             print(summary_table(tidy, eval_name=f"held_out:{seg}").loc[HEADLINE, cols].round(2).to_string())
