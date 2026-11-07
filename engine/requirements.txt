@@ -8,3 +8,5 @@ pydantic
 anthropic
 python-dotenv
 matplotlib
+pyarrow
+pytest

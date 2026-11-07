@@ -8,3 +8,4 @@ node_modules/
 .next/
 .DS_Store
 engine/artifacts/*.pkl
+engine/artifacts/*.parquet
