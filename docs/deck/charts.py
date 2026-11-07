@@ -21,6 +21,7 @@ import textwrap
 from pathlib import Path
 
 import matplotlib
+import pandas as pd
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -95,7 +96,11 @@ def band_aggregates() -> list[dict]:
     """PV MAE per consumption band from Cala's error analysis (shipped model, planner answered the existing-PV question)."""
     from engine.error_analysis import run, seg_table
 
-    t = seg_table(run(True), "band")
+    t = run(True)
+    # homes left at the 4,500 kWh default (all fall in the 3-4.5k band) get their own bar: "consumption unknown"
+    order = ["<3k", "3-4.5k", "4.5-6k", "6-9k", ">9k", "unknown"]
+    t["band"] = pd.Categorical(t.band.astype(str).where(~t.demand_is_default.fillna(False).astype(bool), "unknown"), order)
+    t = seg_table(t, "band")
     return [{"band": str(b), "n": int(r["n"]), "pv_mae_both": float(r["PV MAE (both)"]),
              "pv_bias_both": float(r["PV bias (both)"])} for b, r in t.iterrows()]
 
@@ -108,7 +113,7 @@ def main(argv=None):
     bl, n_test = r["baselines"], r["protocol"]["n_test"]
     cache = OUT / "aggregates.json"
     agg = json.loads(cache.read_text()) if cache.exists() and not args.refresh else {}
-    if "bands" not in agg:
+    if not any(b["band"] == "unknown" for b in agg.get("bands", [])):
         agg["bands"] = band_aggregates()
     files: list[str] = []
     note = f"{n_test} held-out real projects"
@@ -138,14 +143,18 @@ def main(argv=None):
     # 2a — PV error by consumption band (shipped model)
     bands = agg["bands"]
     worst = max(bands, key=lambda b: b["pv_mae_both"])
+    unknown = next(b for b in bands if b["band"] == "unknown")
     fig, ax = _axes(f"PV size is hardest to match for {worst['band']} kWh homes",
-                    f"PV size error where engine and expert both chose PV, kWp, by annual consumption · {asked} · {note}")
+                    f"PV size error where engine and expert both chose PV, kWp, by annual consumption · \"not entered\" = "
+                    f"{unknown['n']} homes left at the 4,500 kWh default · {asked} · {note}")
     xs = range(len(bands))
-    bars = ax.bar(xs, [b["pv_mae_both"] for b in bands], width=0.55, color=C_MODEL, zorder=2)
+    bars = ax.bar(xs, [b["pv_mae_both"] for b in bands], width=0.55, zorder=2,
+                  color=[C_BASE if b["band"] == "unknown" else C_MODEL for b in bands])
     for bar, b in zip(bars, bands):
         ax.annotate(f"{b['pv_mae_both']:.2f}", (bar.get_x() + bar.get_width() / 2, bar.get_height()), xytext=(0, 4),
                     textcoords="offset points", ha="center", fontsize=11, color=INK, fontweight="medium")
-    ax.set_xticks(list(xs), [f"{b['band']} kWh\n{b['n']} projects" for b in bands])
+    ax.set_xticks(list(xs), [("not entered" if b["band"] == "unknown" else f"{b['band']} kWh") + f"\n{b['n']} projects"
+                             for b in bands])
     ax.set_ylabel("mean absolute error, kWp")
     ax.margins(y=0.18)
     save(fig, "2a_pv_error_by_consumption", files)
@@ -171,28 +180,42 @@ def main(argv=None):
     save(fig, "2b_pv_error_installer_transfer", files)
 
     # 3 — asking the planner "Is there already PV on the roof?"
-    before, after = r["metrics"][MODEL], r["with_existing_pv_answer"]["metrics"][MODEL]
-    mets = [("has_pv_accuracy", "PV yes/no right"), ("offer_type_accuracy", "Offer type right"),
-            ("pv_kwp_within_1.5_pct", "PV within ±1.5 kWp")]
-    agg["existing_pv_question"] = [dict(metric=k, before=before[k], after=after[k]) for k, _ in mets]
-    gain = after["offer_type_accuracy"] - before["offer_type_accuracy"]
-    fig, ax = _axes(f"One question to the planner lifts offer-type accuracy by {gain:+.0f} points",
-                    f"Engine without vs with the answer to \"Is there already PV on the roof?\", % of projects · {note}")
-    grouped_bars(ax, [label for _, label in mets], [("Without the answer", [before[k] for k, _ in mets], C_BASE),
-                                                    ("With the answer", [after[k] for k, _ in mets], C_MODEL)], "{:.0f} %")
-    ax.set_ylim(0, 110)
-    ax.set_ylabel("% of held-out projects")
+    metric = "pv_kwp_mae_all_projects"
+    segs = [("All projects", r["metrics"], ans["metrics"]),
+            ("New systems", r["segments"]["full_designs"], ans["segments"]["full_designs"]),
+            ("Add-on sales", r["segments"]["add_ons"], ans["segments"]["add_ons"])]
+    rows = [dict(group=label, before=b[MODEL][metric], after=a[MODEL][metric], n=int(a[MODEL]["n_projects"]))
+            for label, b, a in segs]
+    ot_before, ot_after = r["metrics"][MODEL]["offer_type_accuracy"], ans["metrics"][MODEL]["offer_type_accuracy"]
+    agg["existing_pv_question"] = {"pv_mae": rows, "offer_type_accuracy": dict(before=ot_before, after=ot_after)}
+    cut = 1 - rows[0]["after"] / rows[0]["before"]
+    fig, ax = _axes(f"One question to the planner cuts PV error by {cut:.0%}",
+                    f"Engine PV size error vs the expert, kWp, without vs with the answer to \"Is there already PV on the "
+                    f"roof?\" (a PV the expert did not sell counts) · offer type right {ot_before:.0f}\u00a0% → {ot_after:.0f}\u00a0% · {note}")
+    grouped_bars(ax, [f"{x['group']}\n{x['n']} projects" for x in rows],
+                 [("Without the answer", [x["before"] for x in rows], C_BASE),
+                  ("With the answer", [x["after"] for x in rows], C_MODEL)], "{:.2f}")
+    ax.set_ylabel("mean absolute error, kWp")
     save(fig, "3_existing_pv_question", files)
 
     # 4 — variant-range hit rate: is the engine's size one the expert also offered (±1 kWp / ±1 battery step)?
-    groups = [("pv_variant_hit_tolerant_pct", "PV size"), ("battery_variant_hit_tolerant_pct", "Battery size")]
+    groups = [("pv_variant_hit_tolerant_pct", "PV", "full_designs", "new systems"),
+              ("pv_variant_hit_tolerant_pct", "PV", "add_ons", "add-on sales"),
+              ("battery_variant_hit_tolerant_pct", "Battery", "full_designs", "new systems"),
+              ("battery_variant_hit_tolerant_pct", "Battery", "add_ons", "add-on sales")]
     rows = []
-    for k, label in groups:
-        _, bval = best_baseline(ans["metrics"], bl, k, False)
-        rows.append(dict(metric=k, group=label, model=ans["metrics"][MODEL][k], baseline=bval))
+    for k, comp, seg, seg_label in groups:
+        block = ans["segments"][seg]
+        _, bval = best_baseline(block, bl, k, False)
+        rows.append(dict(metric=k, segment=seg, group=f"{comp}\n{seg_label}", model=block[MODEL][k], baseline=bval))
     agg["variant_hit"] = rows
-    fig, ax = _axes(f"{rows[0]['model']:.0f} % of engine PV sizes fall inside the expert's own options",
-                    f"Engine size within the expert's variant range (PV ±1 kWp, battery ±1 step) · {asked} · {note}")
+    pv_new, pv_add = rows[0], rows[1]
+    lead = "level with" if abs(pv_new["model"] - pv_new["baseline"]) < 2 else (
+        "ahead of" if pv_new["model"] > pv_new["baseline"] else "behind")
+    fig, ax = _axes(f"In the expert's own options: {lead} the best rule on new systems",
+                    f"Engine size within the expert's variant range (PV ±1 kWp, battery ±1 step), % of projects · "
+                    f"PV new systems {pv_new['model']:.0f}\u00a0% vs {pv_new['baseline']:.0f}\u00a0%, add-on sales far ahead: {pv_add['model']:.0f}\u00a0% vs "
+                    f"{pv_add['baseline']:.0f}\u00a0% · {asked} · {note}")
     grouped_bars(ax, [x["group"] for x in rows], [("Engine", [x["model"] for x in rows], C_MODEL),
                                                   ("Best baseline", [x["baseline"] for x in rows], C_BASE)], "{:.0f} %")
     ax.set_ylim(0, 100)
