@@ -26,6 +26,11 @@ describe("reality verdicts", () => {
     expect(verdicts({ pv: 9, battery: 5, wallbox: false, heatpump: null, heatpumpOption: null }, [v({ battery_kwh: 14 })], cat).battery.kind).toBe("off");
   });
 
+  it("no battery inside a [none, 5.12] offer range is a hit, like evaluate.py", () => {
+    const variants = [v({ battery_kwh: 0 }), v({ is_primary: false, option_number: 2, battery_kwh: 5.12 })];
+    expect(verdicts({ pv: 9, battery: null, wallbox: false, heatpump: null, heatpumpOption: null }, variants, cat).battery.hit).toBe(true);
+  });
+
   it("yes/no disagreements are flagged", () => {
     const r = verdicts({ pv: null, battery: 5, wallbox: true, heatpump: null, heatpumpOption: null }, [v({ pv_kwp: 9, has_wallbox: false })], cat);
     expect(r.pv.kind).toBe("missing");

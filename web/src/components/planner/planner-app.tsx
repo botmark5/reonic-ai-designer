@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { House3D } from "@/components/house3d";
@@ -20,17 +20,47 @@ import { usePlanner } from "./use-planner";
 export function PlannerApp({ designs, initial }: { designs: DesignRow[]; initial: DesignRow }) {
   const [rows, setRows] = useState(designs);
   const [current, setCurrent] = useState(initial);
+  const known = useRef(new Set(designs.map((d) => d.id)));
+  const selectRef = useRef<((row: DesignRow) => void) | null>(null);
+
+  // Inbox: poll the server (authenticated) for new and updated designs; announce new voice drafts.
+  useEffect(() => {
+    let stop = false;
+    const tick = async () => {
+      try {
+        const res = await fetch("/api/designs", { cache: "no-store" });
+        if (!res.ok || stop) return;
+        const list = (await res.json()) as DesignRow[];
+        for (const row of list) {
+          if (known.current.has(row.id)) continue;
+          known.current.add(row.id);
+          if (row.source === "voice")
+            toast("New design from a call", { description: row.customer_name ?? "Unnamed home", action: { label: "Open", onClick: () => selectRef.current?.(row) } });
+        }
+        setRows(list);
+      } catch {}
+    };
+    const t = setInterval(tick, 4000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, []);
 
   const select = useCallback(async (row: DesignRow) => {
     window.history.replaceState(null, "", `/?d=${row.id}`);
     const res = await fetch(`/api/designs/${row.id}`);
     setCurrent(res.ok ? ((await res.json()) as DesignRow) : row);
   }, []);
+  useEffect(() => {
+    selectRef.current = select;
+  }, [select]);
 
   const createNew = useCallback(async (name: string) => {
     const res = await fetch("/api/designs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ customer_name: name }) });
     if (!res.ok) return toast.error("Could not create the design");
     const row = (await res.json()) as DesignRow;
+    known.current.add(row.id);
     setRows((r) => [row, ...r]);
     window.history.replaceState(null, "", `/?d=${row.id}`);
     setCurrent(row);
@@ -73,8 +103,11 @@ function Workspace({
   return (
     <>
       <aside className="order-3 flex min-w-0 flex-col gap-5 lg:order-1 lg:row-span-2" aria-label="Inbox and inputs">
-        <Inbox initial={rows} selectedId={row.id} onSelect={onSelect} onNew={onNew} />
-        <HomeForm home={s.home} onChange={p.setHome} />
+        <Inbox rows={rows} selectedId={row.id} onSelect={onSelect} onNew={onNew} />
+        <fieldset disabled={s.refining} className="m-0 min-w-0 border-0 p-0 disabled:opacity-60" aria-describedby={s.refining ? "refining-note" : undefined}>
+          <HomeForm home={s.home} onChange={p.setHome} />
+        </fieldset>
+        {s.refining && <p id="refining-note" className="m-0 -mt-3 text-[12px] text-ink-muted">Inputs are paused while the designer updates the design.</p>}
       </aside>
 
       <main id="main" className="order-1 flex min-w-0 flex-col gap-4 lg:order-2">
@@ -111,7 +144,7 @@ function Workspace({
           </div>
         </div>
 
-        <RefineBox home={s.home} locks={s.locks} response={r} onResult={p.applyRefine} showExamples={!s.change} />
+        <RefineBox home={s.home} locks={s.locks} onResult={p.applyRefine} onStart={() => p.setRefining(true)} onEnd={() => p.setRefining(false)} showExamples={!s.change} />
 
         <div aria-live="polite" className="empty:hidden">
           {!s.busy && s.change && (s.change.diff.lines.length > 0 || s.change.note) && (
@@ -131,7 +164,7 @@ function Workspace({
         </div>
 
         {r ? (
-          <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${s.busy ? "opacity-70 transition-opacity" : ""}`}>
+          <fieldset disabled={s.refining} className={`m-0 grid min-w-0 grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2 ${s.busy || s.refining ? "opacity-70 transition-opacity" : ""}`}>
             {COMPONENTS.map((c) => (
               <SystemCard
                 key={c}
@@ -145,7 +178,7 @@ function Workspace({
                 onLock={(v, reason) => p.setLock(c, v, reason)}
               />
             ))}
-          </div>
+          </fieldset>
         ) : null}
         {r && (
           <section aria-label="The system on the house" className="mt-2">

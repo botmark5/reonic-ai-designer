@@ -20,16 +20,16 @@ const EXAMPLES = ["They are buying an EV next year", "Customer wants no battery"
 export function RefineBox({
   home,
   locks,
-  response,
   onResult,
   onStart,
+  onEnd,
   showExamples = true,
 }: {
   home: Home;
   locks: Locks;
-  response: DesignResponse | null;
   onResult: (r: Pick<RefineResponse, "home" | "locks" | "design" | "summary">) => void;
   onStart?: () => void;
+  onEnd?: () => void;
   showExamples?: boolean;
 }) {
   const [text, setText] = useState("");
@@ -48,7 +48,7 @@ export function RefineBox({
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: t, home, locks, response, installer: INSTALLER }),
+        body: JSON.stringify({ text: t, home, locks, installer: INSTALLER }),
       });
       if (!res.ok || !res.body) throw new Error((await res.json().catch(() => null))?.error ?? "The designer could not read that.");
       const reader = res.body.getReader();
@@ -84,6 +84,7 @@ export function RefineBox({
       toast.error("Could not update the design", { description: (e as Error).message });
     } finally {
       setBusy(false);
+      onEnd?.();
     }
   }
 
@@ -107,7 +108,8 @@ export function RefineBox({
           onChange={(e) => setText(e.target.value)}
           placeholder="Tell the designer what changed, e.g. “they're buying an EV next year”"
           className="min-w-0 flex-1 bg-transparent text-body-sm text-ink outline-none placeholder:text-ink-muted"
-          disabled={busy}
+          readOnly={busy}
+          aria-busy={busy}
         />
         <Button type="submit" size="sm" disabled={busy || !text.trim()}>
           {busy ? "Updating…" : "Update design"}

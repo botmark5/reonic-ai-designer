@@ -14,7 +14,6 @@ import {
   MOCK_EVAL,
   mockDesign,
   mockExplanation,
-  mockProject,
   mockRefine,
   mockValidate,
   textStream,
@@ -54,7 +53,7 @@ export interface EngineClient {
   /** Streamed plain-text explanation. */
   explain(req: ExplainRequest): Promise<{ stream: ReadableStream<Uint8Array>; served: Served }>;
   eval(): Promise<EvalResponse>;
-  /** Throws EngineError(404) for an unknown project id (no fallback: an invented project would mislead). */
+  /** Real held-out projects only: throws on an unknown id or when the engine is unreachable (an invented project would mislead). */
   project(id: string): Promise<ProjectResponse>;
 }
 
@@ -116,10 +115,13 @@ async function engineFetch(path: string, timeoutMs: number, init?: RequestInit):
   }
 }
 
-/** Connection-level failures (timeout, tunnel down, 5xx, bad key) put the engine on cooldown; input errors do not. */
+/** Connection-level failures (timeout, tunnel down, 5xx, bad key) put the engine on cooldown. */
 function isOutage(e: EngineError) {
   return e.status === 0 || e.status >= 500 || e.status === 401 || e.status === 403;
 }
+
+/** Input errors (400, 404, 422) are the caller's to fix: pass them through instead of hiding them behind the estimate. */
+const INPUT_ERRORS = [400, 404, 422];
 
 async function withFallback<T extends object>(
   live: () => Promise<T>,
@@ -136,7 +138,7 @@ async function withFallback<T extends object>(
     return { ...data, served: { source: "engine", ms: Date.now() - t0 } };
   } catch (err) {
     const e = err instanceof EngineError ? err : new EngineError(0, String(err));
-    if (opts.passthrough?.includes(e.status)) throw e;
+    if (opts.passthrough?.includes(e.status) || INPUT_ERRORS.includes(e.status)) throw e;
     if (isOutage(e)) {
       downUntil = Date.now() + COOLDOWN_MS;
       downReason = e.message;
@@ -166,10 +168,12 @@ export const engine: EngineClient = {
     return { stream: r.stream, served: r.served };
   },
   eval: () => withFallback(() => getJson<EvalResponse>("/eval", TIMEOUTS.eval), () => MOCK_EVAL),
-  project: (id) =>
-    withFallback(() => getJson<ProjectResponse>(`/project/${encodeURIComponent(id)}`, TIMEOUTS.project), () => mockProject(id), {
-      passthrough: [404],
-    }),
+  project: async (id) => {
+    if (!engineUrl()) throw new EngineError(503, "Engine not configured: held-out projects need the live engine.");
+    const t0 = Date.now();
+    const data = await getJson<ProjectResponse>(`/project/${encodeURIComponent(id)}`, TIMEOUTS.project);
+    return { ...data, served: { source: "engine" as const, ms: Date.now() - t0 } };
+  },
 };
 
 /** @deprecated kept for milestone-1 callers; use `engine`. */

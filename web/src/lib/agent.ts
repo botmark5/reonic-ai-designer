@@ -27,7 +27,6 @@ export interface AgentInput {
   text: string;
   home: Home;
   locks: Locks;
-  response: DesignResponse | null;
   installer?: string;
 }
 
@@ -126,19 +125,44 @@ const TOOLS: Anthropic.Beta.Messages.BetaTool[] = [
   },
 ];
 
-/** Numbers the planner wrote ("10 kWh", "12,5 kWp", "15.000 km"). */
-export function numbersIn(text: string): number[] {
-  return Array.from(text.matchAll(/\d+(?:[.,]\d+)*/g)).map((m) => {
-    const s = m[0];
+export type Unit = "kwh" | "kwp" | "kw" | "km" | "eur" | null;
+export interface PlannerNumber {
+  value: number;
+  unit: Unit;
+}
+
+/** Numbers the planner wrote, with the unit right after them ("10 kWh", "12,5 kWp", "15.000 km", "€0.32"). */
+export function numbersWithUnits(text: string): PlannerNumber[] {
+  return Array.from(text.matchAll(/(€\s*)?(\d+(?:[.,]\d+)*)\s*(kwh|kwp|kw|km|€|eur|euro)?/gi)).map((m) => {
+    const s = m[2];
     // "15.000" / "15,000" = thousands; "12,5" / "9.9" = decimals
-    if (/^\d{1,3}([.,]\d{3})+$/.test(s)) return Number(s.replace(/[.,]/g, ""));
-    return Number(s.replace(",", "."));
+    const value = /^\d{1,3}([.,]\d{3})+$/.test(s) ? Number(s.replace(/[.,]/g, "")) : Number(s.replace(",", "."));
+    const u = (m[3] ?? (m[1] ? "eur" : "")).toLowerCase();
+    const unit: Unit = u === "kwh" ? "kwh" : u === "kwp" ? "kwp" : u === "kw" ? "kw" : u === "km" ? "km" : u ? "eur" : null;
+    return { value, unit };
   });
 }
 
-/** Values the model may lock a component to (server-side guard: the LLM never picks sizes). */
-export function allowedLockValues(c: ComponentKey, r: DesignResponse | null, planner: number[]): Set<number> {
-  const s = new Set<number>([0, ...planner]);
+/** Plain numbers (any unit), kept for callers that do not care about units. */
+export function numbersIn(text: string): number[] {
+  return numbersWithUnits(text).map((n) => n.value);
+}
+
+/** The planner asked to remove or exclude something ("no battery", "without wallbox", "kein Speicher"). */
+export function plannerNegates(text: string): boolean {
+  return /\b(no|not|without|remove|drop|none|skip|kein\w*|ohne|nicht)\b/i.test(text);
+}
+
+const LOCK_UNIT: Record<ComponentKey, Unit> = { pv: "kwp", battery: "kwh", heatpump: "kw", wallbox: null };
+
+/**
+ * Values the model may lock a component to (server-side guard: the LLM never picks sizes):
+ * sizes the engine offered, sizes the planner wrote WITH the matching unit, and 0 only if the planner said "no/without".
+ */
+export function allowedLockValues(c: ComponentKey, r: DesignResponse | null, planner: PlannerNumber[] | number[], negates = true): Set<number> {
+  const nums: PlannerNumber[] = (planner as (PlannerNumber | number)[]).map((p) => (typeof p === "number" ? { value: p, unit: LOCK_UNIT[c] } : p));
+  const s = new Set<number>(nums.filter((p) => p.unit === LOCK_UNIT[c]).map((p) => p.value));
+  if (negates) s.add(0);
   if (!r) return s;
   const d = r.design;
   if (c === "pv") {
@@ -202,18 +226,20 @@ export async function runAgent(input: AgentInput, emit: (e: AgentEvent) => void,
   const installer = input.installer ?? DEFAULT_INSTALLER;
   let home: Home = { ...input.home };
   let locks: Locks = { ...input.locks };
-  let response = input.response;
-  const before = input.response?.design ?? null;
-  const planner = numbersIn(input.text);
-  let ranDesign = false;
+  // Never trust a design sent by the browser: the starting point is the engine's answer for these inputs.
+  let response: DesignResponse = await engine.design({ installer, home, locks });
+  const before = response.design;
+  const planner = numbersWithUnits(input.text);
+  const negates = plannerNegates(input.text);
+  let dirty = false; // inputs or locks changed since the last run_design
 
   const client = new Anthropic();
   const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [
     {
       role: "user",
-      content: `Current inputs: ${JSON.stringify(home)}\nCurrent locks: ${JSON.stringify(locks)}\nCurrent design: ${
-        response ? JSON.stringify(summarize(response)) : "none yet"
-      }\n\nPlanner: ${input.text}`,
+      content: `Current inputs: ${JSON.stringify(home)}\nCurrent locks: ${JSON.stringify(locks)}\nCurrent design: ${JSON.stringify(
+        summarize(response),
+      )}\n\nPlanner: ${input.text}`,
     },
   ];
 
@@ -226,10 +252,14 @@ export async function runAgent(input: AgentInput, emit: (e: AgentEvent) => void,
         if (!t) return { content: `Unknown field ${k}.`, is_error: true };
         if (v !== null && typeof v !== t) return { content: `${k} must be a ${t}.`, is_error: true };
         if (typeof v === "number" && (v < 0 || !Number.isFinite(v))) return { content: `${k} must be ≥ 0.`, is_error: true };
+        // Numbers must come from the planner's words (the model never invents consumption, distances or sizes).
+        if (typeof v === "number" && !planner.some((p) => Math.abs(p.value - v) < 0.051) && !(k === "ev_km_year" && v === 15000) && !(v === 0 && negates))
+          return { content: `Rejected: ${k} = ${v} is not a number the planner wrote. Only change numbers the planner gave.`, is_error: true };
         (applied as Record<string, unknown>)[k] = v;
       }
       if (applied.has_ev === true && home.ev_km_year == null && applied.ev_km_year == null) applied.ev_km_year = 15000;
       home = { ...home, ...applied };
+      dirty = true;
       return { content: `Updated: ${JSON.stringify(applied)}. Call run_design to see the effect.` };
     }
     if (name === "lock_component" || name === "unlock_component") {
@@ -237,16 +267,19 @@ export async function runAgent(input: AgentInput, emit: (e: AgentEvent) => void,
       if (!(c in LOCK_KEY)) return { content: "Unknown component.", is_error: true };
       if (name === "unlock_component") {
         locks = { ...locks, [LOCK_KEY[c]]: null };
+        dirty = true;
         return { content: `${c} unlocked.` };
       }
       const v = args.value;
       if (c === "wallbox") {
         if (typeof v !== "boolean") return { content: "wallbox takes true or false.", is_error: true };
+        if (v === false && !negates) return { content: "Rejected: remove the wallbox only when the planner says so.", is_error: true };
         locks = { ...locks, wallbox: v };
+        dirty = true;
         return { content: `wallbox locked: ${v}.` };
       }
       if (typeof v !== "number") return { content: `${c} takes a number.`, is_error: true };
-      const allowed = allowedLockValues(c, response, planner);
+      const allowed = allowedLockValues(c, response, planner, negates);
       const ok = [...allowed].some((a) => Math.abs(a - v) < 0.051);
       if (!ok)
         return {
@@ -254,16 +287,16 @@ export async function runAgent(input: AgentInput, emit: (e: AgentEvent) => void,
           is_error: true,
         };
       locks = { ...locks, [LOCK_KEY[c]]: v };
+      dirty = true;
       return { content: `${c} locked at ${v}.` };
     }
     if (name === "run_design") {
       response = await engine.design({ installer, home, locks });
-      ranDesign = true;
+      dirty = false;
       emit({ type: "design", response, home, locks });
       return { content: JSON.stringify(summarize(response)) };
     }
     if (name === "explain_design") {
-      if (!response) return { content: "No design yet: call run_design first.", is_error: true };
       const d = response.design;
       return {
         content: JSON.stringify({
@@ -274,7 +307,6 @@ export async function runAgent(input: AgentInput, emit: (e: AgentEvent) => void,
       };
     }
     if (name === "compare_with_expert") {
-      if (!response) return { content: "No design yet: call run_design first.", is_error: true };
       return { content: JSON.stringify(response.similar_homes) };
     }
     return { content: `Unknown tool ${name}.`, is_error: true };
@@ -329,10 +361,8 @@ export async function runAgent(input: AgentInput, emit: (e: AgentEvent) => void,
     return viaEngineRefine(input, emit);
   }
 
-  if (!ranDesign || !response) {
-    // The model answered without changing anything (e.g. a question). Keep the current design.
-    if (!response) response = await engine.design({ installer, home, locks });
-  }
+  // Inputs changed after the last run (or the model never ran the engine): the returned design must match them.
+  if (dirty) response = await engine.design({ installer, home, locks });
   const diff = diffDesigns(before, response.design);
   const summary = finalText.trim() || (diff.lines.length ? diff.lines.join(", ") : "No change.");
   emit({ type: "done", summary, home, locks, response, by: "claude" });

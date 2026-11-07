@@ -22,10 +22,11 @@ export interface OurSizes {
 const PV_TOL = 1;
 const V = (kind: VerdictKind, label: string): Verdict => ({ kind, label, hit: ["match", "range", "close", "option"].includes(kind) });
 
-function steps(cat: number[], a: number, b: number) {
-  const sorted = [...new Set(cat)].sort((x, y) => x - y);
-  const idx = (x: number) => sorted.reduce((best, s, i) => (Math.abs(s - x) < Math.abs(sorted[best] - x) ? i : best), 0);
-  return sorted.length ? Math.abs(idx(a) - idx(b)) : Math.abs(a - b) > 0.01 ? 99 : 0;
+/** engine/evaluate.py step_index: 0 = no battery, 1 = smallest catalogue size, ... (nearest size). */
+export function stepIndex(kwh: number | null, catalogue: number[]): number {
+  const steps = [0, ...[...new Set(catalogue)].sort((x, y) => x - y)];
+  const v = kwh ?? 0;
+  return steps.reduce((best, s, i) => (Math.abs(s - v) < Math.abs(steps[best] - v) ? i : best), 0);
 }
 
 function sizeVerdict(ours: number | null, expert: (number | null)[], primary: number | null, tol: (a: number, b: number) => boolean): Verdict {
@@ -45,14 +46,29 @@ export function verdicts(ours: OurSizes, variants: ExpertVariant[], batteryCatal
   const primary = variants.find((v) => v.is_primary) ?? variants[0];
   const pv = sizeVerdict(ours.pv, variants.map((v) => v.pv_kwp), primary?.pv_kwp ?? null, (a, b) => Math.abs(a - b) <= PV_TOL + 1e-9);
 
-  let battery = sizeVerdict(ours.battery, variants.map((v) => v.battery_kwh), primary?.battery_kwh ?? null, (a, b) => Math.abs(a - b) < 0.01);
-  if (battery.kind === "off" && ours.battery && primary?.battery_kwh && steps(batteryCatalogue, ours.battery, primary.battery_kwh) <= 1)
-    battery = V("close", "One size step away");
+  // Battery exactly like evaluate.py: "no battery" is step 0, a hit is within one step of the offered range.
+  const steps = variants.map((x) => stepIndex(x.battery_kwh, batteryCatalogue));
+  const lo = Math.min(...steps), hi = Math.max(...steps);
+  const sOurs = stepIndex(ours.battery, batteryCatalogue);
+  const sPrimary = stepIndex(primary?.battery_kwh ?? null, batteryCatalogue);
+  const battery =
+    sOurs === sPrimary
+      ? V("match", "Match")
+      : variants.length > 1 && sOurs >= lo && sOurs <= hi
+        ? V("range", "Inside offered range")
+        : sOurs >= lo - 1 && sOurs <= hi + 1
+          ? V("close", "One size step away")
+          : sOurs === 0
+            ? V("missing", "Expert offered one")
+            : hi === 0
+              ? V("extra", "Expert offered none")
+              : V("off", "Different from the expert");
 
-  const expertWb = variants.some((v) => v.has_wallbox);
+  // Wallbox and heat pump yes/no are scored against the expert's primary option (as in the metrics).
+  const expertWb = !!primary?.has_wallbox;
   const wallbox = ours.wallbox === expertWb ? V("match", "Match") : ours.wallbox ? V("extra", "Expert offered none") : V("missing", "Expert offered one");
 
-  const expertHp = variants.some((v) => (v.heatpump_kw ?? 0) > 0);
+  const expertHp = (primary?.heatpump_kw ?? 0) > 0;
   const oursHp = (ours.heatpump ?? 0) > 0;
   const heatpump = expertHp
     ? oursHp
