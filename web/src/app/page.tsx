@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { PlannerApp } from "@/components/planner/planner-app";
 import { DEFAULT_INSTALLER, engine } from "@/lib/engine";
-import { exampleDesigns, getStore, NEW_HOME, NEW_LOCKS } from "@/lib/store";
+import { getStore, NEW_HOME, NEW_LOCKS, seedIfEmpty } from "@/lib/store";
 
 export default function Page({ searchParams }: PageProps<"/">) {
   return (
@@ -16,20 +16,12 @@ async function Planner({ searchParams }: { searchParams: PageProps<"/">["searchP
   await connection();
   const { d } = await searchParams;
   const store = getStore();
+  await seedIfEmpty(store); // fresh database: example homes, once
   let designs = await store.listDesigns();
-  if (designs.length === 0) {
-    // Fresh database: add the example homes so the inbox and the demo are never empty.
-    for (const ex of exampleDesigns().reverse()) {
-      const { id: _id, ...row } = ex;
-      void _id;
-      await store.createDesign(row);
-    }
-    designs = await store.listDesigns();
-  }
   let initial = (typeof d === "string" && designs.find((x) => x.id === d)) || designs[0];
   if (!initial) {
     initial = await store.createDesign({
-      call_id: null, source: "planner", status: "draft", customer_name: "New home", address: null, explanation: null,
+      call_id: null, source: "planner", status: "draft", customer_name: "Example home", address: null, explanation: null,
       home: NEW_HOME, locks: NEW_LOCKS, design: null,
     });
     designs = [initial];
