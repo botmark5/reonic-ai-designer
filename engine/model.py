@@ -375,6 +375,12 @@ class DesignModel:
             out["has_pv"] = out.p_has_pv >= getattr(self, "pv_threshold_", 0.5)
             snapped = [self.snap_pv_to_catalogue(v, i)[0] for v, i in zip(out.pv_raw, homes.get("installer", [""] * len(homes)))]
             out["pv_kwp"] = np.where(out.has_pv, snapped, 0.0)
+            # roof capacity (Google Solar): never propose more than the roof fits, whole 450 W panels
+            cap = pd.to_numeric(homes.get("roof_max_kwp", pd.Series(np.nan, index=homes.index)), errors="coerce").to_numpy()
+            capped = np.floor(np.nan_to_num(cap, nan=np.inf) / MODULE_KWP + 1e-9) * MODULE_KWP
+            out["roof_capped"] = out.has_pv & (out.pv_kwp > capped + 1e-9)
+            out["pv_kwp"] = np.where(out.roof_capped, np.round(capped, 2), out.pv_kwp)
+            out["has_pv"] = out.has_pv & (out.pv_kwp > 0)
         # no new PV -> which kind of offer? (respecting locks: a locked battery means retrofit, etc.)
         if not self._on("use_offer_type"):
             return self._run_without_offer_type(homes, locks, out, X)
@@ -513,6 +519,9 @@ class DesignModel:
         lo, hi = snap_pv(min(lo, r.pv_raw)), snap_pv(max(hi, r.pv_raw))
         if r.has_pv:                                   # the range always contains the proposed (snapped) size
             lo, hi = min(lo, float(r.pv_kwp)), max(hi, float(r.pv_kwp))
+        if home.get("roof_max_kwp"):                   # ... and never goes above the roof capacity
+            hi = min(hi, float(home["roof_max_kwp"]))
+            lo = min(lo, hi)
         if "pv_kwp" in locks:
             pv_reasons, pv_conf = [f"Fixed by the planner: {r.pv_kwp:g} kWp." if r.pv_kwp else "Fixed by the planner: no PV."], 1.0
         elif r.has_pv:
@@ -523,6 +532,9 @@ class DesignModel:
             pv_reasons = [f"{r.p_has_pv:.0%} of similar homes got PV; size {r.pv_kwp:g} kWp "
                           f"({size_txt}), typical range {lo:g}-{hi:g} kWp."]
             pv_reasons += ["Main drivers: " + "; ".join(self._drivers(self.pv_, X, "kWp")) + "."]
+            if bool(r.get("roof_capped", False)):
+                pv_reasons.append(f"Capped at the roof capacity: {home['roof_max_kwp']:g} kWp fits on the roof "
+                                  f"(similar homes would get {snap_pv(float(r.pv_raw)):g} kWp).")
             if home.get("has_ev") and getattr(self, "ev_uplift_kwp_", 0) > 0:
                 pv_reasons.append(f"Electric car: +{self.ev_uplift_kwp_:.1f} kWp, what installers added for EV homes "
                                   "beyond the consumption effect.")
@@ -649,7 +661,8 @@ def home_to_row(home: dict, installer: str) -> dict:
                 ev_km_year=home.get("ev_km_year"), heating=home.get("heating"),
                 heating_demand_kwh=home.get("heating_demand_kwh"),
                 existing_pv=_existing_pv(home), existing_battery=bool(home.get("existing_battery_kwh")),
-                existing_wallbox=bool(home.get("existing_wallbox")), offer_date=home.get("offer_date"))
+                existing_wallbox=bool(home.get("existing_wallbox")), offer_date=home.get("offer_date"),
+                roof_max_kwp=home.get("roof_max_kwp"))
 
 
 TYPICAL_EXISTING_PV_KWP = 8.0     # assumed size when the planner only says "there is PV already"
@@ -670,8 +683,14 @@ def home_to_physics(home: dict) -> physics.Home:
                         heating_demand_kwh=home.get("heating_demand_kwh"),
                         existing_pv_kwp=home.get("existing_pv_kwp") or
                         (TYPICAL_EXISTING_PV_KWP if home.get("has_existing_pv") else None),
-                        price_eur_kwh=home.get("price_eur_kwh"), orientation_deg=home.get("orientation_deg"),
-                        tilt_deg=home.get("tilt_deg"))
+                        price_eur_kwh=home.get("price_eur_kwh"),
+                        orientation_deg=_first(home.get("roof_azimuth"), home.get("orientation_deg")),
+                        tilt_deg=_first(home.get("roof_pitch"), home.get("tilt_deg")),
+                        roof_max_kwp=home.get("roof_max_kwp"))
+
+
+def _first(*values):
+    return next((v for v in values if v is not None), None)
 
 
 def _fmt(feature: str, value) -> str:

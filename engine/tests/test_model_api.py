@@ -415,3 +415,24 @@ def test_ev_adds_wallbox_and_pv(trained):
     if model.wallbox_mode_ == "ev_rule":
         assert ev["wallbox"]["include"] is True
     assert model.wallbox_mode_ in ("model", "ev_rule", "never") and 0 <= model.ev_uplift_kwp_ <= 3
+
+
+# ---------------------------------------------------------------- roof inputs (#27)
+def test_roof_cap_and_orientation(client):
+    home = {"annual_kwh": 9000, "has_existing_pv": False}
+    free = client.post("/design", json={"installer": "instA", "home": home}).json()
+    kwp = free["design"]["pv"]["kwp"]
+    capped = client.post("/design", json={"installer": "instA", "home": {**home, "roof_max_kwp": 4.0}}).json()
+    assert capped["design"]["pv"]["kwp"] <= 4.0 and capped["design"]["pv"]["range"][1] <= 4.0
+    if kwp and kwp > 4.0:
+        assert any("roof capacity" in r for r in capped["design"]["pv"]["reasons"])
+    east = client.post("/design", json={"installer": "instA", "home": {**home, "roof_azimuth": 90, "roof_pitch": 30}}).json()
+    south = client.post("/design", json={"installer": "instA", "home": {**home, "roof_azimuth": 180, "roof_pitch": 30}}).json()
+    if east["design"]["pv"]["kwp"] == south["design"]["pv"]["kwp"]:
+        assert east["physics"]["yield_kwh"] < south["physics"]["yield_kwh"]
+    locked = client.post("/design", json={"installer": "instA", "home": {**home, "roof_max_kwp": 4.0},
+                                          "locks": {"pv_kwp": 8}}).json()
+    assert locked["design"]["pv"]["kwp"] == 8
+    assert any(f["code"] == "ROOF_CAPACITY_EXCEEDED" for f in locked["physics"]["flags"])
+    bad = client.post("/design", json={"installer": "instA", "home": {**home, "roof_azimuth": 400}})
+    assert bad.status_code == 422
