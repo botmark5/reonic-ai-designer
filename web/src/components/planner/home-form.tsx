@@ -71,6 +71,23 @@ export function HomeForm({ home, onChange }: { home: Home; onChange: (patch: Par
       <h2 id={`${id}-t`} className="text-label uppercase text-ink-muted">
         The home
       </h2>
+      <div className="flex flex-col gap-1">
+        <span className="text-label text-ink-muted">Solar already on the roof?</span>
+        <Segmented
+          label="Solar already on the roof?"
+          value={home.has_existing_pv == null ? "unknown" : home.has_existing_pv ? "yes" : "no"}
+          onChange={(v) => onChange({ has_existing_pv: v === "unknown" ? null : v === "yes" })}
+          options={[
+            { value: "no", label: "No" },
+            { value: "yes", label: "Yes" },
+            { value: "unknown", label: "Not asked" },
+          ]}
+          className="self-start"
+        />
+        {home.has_existing_pv == null && (
+          <p className="m-0 text-[12px] leading-4 text-ink-muted">Ask this first: it decides new system or battery add-on.</p>
+        )}
+      </div>
       <NumberField
         label="Annual consumption (kWh)"
         value={home.annual_kwh}

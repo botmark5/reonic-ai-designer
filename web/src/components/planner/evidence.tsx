@@ -13,6 +13,7 @@ const title = "text-label uppercase text-ink-muted";
 export function WhyThisDesign({ response }: { response: DesignResponse | null }) {
   const [text, setText] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "streaming" | "done" | "error">("idle");
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     if (!response) return;
@@ -61,10 +62,28 @@ export function WhyThisDesign({ response }: { response: DesignResponse | null })
       ) : state === "error" && !text ? (
         <p className="m-0 text-body-sm text-ink-muted">The explanation is not available right now. Every reason is still on the cards.</p>
       ) : (
-        <div className="text-[14px] leading-[21px] text-ink-body" aria-live="polite">
-          <MiniMarkdown text={text} />
-          {state === "streaming" && <span className="mt-1 inline-block h-3.5 w-1.5 animate-pulse bg-ai-orange motion-reduce:animate-none" aria-hidden />}
-        </div>
+        <>
+          <div
+            className={`relative text-[14px] leading-[21px] text-ink-body ${expanded ? "" : "max-h-[220px] overflow-hidden"}`}
+            aria-live="polite"
+          >
+            <MiniMarkdown text={text} />
+            {state === "streaming" && <span className="mt-1 inline-block h-3.5 w-1.5 animate-pulse bg-ai-orange motion-reduce:animate-none" aria-hidden />}
+            {!expanded && text.length > 600 && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-surface-1 to-transparent" aria-hidden />
+            )}
+          </div>
+          {text.length > 600 && (
+            <button
+              type="button"
+              onClick={() => setExpanded((x) => !x)}
+              aria-expanded={expanded}
+              className="cursor-pointer self-start rounded-pill text-[13px] font-medium text-ink-body underline-offset-4 hover:text-ink hover:underline"
+            >
+              {expanded ? "Show less" : "Show all"}
+            </button>
+          )}
+        </>
       )}
     </section>
   );

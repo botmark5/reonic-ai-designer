@@ -8,6 +8,7 @@ import { ServedBadge } from "@/components/ui/served-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { COMPONENTS } from "@/lib/diff";
 import type { DesignRow } from "@/lib/supabase";
+import { OFFER_TYPE_LABEL, type OfferType } from "@/lib/types";
 import { HomeForm } from "./home-form";
 import { Inbox } from "./inbox";
 import { PhysicsTiles, SimilarHomes, WhyThisDesign } from "./evidence";
@@ -57,6 +58,7 @@ function Workspace({
   const { s } = p;
   const r = s.response;
   const changed = new Set(s.change?.diff.changed ?? []);
+  const offerType = r?.facts_for_explanation?.offer_type as OfferType | undefined;
   const lockedCount = Object.values(s.locks).filter((v) => v !== null && v !== undefined).length;
 
   async function send() {
@@ -84,6 +86,7 @@ function Workspace({
             </div>
             <h1 className="m-0 truncate text-h1">{row.customer_name ?? "Unnamed home"}</h1>
             <p className="m-0 text-body-sm text-ink-muted">
+              {offerType && OFFER_TYPE_LABEL[offerType] ? <span className="font-medium text-ink-body">{OFFER_TYPE_LABEL[offerType]} · </span> : null}
               Proposed from this installer&apos;s past offers
               {r?.model_version && r.served?.source !== "offline" ? ` · model ${r.model_version.split(" ")[0]}` : ""}
             </p>
