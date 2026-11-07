@@ -30,7 +30,8 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [x] /validate
 - [ ] FastAPI deployed, matches docs/api.md
   - engine/api.py runs locally and matches api.md (+ optional additions, see engine/README.md); not deployed yet
-  - Sat 19:50: production reaches it via the Cloudflare tunnel (/api/engine/health ok, 1,563 homes); fixed Railway URL = issue #28
+  - Sun 00:15 (orchestrator): production uses the fixed Railway URL (#28 closed); live /eval matches RESULTS.md 'shipped' column
+    (battery mix #39); EV → wallbox + PV bump and roof cap verified on the live engine. /eval lacks P10–P90 coverage → issue #43
 
 ## Phase 3 — Product (Mark)
 - [x] Design system + mockups (Claude chat) → tokens into web/
@@ -39,8 +40,8 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [x] Reality-check screen (ours vs expert + /eval charts) (PR #23: held-out demo cases + random from locked test set, verdicts with engine tolerances, /eval tiles, A→B transfer)
 - [x] Supabase: saved_designs, overrides, homeowner share link (PR #12, #21; calls private: PR #20 migration 20261107_calls_private.sql)
 - [x] Live on the real engine, deployed
-  - Sat 19:50: prod /, /live, /reality, /offer/demo 200; design served by the engine (~0.4 s). Open: passcode gate on once
-    PLANNER_PASSCODE is set + redeployed; engine bug 'typed 4,500 kWh → no PV' (Cala fixing)
+  - Sun 00:15: prod on Railway engine (~90 ms health), passcode gate closed (planner API 401 without login), typed 4,500 kWh →
+    9.0–9.45 kWp + 9.2 kWh. Open: ElevenLabs env vars + redeploy, then HQ test call
 
 ## Phase 4 — Stretch
 - [x] Homeowner view (variants only, savings/payback/autarky in plain words) (PR #21: /offer/[token], allowed variants checked server-side, House3D, Listen to your offer)
@@ -53,8 +54,10 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 
 ## Phase 5 — Pitch and submission
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
+  - metric charts done (docs/deck/charts.py, PR #40/#41) · deck: HQ chat in Claude Slides · pitch-facts, demo runbook, README: e-spare (docs/pitch)
 
 ## Decisions
+- Sun 00:05 · Vercel stays on Hobby: PRs touching web/ are merged by botmark5; engine-only merges by Cala are skipped on Vercel (#35)
 - Sat 23:45 · Web: Google Solar roof (max kWp, azimuth, pitch) fills home.roof_* once per design with an address; planner can edit or remove; /reality headline = new full systems when /eval reports that slice, add-ons separate
 - Sat 20:30 · Web: engine called only from server routes (key never in the browser); offline estimate after 4 s (design) or on any engine error, 15 s cooldown, "Offline estimate" badge
 - Sat 20:30 · Web: refine agent = claude-sonnet-5-5 tool loop; a lock is accepted only at a value the planner wrote or the engine offered (alternatives, range ends, heat pump option); all sizes from run_design
