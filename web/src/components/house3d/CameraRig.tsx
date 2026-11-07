@@ -29,13 +29,17 @@ const { DOLLY, NONE } = CameraControlsImpl.ACTION;
  * (trackpad pinch sends ctrl+wheel). camera-controls sets touch-action: none on the element it connects to
  * (drei connects it in its own, earlier, child effect).
  */
-function letPageScroll(c: CameraControlsImpl): () => void {
-  const el = (c as unknown as { _domElement?: HTMLElement })._domElement;
-  if (!el) return () => {};
-  el.style.touchAction = "pan-y";
+function letPageScroll(c: CameraControlsImpl, done: { el: HTMLElement | null; undo: () => void }) {
+  const el = (c as unknown as { _domElement?: HTMLElement })._domElement ?? null;
+  if (el && el.style.touchAction !== "pan-y") el.style.touchAction = "pan-y";
+  if (el === done.el) return;
+  done.undo();
+  done.el = el;
+  done.undo = () => {};
+  if (!el) return;
   const onWheel = (e: WheelEvent) => { c.mouseButtons.wheel = e.ctrlKey || e.metaKey ? DOLLY : NONE; };
   el.addEventListener("wheel", onWheel, { capture: true, passive: true });
-  return () => el.removeEventListener("wheel", onWheel, { capture: true });
+  done.undo = () => el.removeEventListener("wheel", onWheel, { capture: true });
 }
 
 export function CameraRig({ request, rotationY, reduced }: { request: PresetRequest; rotationY: number; reduced: boolean }) {
@@ -44,6 +48,7 @@ export function CameraRig({ request, rotationY, reduced }: { request: PresetRequ
   const clock = useRef(0);
   const first = useRef(true);
   const reducedRef = useRef(reduced);
+  const scrollSetup = useRef<{ el: HTMLElement | null; undo: () => void }>({ el: null, undo: () => {} });
 
   useEffect(() => { reducedRef.current = reduced; }, [reduced]);
 
@@ -64,9 +69,9 @@ export function CameraRig({ request, rotationY, reduced }: { request: PresetRequ
     const mark = () => { lastInput.current = clock.current; };
     c.addEventListener("controlstart", mark);
     c.addEventListener("control", mark);
-    const undo = letPageScroll(c);
+    const scroll = scrollSetup.current;
     return () => {
-      undo();
+      scroll.undo();
       c.removeEventListener("controlstart", mark);
       c.removeEventListener("control", mark);
     };
@@ -75,7 +80,9 @@ export function CameraRig({ request, rotationY, reduced }: { request: PresetRequ
   useFrame((_, dt) => {
     clock.current += dt;
     const c = ref.current;
-    if (!c || reduced) return;
+    if (!c) return;
+    letPageScroll(c, scrollSetup.current); // cheap; camera-controls (re)connects after our effects
+    if (reduced) return;
     if (clock.current - lastInput.current > IDLE_AFTER) void c.rotate(dt * IDLE_SPEED, 0, false);
   });
 

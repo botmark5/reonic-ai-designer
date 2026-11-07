@@ -31,7 +31,7 @@ render from a server page. Pass a new `design` object after a refine and only th
 - Camera: orbit with limits, slow idle turn after 4 s, presets Overview / Roof / Garage. Hover or tap a part, or use
   the legend buttons (keyboard too), to see its size and the engine's first reason.
 - `prefers-reduced-motion`: no idle turn, solid flow lines, parts appear without animation.
-- Still image `/models/house-fallback.png` when WebGL is missing, data saver is on, the device has ≤ 2 cores, or
+- Still image (`/models/house-fallback.png`, `-dark.png`: house and panels only, no other equipment) when WebGL is missing, data saver is on, the device has ≤ 2 cores, or
   `static` is set. It is also shown until the first 3D frame is drawn. The legend still lists the real design.
 - DPR capped at 2, drops to 1 when the frame rate falls.
 
@@ -41,5 +41,5 @@ render from a server page. Pass a new `design` object after a refine and only th
 `equipmentGeometry.ts` (procedural three.js models; Blender was not available), `Scene.tsx`, `Equipment.tsx`,
 `EnergyFlow.tsx`, `CameraRig.tsx`, `Tooltip.tsx`, `House3D.tsx`. Tests: `npm test`.
 
-Regenerate the still image: render the component in light theme with reduced motion, click "Save image" in planner
-mode, scale to 1600×1000 and replace `web/public/models/house-fallback.png`.
+Regenerate the still images: render the component (light, then dark) with reduced motion and with equipment and
+flow lines temporarily hidden, screenshot the canvas area at 1600×1000 and replace the two PNGs in `web/public/models/`.
