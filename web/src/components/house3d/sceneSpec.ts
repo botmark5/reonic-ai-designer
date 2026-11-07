@@ -119,7 +119,7 @@ export function buildSceneSpec(
     { id: "wallbox-car", from: "wallbox", to: "car", color: "wallbox", on: wbOn },
     { id: "house-heatpump", from: "house", to: "heatpump", color: "heatpump", on: hpOn },
   ];
-  const flows = all.filter((f) => f.on).map(({ on: _on, ...f }) => f);
+  const flows: Flow[] = all.filter((f) => f.on).map(({ id, from, to, color }) => ({ id, from, to, color }));
 
   return { layout, components, flows, roof, summary: summarize(designPanels, components) };
 }

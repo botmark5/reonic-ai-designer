@@ -18,7 +18,7 @@ export interface RoofPlane {
 }
 
 export interface PanelSlot {
-  /** Stable per position: `${plane}-r${row}c${col}`. */
+  /** Stable per position (`${plane}-r${row}u${mm}`): a panel that stays put keeps its id when the system grows. */
   id: string;
   plane: PlaneId;
   /** Panel centre, metres. */
@@ -63,7 +63,7 @@ export function layoutPanels(n: number, planes: RoofPlane[]): Layout {
       const v = plane.margin.eave + PANEL.h / 2 + row * (PANEL.h + PANEL.gap);
       for (let col = 0; col < inRow; col++, i++) {
         const u = (col - (inRow - 1) / 2) * (PANEL.w + PANEL.gap);
-        slots.push({ id: `${plane.id}-r${row}c${col}`, plane: plane.id, u, v });
+        slots.push({ id: `${plane.id}-r${row}u${Math.round(u * 1000)}`, plane: plane.id, u, v });
       }
     }
     left -= k;

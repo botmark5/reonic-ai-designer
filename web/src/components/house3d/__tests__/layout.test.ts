@@ -80,6 +80,17 @@ describe("layoutPanels", () => {
     for (const id of a) expect(b).toContain(id);
   });
 
+  it("a panel keeps its id only if its position is unchanged", () => {
+    const before = layoutPanels(13, [main]).slots; // last row: 3 panels, centred
+    const after = layoutPanels(14, [main]).slots; // last row: 4 panels, shifted half a pitch
+    const pos = new Map(after.map((s) => [s.id, s]));
+    for (const s of before) {
+      const same = pos.get(s.id);
+      if (same) expect([same.u, same.v]).toEqual([s.u, s.v]);
+    }
+    expect(before.filter((s) => pos.has(s.id))).toHaveLength(10);
+  });
+
   it("returns nothing for zero panels", () => {
     expect(layoutPanels(0, [main])).toEqual({ slots: [], requested: 0, placed: 0, overflow: 0 });
   });

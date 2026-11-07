@@ -195,7 +195,7 @@ export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
   const [mainPlane, garagePlane] = roofPlanes(pitchDeg);
 
   // Ground, lawn and paving
-  const ground = mesh(new THREE.CircleGeometry(34, 48), m.ground, false, true);
+  const ground = mesh(new THREE.CircleGeometry(140, 64), m.ground, false, true);
   ground.rotation.x = -Math.PI / 2;
   g.add(ground);
   const drive = mesh(new THREE.BoxGeometry(HOUSE.garage.width + 0.6, 0.04, 9), m.paving, false, true);
@@ -262,8 +262,8 @@ export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
   const gs = new THREE.Shape();
   gs.moveTo(-gBackZ, 0); // shape x = -world z
   gs.lineTo(-FRONT_Z, 0);
-  gs.lineTo(-FRONT_Z, G.height);
-  gs.lineTo(-gBackZ, G.height + G.depth * gTan);
+  gs.lineTo(-FRONT_Z, G.height - 0.2); // stays under the roof slab (no z-fighting)
+  gs.lineTo(-gBackZ, G.height - 0.2 + G.depth * gTan);
   gs.closePath();
   const gGeo = new THREE.ExtrudeGeometry(gs, { depth: G.width, bevelEnabled: false });
   gGeo.rotateY(Math.PI / 2);
