@@ -33,7 +33,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from engine import llm, physics
-from engine.evaluate import ARTIFACTS, build_eval_table, load_inputs
+from engine.evaluate import ARTIFACTS, build_eval_table, inputs_from_labels, load_inputs
 from engine.interim_labels import get_labels
 from engine.model import MODEL_PATH, DesignModel, home_to_physics
 
@@ -114,7 +114,8 @@ def get_model() -> DesignModel:
         return DesignModel.load(MODEL_PATH)
     log.warning("no trained model at %s: training now (run `python -m engine.train` for metrics)", MODEL_PATH)
     labels, source = get_labels()
-    model = DesignModel().fit(build_eval_table(labels, load_inputs()))
+    inputs = inputs_from_labels(labels)
+    model = DesignModel().fit(build_eval_table(labels, inputs if inputs is not None else load_inputs()))
     model.labels_source_ = source
     model.save(MODEL_PATH)
     return model
@@ -124,7 +125,8 @@ def get_model() -> DesignModel:
 def get_projects() -> tuple[pd.DataFrame, pd.DataFrame]:
     """(inputs per project, all label rows) for /project/{id}; needs data/raw."""
     labels, _ = get_labels()
-    return load_inputs(), labels
+    inputs = inputs_from_labels(labels)
+    return (inputs if inputs is not None else load_inputs()), labels
 
 
 def _py(obj):

@@ -252,3 +252,49 @@ def test_split_groups_customers(synthetic):
     train, test = E.grouped_split(t, seed=3)
     assert not set(train.customer_contact_id) & set(test.customer_contact_id)
     assert not set(train.project_id) & set(test.project_id)
+
+
+# ---------------------------------------------------------------- Mark's review: cleaned inputs, ratio baseline, lock
+def _v11_labels(synthetic):
+    labels, inputs = synthetic
+    lab = labels.merge(inputs[["project_id", "annual_kwh", "has_ev", "price_eur_kwh", "load_profile"]], on="project_id")
+    return lab.assign(annual_kwh_raw=lab.annual_kwh, demand_is_default=lab.annual_kwh == 4500,
+                      demand_is_invalid=False, consumption_known=lab.annual_kwh != 4500, heating_type="Unknown",
+                      has_existing_wallbox=False, customer_contact_id=lab.project_id, ev_km_year=np.nan,
+                      heating_demand_kwh=np.nan, has_solar=False, existing_pv_kwp=np.nan, existing_battery_kwh=np.nan,
+                      offer_created_at="2025-06-01", offer_type="new_system")
+
+
+def test_inputs_from_labels(synthetic):
+    lab = _v11_labels(synthetic)
+    inp = E.inputs_from_labels(lab)
+    assert len(inp) == lab.project_id.nunique() and inp.heating.isna().all()       # "Unknown" -> unknown
+    assert np.isnan(inp.existing_pv).all()                                         # not recorded -> unknown
+    assert (inp.annual_kwh == 4500).any() and inp.demand_is_default.any()          # default kept, with its flag
+    assert E.inputs_from_labels(synthetic[0]) is None                              # interim labels: no home columns
+
+
+def test_ratio_baseline_learns_kwp_per_mwh(synthetic):
+    t = E.build_eval_table(*synthetic)
+    b = E.RatioBaseline().fit(t)
+    assert b.ratio_global_ == pytest.approx(1000 / 450, rel=0.05)                 # fixture: kWp = kWh / 450
+    pred = b.predict(t)
+    m = E.compute_metrics(t, pred, E.load_catalogue(synthetic[0], path=None))
+    assert m["pv_kwp_mae_when_both_pv"] < 0.5
+
+
+def test_locked_split_is_reused(synthetic, tmp_path):
+    t = E.build_eval_table(*synthetic)
+    path = tmp_path / "test_ids.json"
+    _, test1 = E.locked_split(t, path, seed=1)
+    _, test2 = E.locked_split(t, path, seed=99)                                    # seed ignored once locked
+    assert path.exists() and list(test1.project_id) == list(test2.project_id)
+
+
+def test_segments_and_catalogue_counts(synthetic, tmp_path):
+    t = E.build_eval_table(*synthetic).assign(consumption_known=True)
+    seg = E.segments(t)
+    assert {"full_designs", "known_consumption", "full_designs_known_consumption"} <= set(seg)
+    p = tmp_path / "catalogue.json"
+    p.write_text(json.dumps({"instA": {"battery_kwh": {"5": 10, "10": 4, "12.4": 1}}}))
+    assert E.load_catalogue(synthetic[0], p) == {"instA": [5.0, 10.0]}              # sold < 3 times: not a step
