@@ -38,6 +38,8 @@ export interface SceneSpec {
   components: Record<CompKey, CompSpec>;
   flows: Flow[];
   roof: ResolvedRoof;
+  /** The first `existingPanels` slots of the layout are panels already on the roof (battery retrofit, add-ons). */
+  existingPanels: number;
   /** One sentence for screen readers and the static image's alt text. */
   summary: string;
 }
@@ -51,9 +53,13 @@ const finite = (x: number | null | undefined): x is number => x != null && Numbe
 const positive = (x: number | null | undefined): x is number => finite(x) && x > 0;
 const num = (x: number) => (Number.isInteger(x) ? String(x) : x.toFixed(1));
 
+/**
+ * Roof direction and pitch: the planner's roof fields (home.roof_*, filled from Google Solar and editable) first, then
+ * the `roof` prop, then the older orientation/tilt fields, then 35° south.
+ */
 export function resolveRoof(home: Home, roof?: RoofInput): ResolvedRoof {
-  const pitch = [roof?.pitchDeg, home.tilt_deg].find(finite) ?? DEFAULT_PITCH;
-  const azimuth = [roof?.azimuthDeg, home.orientation_deg].find(finite) ?? DEFAULT_AZIMUTH;
+  const pitch = [home.roof_pitch, roof?.pitchDeg, home.tilt_deg].find(finite) ?? DEFAULT_PITCH;
+  const azimuth = [home.roof_azimuth, roof?.azimuthDeg, home.orientation_deg].find(finite) ?? DEFAULT_AZIMUTH;
   return {
     pitchDeg: Math.min(PITCH_RANGE[1], Math.max(PITCH_RANGE[0], pitch)),
     azimuthDeg: ((azimuth % 360) + 360) % 360,
@@ -73,8 +79,23 @@ export function buildSceneSpec(
 
   const designPanels = pv.include ? panelCount(pv.kwp) : 0;
   const pvOn = designPanels > 0; // < 0.225 kWp rounds to no panel at all
-  const layout = layoutPanels(panelCount(pvOn ? pv.kwp : 0, roofInput?.maxPanels), planesFor(roof.pitchDeg));
-  const missing = designPanels - layout.placed;
+  const existingKwp = home.has_existing_pv !== false && positive(home.existing_pv_kwp) ? home.existing_pv_kwp : 0;
+  const existingWanted = panelCount(existingKwp);
+  // the roof cap the engine used (planner field) wins over the prop; it covers old and new panels together
+  const cap = home.roof_max_kwp;
+  const maxPanels = finite(cap) && cap >= 0 ? Math.floor(cap / PANEL.kwp + 1e-6) : roofInput?.maxPanels;
+  const layout = layoutPanels(panelCount((existingWanted + designPanels) * PANEL.kwp, maxPanels), planesFor(roof.pitchDeg));
+  const existingPanels = Math.min(existingWanted, layout.placed);
+  const missing = designPanels - (layout.placed - existingPanels);
+  const solarOn = pvOn || existingWanted > 0;
+  const panelsOn = layout.placed > 0;
+  const pvSize = (): string | null => {
+    if (homeowner) return `${designPanels + existingWanted} panels`;
+    const old = `${num(existingKwp)} kWp existing`;
+    if (!pvOn) return old; // the engine sends kwp: null when it adds no PV
+    const fresh = `${pv.kwp!.toFixed(1)} kWp${existingWanted ? " new" : ""} (${designPanels} × ${PANEL.kwp * 1000} W)`;
+    return existingWanted ? `${fresh} + ${old}` : fresh;
+  };
 
   const batOn = battery.include && positive(battery.kwh);
   const wbOn = wallbox.include;
@@ -86,15 +107,15 @@ export function buildSceneSpec(
 
   const components: Record<CompKey, CompSpec> = {
     pv: comp(
-      "pv", pvOn,
-      homeowner ? "Solar panels" : "PV",
-      pvOn ? (homeowner ? `${designPanels} panels` : `${pv.kwp!.toFixed(1)} kWp (${designPanels} × ${PANEL.kwp * 1000} W)`) : null,
-      first(pv.reasons),
-      missing > 0 ? `${missing} of ${designPanels} panels don't fit on this roof` : null,
+      "pv", solarOn,
+      pvOn ? (homeowner ? "Solar panels" : "PV") : homeowner ? "Your solar panels" : "Existing PV",
+      solarOn ? pvSize() : null,
+      pvOn ? first(pv.reasons) : null,
+      pvOn && missing > 0 ? `${missing} of ${designPanels} panels don't fit on this roof` : null,
     ),
     battery: comp("battery", batOn, "Battery", batOn ? `${num(battery.kwh!)} kWh` : null, first(battery.reasons)),
     inverter: comp(
-      "inverter", pvOn, "Inverter", null,
+      "inverter", pvOn || (existingWanted > 0 && panelsOn), "Inverter", null,
       homeowner ? "Turns the panels' power into power for your home." : "Converts PV DC to AC for the house and battery.",
     ),
     wallbox: comp(
@@ -111,17 +132,17 @@ export function buildSceneSpec(
   };
 
   const all: Array<Flow & { on: boolean }> = [
-    { id: "sun-panels", from: "sun", to: "panels", color: "pv", on: layout.placed > 0 },
-    { id: "panels-inverter", from: "panels", to: "inverter", color: "pv", on: layout.placed > 0 },
-    { id: "inverter-battery", from: "inverter", to: "battery", color: "battery", on: pvOn && batOn },
-    { id: "inverter-house", from: "inverter", to: "house", color: "pv", on: pvOn },
+    { id: "sun-panels", from: "sun", to: "panels", color: "pv", on: panelsOn },
+    { id: "panels-inverter", from: "panels", to: "inverter", color: "pv", on: panelsOn },
+    { id: "inverter-battery", from: "inverter", to: "battery", color: "battery", on: (pvOn || panelsOn) && batOn },
+    { id: "inverter-house", from: "inverter", to: "house", color: "pv", on: pvOn || panelsOn },
     { id: "house-wallbox", from: "house", to: "wallbox", color: "wallbox", on: wbOn },
     { id: "wallbox-car", from: "wallbox", to: "car", color: "wallbox", on: wbOn },
     { id: "house-heatpump", from: "house", to: "heatpump", color: "heatpump", on: hpOn },
   ];
   const flows: Flow[] = all.filter((f) => f.on).map(({ id, from, to, color }) => ({ id, from, to, color }));
 
-  return { layout, components, flows, roof, summary: summarize(designPanels, components) };
+  return { layout, components, flows, roof, existingPanels, summary: summarize(pvOn ? layout.placed : existingPanels, components) };
 }
 
 function summarize(panels: number, c: Record<CompKey, CompSpec>): string {

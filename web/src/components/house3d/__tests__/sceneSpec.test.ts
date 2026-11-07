@@ -102,3 +102,52 @@ describe("resolveRoof", () => {
     expect(resolveRoof(demoHome, { pitchDeg: 70 }).pitchDeg).toBe(50);
   });
 });
+
+describe("planner roof fields (home.roof_*)", () => {
+  it("the planner's direction and pitch win over Google Solar and the older fields", () => {
+    const h = { ...demoHome, orientation_deg: 200, tilt_deg: 30, roof_azimuth: 270, roof_pitch: 25 };
+    expect(resolveRoof(h, { azimuthDeg: 90, pitchDeg: 40 })).toEqual({ pitchDeg: 25, azimuthDeg: 270 });
+    // removed by the planner (null) falls back to Google, then the older fields
+    expect(resolveRoof({ ...h, roof_azimuth: null, roof_pitch: null }, { azimuthDeg: 90 })).toEqual({ pitchDeg: 30, azimuthDeg: 90 });
+  });
+
+  it("roof_max_kwp caps the panels drawn (5.85 kWp fits 13 panels)", () => {
+    const d = withDesign((x) => { x.design.pv.kwp = 9; });
+    const s = buildSceneSpec(d, { ...demoHome, roof_max_kwp: 5.85 }, "planner", planesFor);
+    expect(s.layout.placed).toBe(13);
+    expect(s.components.pv.note).toBe("7 of 20 panels don't fit on this roof");
+  });
+});
+
+describe("existing solar (battery retrofit)", () => {
+  const retrofit = withDesign((x) => {
+    x.design.pv = { ...x.design.pv, include: false, kwp: null }; // what the engine sends for a battery retrofit
+    x.design.battery = { ...x.design.battery, include: true, kwh: 10 };
+  });
+  const existing = { ...demoHome, has_existing_pv: true, existing_pv_kwp: 6 };
+
+  it("draws the panels already on the roof and runs the solar flows into the new battery", () => {
+    const s = buildSceneSpec(retrofit, existing, "planner", planesFor);
+    expect(s.layout.placed).toBe(13); // 6 kWp ≈ 13 × 450 W
+    expect(s.existingPanels).toBe(13);
+    expect(s.components.pv).toMatchObject({ visible: true, title: "Existing PV", size: "6 kWp existing", note: null });
+    expect(s.components.inverter.visible).toBe(true);
+    expect(s.flows.map((f) => f.id)).toEqual(expect.arrayContaining(["sun-panels", "panels-inverter", "inverter-battery", "inverter-house"]));
+    expect(buildSceneSpec(retrofit, existing, "homeowner", planesFor).components.pv.title).toBe("Your solar panels");
+    expect(s.summary).toBe("House with 13 solar panels, a 10 kWh battery and a car charger.");
+  });
+
+  it("new panels go next to the existing ones and both show in the size", () => {
+    const d = withDesign((x) => { x.design.pv.kwp = 4.5; });
+    const s = buildSceneSpec(d, { ...existing, existing_pv_kwp: 4.5 }, "planner", planesFor);
+    expect(s.layout.placed).toBe(20);
+    expect(s.existingPanels).toBe(10);
+    expect(s.components.pv.size).toBe("4.5 kWp new (10 × 450 W) + 4.5 kWp existing");
+  });
+
+  it("ignores existing_pv_kwp when the planner said there is no solar on the roof", () => {
+    const s = buildSceneSpec(retrofit, { ...existing, has_existing_pv: false }, "planner", planesFor);
+    expect(s.layout.placed).toBe(0);
+    expect(s.components.pv.visible).toBe(false);
+  });
+});

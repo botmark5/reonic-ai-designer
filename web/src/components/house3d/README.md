@@ -20,7 +20,7 @@ import { House3D, roofFromSolarResult } from "@/components/house3d";
 | Prop | Type | Notes |
 |---|---|---|
 | `design` | `DesignResponse` (`@/lib/types`) | What the engine returned. Excluded/null components are hidden. |
-| `home` | `Home` | `tilt_deg` / `orientation_deg` set the roof (default 35°, 180° = south); `annual_kwh`, `ev_km_year` drive the modelled day. |
+| `home` | `Home` | Roof: `roof_azimuth` / `roof_pitch` (the planner's fields) win, then the `roof` prop, then `orientation_deg` / `tilt_deg`, then 35° south; `roof_max_kwp` caps the panels drawn. `existing_pv_kwp` (unless `has_existing_pv` is false) puts the panels already there on the roof, so a battery retrofit shows its solar. `annual_kwh`, `ev_km_year` drive the modelled day. |
 | `mode` | `"planner" \| "homeowner"` | Labels and tooltips. |
 | `roof?` | `{ pitchDeg?, azimuthDeg?, maxPanels?, latitude?, longitude? }` | Overrides the home's roof. `roofFromSolarResult(result)` builds it from `/api/solar` (undefined when Google has nothing). |
 | `static?` | `boolean` | Always show the still image (slides, print). |
@@ -55,6 +55,10 @@ pages. Pass a new `design` object after a refine and only what changed animates.
 `spring.ts`, `solarRoof.ts`, `houseGeometry.ts` / `equipmentGeometry.ts` (procedural models; Blender was not
 available), `Scene.tsx`, `AmbientOcclusion.tsx`, `Equipment.tsx`, `EnergyFlow.tsx`, `CameraRig.tsx`, `Tooltip.tsx`,
 `House3D.tsx`. Tests: `npm test`.
+
+Deck stills and the day recording (live engine designs, no mock): `node scripts/house/export-stills.mjs` from `web/`
+(header of that file lists the options; output goes to the git-ignored `docs/deck/out/3d/`, `--upload` puts it on the
+`data-v1` release). Portrait frames (narrower than 5:4) widen the field of view so the model keeps its width.
 
 Regenerate the still images: render the component (light, then dark) with reduced motion and with equipment and flow
 lines temporarily hidden, screenshot the model area at 1600×1000 and replace the two PNGs in `web/public/models/`.
