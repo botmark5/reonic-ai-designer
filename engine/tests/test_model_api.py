@@ -88,7 +88,8 @@ def trained():
 def test_predict_interface(trained):
     model, table = trained
     pred = model.predict(table.head(20))
-    assert list(pred.columns) == DESIGN_COLUMNS + ["offer_type"] and len(pred) == 20
+    assert list(pred.columns) == DESIGN_COLUMNS + ["offer_type", "pv_lo", "pv_hi"] and len(pred) == 20
+    assert (pred.pv_lo <= pred.pv_kwp + 1e-9).all() and (pred.pv_hi >= pred.pv_kwp - 1e-9).all()
     assert ((pred.pv_kwp == 0) | pred.has_pv).all()
     assert model.predict(table.head(0)).empty
 
