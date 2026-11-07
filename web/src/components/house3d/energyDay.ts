@@ -1,7 +1,7 @@
 /**
  * A modelled sunny day for the time-of-day story. Pure: 15-minute steps, energy-balanced.
  * PV from a clear-sky model on the real roof plane, an H0-like household profile scaled to the annual demand,
- * EV surplus charging, a small heat-pump load (hot water in May), a battery with forecast-based charging and SOC
+ * EV surplus charging (paced over the sunny hours), a small heat-pump load (hot water in May), a battery with forecast-based charging and SOC
  * limits, then the grid.
  * Illustrative, not a forecast: the UI labels it "Sunny day in May, modelled".
  */
@@ -53,6 +53,9 @@ const DT = 0.25;
 const SOC_MIN = 0.05;
 const SOC_START = 0.25; // at midnight
 const D = Math.PI / 180;
+const CAR_MIN = 1.4; // kW, smallest single-phase charging current
+const CAR_MAX = 3.7; // kW, single-phase surplus charging
+const CAR_DONE_BY = 16; // h
 
 /** Share of daily household energy per hour (H0-like: night low, morning and evening peaks). */
 const HOURLY = [
@@ -111,8 +114,10 @@ export function simulateDay(input: DayInput): Day {
     const pvHome = Math.min(pv, home);
     let surplus = pv - pvHome;
     let car = 0;
-    if (carMax && carNeed > 1e-9 && surplus >= 2) {
-      car = Math.min(Math.max(1.4, surplus * 0.5), carMax, carNeed / DT);
+    if (carMax && carNeed > 1e-9 && surplus >= CAR_MIN) {
+      // PV-surplus charging (single phase, 1.4–3.7 kW), paced to finish by mid-afternoon
+      const paced = carNeed / Math.max(0.5, CAR_DONE_BY - t);
+      car = Math.min(Math.max(CAR_MIN, paced), Math.min(CAR_MAX, carMax), surplus, carNeed / DT);
       surplus -= car;
     }
     const room = cap ? ((1 - soc) * cap) / DT : 0;
@@ -184,4 +189,24 @@ export function activeFlows(s: DayStep): LiveFlow[] {
     { id: "house-heatpump", path: ["house", "heatpump"], kw: s.heatpump },
   ];
   return all.filter((f) => f.kw >= VISIBLE_KW).sort((a, b) => b.kw - a.kw);
+}
+
+/** What the day simulation needs, from the design as drawn (panels actually on the roof, visible components). */
+export function dayInputFrom(
+  spec: { layout: { placed: number }; components: Record<"pv" | "battery" | "wallbox" | "heatpump", { visible: boolean }>; roof: { pitchDeg: number; azimuthDeg: number } },
+  design: { battery: { kwh: number | null }; wallbox: { kw: number | null }; heatpump: { kw: number | null } },
+  home: { annual_kwh: number; ev_km_year: number | null },
+  place?: Place,
+): DayInput {
+  const c = spec.components;
+  return {
+    kwp: c.pv.visible ? spec.layout.placed * 0.45 : 0,
+    batteryKwh: c.battery.visible ? design.battery.kwh : null,
+    wallboxKw: c.wallbox.visible ? (design.wallbox.kw ?? 11) : null,
+    heatpumpKw: c.heatpump.visible ? design.heatpump.kw : null,
+    annualKwh: Math.max(0, home.annual_kwh || 0),
+    evKwhPerDay: c.wallbox.visible ? ((home.ev_km_year ?? 12000) / 365) * 0.18 : 0,
+    roof: spec.roof,
+    place,
+  };
 }

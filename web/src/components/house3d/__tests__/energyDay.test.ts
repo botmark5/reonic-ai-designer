@@ -47,6 +47,12 @@ describe("simulateDay", () => {
     expect(s.soc).toBeCloseTo(0.05, 2);
   });
 
+  it("a large system still charges the car at noon (surplus charging is spread over the day)", () => {
+    const big = simulateDay({ ...base, kwp: 14.4, batteryKwh: 14 });
+    expect(sampleDay(big, 12.5).flows.pvCar).toBeGreaterThanOrEqual(1.4);
+    expect(sampleDay(big, 12.5).flows.pvCar).toBeLessThanOrEqual(3.7);
+  });
+
   it("the car stops once it has its daily energy", () => {
     const charged = day.steps.reduce((a, s) => a + s.car * 0.25, 0);
     expect(charged).toBeLessThanOrEqual(base.evKwhPerDay + 1e-6);
@@ -84,5 +90,21 @@ describe("activeFlows", () => {
     expect(night.map((x) => x.id)).toContain("grid-house");
     expect(night.map((x) => x.id)).not.toContain("battery-house"); // empty after the night
     expect(night[0].id).toBe("grid-house"); // the sun is barely up at 06:00
+  });
+});
+
+describe("dayInputFrom", () => {
+  it("uses the panels actually drawn and only visible components", async () => {
+    const { buildSceneSpec } = await import("../sceneSpec");
+    const { roofPlanes } = await import("../houseGeometry");
+    const { demoDesign, demoHome } = await import("../mock");
+    const { dayInputFrom } = await import("../energyDay");
+    const spec = buildSceneSpec(demoDesign, demoHome, "planner", roofPlanes, { maxPanels: 10 });
+    const d = dayInputFrom(spec, demoDesign.design, demoHome);
+    expect(d.kwp).toBeCloseTo(4.5, 6); // 10 panels × 0.45
+    expect(d.batteryKwh).toBe(7);
+    expect(d.wallboxKw).toBe(11);
+    expect(d.heatpumpKw).toBeNull();
+    expect(d.evKwhPerDay).toBeCloseTo((15000 / 365) * 0.18, 6);
   });
 });

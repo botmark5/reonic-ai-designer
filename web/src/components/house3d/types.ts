@@ -12,6 +12,9 @@ export interface RoofInput {
   azimuthDeg?: number;
   /** Upper bound on panels the roof can take (Google Solar maxArrayPanelsCount). */
   maxPanels?: number;
+  /** Where the house is, for the sun's path (default Munich). */
+  latitude?: number;
+  longitude?: number;
 }
 
 export type ThemeName = "light" | "dark";

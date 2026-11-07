@@ -1,31 +1,45 @@
 import type { ThemeName } from "./types";
 
-/** Scene colours. Component and surface colours are the values in docs/design/tokens.json. */
+/**
+ * Scene colours. The house is an architectural model: matte warm white and zinc neutrals only.
+ * Colour belongs to the energy system: component tokens from docs/design/tokens.json and the AI gradient for flows.
+ */
 export interface Palette {
   surface0: string;
   surface1: string;
   border: string;
   ink: string;
   inkMuted: string;
+  // energy system (tokens)
   pv: string;
   battery: string;
   heatpump: string;
   wallbox: string;
-  // scene materials (not tokens: a calm, slightly stylised house)
-  roof: string;
-  roofEdge: string;
+  /** AI gradient for energy flows: amber → orange → salmon. */
+  flow: readonly [string, string, string];
+  // model materials
+  board: string;
+  boardEdge: string;
+  street: string;
+  paving: string;
   wall: string;
   plinth: string;
+  roof: string;
+  roofEdge: string;
   trim: string;
   glass: string;
   door: string;
-  ground: string;
-  paving: string;
+  tree: string;
+  trunk: string;
+  car: string;
+  carGlass: string;
+  tyre: string;
+  appliance: string;
   panel: string;
   panelFrame: string;
-  appliance: string;
-  car: string;
+  // light
   sky: string;
+  groundBounce: string;
 }
 
 const LIGHT: Palette = {
@@ -38,20 +52,28 @@ const LIGHT: Palette = {
   battery: "#2f9fd0",
   heatpump: "#d4604a",
   wallbox: "#52525b",
-  roof: "#55585e",
-  roofEdge: "#3f4146",
-  wall: "#f3efe8",
-  plinth: "#c9c4bb",
+  flow: ["#e9a23b", "#ef8a4c", "#ec8a7c"],
+  board: "#f4f4f2",
+  boardEdge: "#e4e4e1",
+  street: "#e8e8e5",
+  paving: "#ededea",
+  wall: "#fcfcfa",
+  plinth: "#e8e8e5",
+  roof: "#e7e7e4",
+  roofEdge: "#dcdcd9",
   trim: "#ffffff",
-  glass: "#7b93a6",
-  door: "#6b4f3a",
-  ground: "#e3e8dc",
-  paving: "#d6d3cd",
-  panel: "#1f2a3a",
-  panelFrame: "#c8ccd2",
-  appliance: "#f7f7f5",
-  car: "#8a9aa8",
-  sky: "#fdfdfb",
+  glass: "#d4d4d8",
+  door: "#e4e4e7",
+  tree: "#f6f6f4",
+  trunk: "#d4d4d8",
+  car: "#f7f7f5",
+  carGlass: "#c4c5cb",
+  tyre: "#a1a1aa",
+  appliance: "#fbfbfa",
+  panel: "#0e141e",
+  panelFrame: "#b9bdc4",
+  sky: "#ffffff",
+  groundBounce: "#ecebe8",
 };
 
 const DARK: Palette = {
@@ -65,13 +87,13 @@ const DARK: Palette = {
   battery: "#6cc8ef",
   heatpump: "#ef9a8e",
   wallbox: "#a1a1aa",
-  roof: "#4a4c51",
-  roofEdge: "#36383c",
-  wall: "#d8d3cb",
-  plinth: "#9b968e",
-  ground: "#2a302a",
-  paving: "#3a3936",
-  sky: "#121315",
+  flow: ["#eaa94a", "#f0955c", "#ef9a8e"],
+  board: "#1d1f22",
+  boardEdge: "#26282c",
+  street: "#232528",
+  paving: "#25272a",
+  sky: "#c9d2e0",
+  groundBounce: "#2a2723",
 };
 
 export function getPalette(theme: ThemeName): Palette {

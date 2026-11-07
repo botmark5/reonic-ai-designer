@@ -51,9 +51,9 @@ const smooth = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-const LOW = new THREE.Color("#ffb46e"); // golden hour
-const MID = new THREE.Color("#ffdcb0");
-const HIGH = new THREE.Color("#fff5e8"); // warm-neutral midday
+const LOW = new THREE.Color("#ffb877"); // golden hour
+const MID = new THREE.Color("#ffe3c2");
+const HIGH = new THREE.Color("#fffaf4"); // near-neutral midday
 
 /** Key-light colour and intensity for a sun elevation. Warm and soft when low, neutral at midday, off at night. */
 export function sunLight(elevationDeg: number): { color: THREE.Color; intensity: number } {

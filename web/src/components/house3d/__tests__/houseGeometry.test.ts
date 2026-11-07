@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { buildEquipment } from "../equipmentGeometry";
+import { batteryModuleCount, buildEquipment } from "../equipmentGeometry";
 import { HOUSE, buildHouse, countTriangles, roofPlanes, slotToWorld } from "../houseGeometry";
 import { getPalette } from "../palette";
 
@@ -54,8 +54,19 @@ describe("buildHouse", () => {
 describe("buildEquipment", () => {
   it("builds every component plus the car within budget", () => {
     const eq = buildEquipment(pal);
-    for (const k of ["inverter", "battery", "wallbox", "heatpump", "car"] as const) expect(eq[k]).toBeInstanceOf(THREE.Group);
+    for (const k of ["inverter", "wallbox", "heatpump", "car"] as const) expect(eq[k]).toBeInstanceOf(THREE.Group);
+    expect(eq.heatpump.getObjectByName("fan")).toBeDefined();
+    expect(eq.car.children.filter((c) => c.name === "wheel")).toHaveLength(4);
     const total = Object.values(eq).reduce((a, g) => a + countTriangles(g), 0);
     expect(total).toBeLessThan(8_000);
+  });
+});
+
+describe("batteryModuleCount", () => {
+  it("stacks ≈ 2.5 kWh modules, 1 to 6", () => {
+    expect([5, 7, 10, 14, 20].map(batteryModuleCount)).toEqual([2, 3, 4, 6, 6]);
+    expect(batteryModuleCount(1)).toBe(1);
+    expect(batteryModuleCount(null)).toBe(0);
+    expect(batteryModuleCount(0)).toBe(0);
   });
 });
