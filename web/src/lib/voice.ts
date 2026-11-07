@@ -97,6 +97,7 @@ export interface VoiceFacts {
   heating_age_years: number | null;
   roof_type: string | null;
   roof_direction: string | null;
+  has_existing_pv: boolean | null;
   existing_pv_kwp: number | null;
   existing_battery_kwh: number | null;
   wishes: string | null;
@@ -128,6 +129,7 @@ export function normaliseFacts(raw: unknown): NormalisedFacts {
     heating_age_years: parsePositive(r.heating_age_years),
     roof_type: parseKey(r.roof_type),
     roof_direction: parseKey(r.roof_direction),
+    has_existing_pv: parseBool(r.has_existing_pv),
     existing_pv_kwp: parsePositive(r.existing_pv_kwp),
     existing_battery_kwh: parsePositive(r.existing_battery_kwh),
     wishes: parseText(r.wishes),
@@ -150,13 +152,18 @@ export function normaliseFacts(raw: unknown): NormalisedFacts {
   }
 
   const hasEv = facts.has_ev ?? (facts.ev_km_year != null && facts.ev_km_year > 0);
+  // "Is there already PV on the roof?" The answer wins; a stated size implies yes; a size that contradicts it is dropped.
+  const statedPv = facts.existing_pv_kwp;
+  const hasExistingPv = facts.has_existing_pv ?? (statedPv != null && statedPv > 0 ? true : null);
+  const existingPvKwp = hasExistingPv === false || (hasExistingPv && statedPv === 0) ? null : statedPv;
   const home: Home = {
     annual_kwh: annual,
     price_eur_kwh: null, // engine default
     load_profile: "H0",
     has_ev: hasEv,
     ev_km_year: hasEv ? facts.ev_km_year : null,
-    existing_pv_kwp: facts.existing_pv_kwp,
+    has_existing_pv: hasExistingPv,
+    existing_pv_kwp: existingPvKwp,
     existing_battery_kwh: facts.existing_battery_kwh,
     heating: facts.heating ? (HEATING[facts.heating] ?? null) : null,
     heating_demand_kwh: null,

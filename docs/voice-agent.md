@@ -12,7 +12,7 @@ customer_name, address, annual_kwh, monthly_bill_eur, household, daytime_presenc
 heating [gas|oil|heatpump|electric|district|wood|other|unknown], heating_age_years,
 roof_type [concrete_tile|clay_tile|flat|metal|slate|other|unknown],
 roof_direction [south|south_east|south_west|east_west|east|west|north|unknown],
-existing_pv_kwp, existing_battery_kwh, wishes, facts_confirmed.
+has_existing_pv [yes|no|unknown → home.has_existing_pv true/false/null], existing_pv_kwp, existing_battery_kwh, wishes, facts_confirmed.
 Evaluation criterion: facts_complete.
 
 ## Still to connect (session D builds the endpoints, then Claude in chat attaches them to the agent)

@@ -147,6 +147,27 @@ describe("normaliseFacts", () => {
     expect(r.home.inhabitants).toBeNull();
     expect(JSON.stringify(r)).not.toContain("NaN");
   });
+  it("maps has_existing_pv yes/no/unknown together with existing_pv_kwp", () => {
+    expect(normaliseFacts({ has_existing_pv: "yes", existing_pv_kwp: "6,5" }).home).toMatchObject({ has_existing_pv: true, existing_pv_kwp: 6.5 });
+    expect(normaliseFacts({ has_existing_pv: "no" }).home).toMatchObject({ has_existing_pv: false, existing_pv_kwp: null });
+    expect(normaliseFacts({ has_existing_pv: "unknown" }).home.has_existing_pv).toBeNull();
+    expect(normaliseFacts({}).home.has_existing_pv).toBeNull();
+    // a stated size implies PV on the roof; "yes" with size 0 keeps "yes" and drops the contradictory 0
+    expect(normaliseFacts({ existing_pv_kwp: 4 }).home.has_existing_pv).toBe(true);
+    expect(normaliseFacts({ has_existing_pv: "yes", existing_pv_kwp: 0 }).home).toMatchObject({ has_existing_pv: true, existing_pv_kwp: null });
+    // "no" wins over a stray size
+    expect(normaliseFacts({ has_existing_pv: false, existing_pv_kwp: 5 }).home).toMatchObject({ has_existing_pv: false, existing_pv_kwp: null });
+  });
+
+  it("post-call fallback draft carries has_existing_pv to the engine", async () => {
+    let seen: DesignRequest | null = null;
+    const d = deps({ design: async (req) => ((seen = req), mockDesign(req)), now: () => NOW * 1000 });
+    const body = postCallBody("conv_pv", { annual_kwh: 4000, has_existing_pv: "yes", existing_pv_kwp: 5 });
+    await handlePostCall(post("/api/voice/post-call", body, { "elevenlabs-signature": sign(body, "wh-secret", NOW) }), d);
+    await Promise.all(d.deferred.map((fn) => fn()));
+    expect(seen!.home).toMatchObject({ has_existing_pv: true, existing_pv_kwp: 5 });
+  });
+
   it("reads EV answers", () => {
     expect(normaliseFacts({ has_ev: "yes", ev_km_year: "15000" }).home).toMatchObject({ has_ev: true, ev_km_year: 15000 });
     expect(normaliseFacts({ has_ev: false, ev_km_year: 15000 }).home).toMatchObject({ has_ev: false, ev_km_year: null });
