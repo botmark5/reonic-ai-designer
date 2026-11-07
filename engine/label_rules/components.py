@@ -19,6 +19,9 @@ PACKAGE_KWH_RE = re.compile(r"Complete Package.*?\+\s*" + _NUM + r"\s*kWh", re.I
 BATTERY_EXCLUDED_RE = re.compile(r"AC Coupling Module|Extended Warranty|Tower|Power Module", re.I)
 BATTERY_EXTENSION_RE = re.compile(r"^Battery\s+\d[\d.,]*\s*kWh\s+Extension", re.I)
 WALLBOX_FEE_RE = re.compile(r"^(?:Install Wallbox|Wallbox Installation)(?: [A-Z])?$|^All-Inclusive Package - Wallbox", re.I)
+# Wallbox sold only as an "Other"-typed product or promo line (no Wallbox row): evidence when nothing else says wallbox.
+WALLBOX_PROMO_RE = re.compile(r"Free .*Wallbox|Wallbox Promo|^EV Charger", re.I)
+WALLBOX_PROMO_EXCLUDED_RE = re.compile(r"Prep|Expenses|Cable|Meter|Power Boost|Subsidy Deadline", re.I)
 BACKUP_RE = re.compile(
     r"Smart Guard|Backup Box|Emergency Power|Backup Solution|Home Backup Interface|Transfer Switch", re.I
 )
@@ -83,10 +86,22 @@ def extract_battery(items: pd.DataFrame) -> dict:
 def extract_wallbox(items: pd.DataFrame) -> dict:
     wallboxes = items[items["component_type"] == "Wallbox"]
     installed = any(WALLBOX_FEE_RE.search(name) for name in items["component_name"])
-    if wallboxes.empty and not installed:
+    # Promo / "Other"-typed product lines count only as evidence, never as an extra wallbox next to a Wallbox row.
+    promo_names = [
+        name
+        for name, ctype in zip(items["component_name"], items["component_type"])
+        if ctype != "Wallbox" and WALLBOX_PROMO_RE.search(name) and not WALLBOX_PROMO_EXCLUDED_RE.search(name)
+    ]
+    if wallboxes.empty and not installed and not promo_names:
         return {"wallbox": False, "wallbox_kw": math.nan, "n_wallboxes": 0.0}
     speeds = wallboxes["wb_charging_speed_kw"]
     kw = speeds[speeds > 0].max() / 1000.0 if (speeds > 0).any() else math.nan
+    if wallboxes.empty:
+        for name in promo_names:
+            named = _name_number(KW_RE, name)
+            if named is not None:
+                kw = named
+                break
     n = float(wallboxes["quantity"].sum()) if not wallboxes.empty else 1.0
     return {"wallbox": True, "wallbox_kw": float(kw), "n_wallboxes": n}
 

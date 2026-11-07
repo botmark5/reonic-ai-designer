@@ -246,6 +246,42 @@ def test_r3_wallbox_row_without_column_has_nan_kw_but_counts():
     assert out["n_wallboxes"] == 1.0
 
 
+def test_r3_free_promo_wallbox_line_alone_counts_with_kw_from_name():
+    out = extract_wallbox(make_items([{"name": "Free 11kW AC Wallbox Promo", "type": "Other"}]))
+    assert out["wallbox"] is True
+    assert out["wallbox_kw"] == pytest.approx(11.0)
+    assert out["n_wallboxes"] == 1.0
+
+
+def test_r3_ev_charger_other_line_counts_expenses_line_does_not():
+    out = extract_wallbox(make_items([{"name": "EV Charger Pro 2", "type": "Other"},
+                                      {"name": "Additional Wallbox Expenses", "type": "Other"}]))
+    assert out["wallbox"] is True
+    assert math.isnan(out["wallbox_kw"])
+    assert out["n_wallboxes"] == 1.0
+
+
+def test_r3_additional_wallbox_expenses_alone_is_not_a_wallbox():
+    out = extract_wallbox(make_items([{"name": "Additional Wallbox Expenses", "type": "Other"}]))
+    assert out["wallbox"] is False
+    assert out["n_wallboxes"] == 0.0
+
+
+@pytest.mark.parametrize("name", ["December Promo Free Wallbox with PV", "Special Deal Free Wallbox (Order by Dec 2025)",
+                                  "Black Friday Promo Free Wallbox with PV"])
+def test_r3_promo_text_next_to_wallbox_row_does_not_double_count(name):
+    out = extract_wallbox(make_items([{"name": name, "type": "Other"},
+                                      wallbox("Sigenergy AC Wallbox 11kW", 11000, brand="Sigenergy")]))
+    assert out["n_wallboxes"] == 1.0
+    assert out["wallbox_kw"] == pytest.approx(11.0)
+
+
+@pytest.mark.parametrize("name", ["Power Boost for Existing Wallbox", "Free Wallbox Cable", "Free Wallbox Prep",
+                                  "Free Wallbox Subsidy Deadline", "EV Charger Smart Meter", "EV Charger Prep"])
+def test_r3_excluded_promo_like_lines_are_not_wallboxes(name):
+    assert extract_wallbox(make_items([{"name": name, "type": "Other"}]))["wallbox"] is False
+
+
 # ---------------------------------------------------------------- R4 heat pump
 
 

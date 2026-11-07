@@ -17,11 +17,11 @@ TOLERANCE_KWP = 0.01
 MAX_EXTRA_MODULE_LINES = 3
 
 _NUMBER = r"(\d+(?:\.\d+)?)"
-_PACKAGE_23C = re.compile(rf"^Complete Package\b.*?{_NUMBER}\s*kWp", re.I)
+PACKAGE_23C = re.compile(rf"^Complete Package\b.*?{_NUMBER}\s*kWp", re.I)
 _PACKAGE_2A8 = re.compile(rf"^PV Complete Package\s+{_NUMBER}\s*kW\b", re.I)
-_SIZE_BAND = re.compile(rf"^(?:SL Rack )?Substructure\b.*?{_NUMBER}\s*-\s*{_NUMBER}\s*kWp", re.I)
-_SUBSTRUCTURE = re.compile(r"^(?:SL Rack )?Substructure\b", re.I)
-_DC_INSTALL = re.compile(r"^DC Install\b", re.I)
+SIZE_BAND = re.compile(rf"^(?:SL Rack )?Substructure\b.*?{_NUMBER}\s*-\s*{_NUMBER}\s*kWp", re.I)
+SUBSTRUCTURE = re.compile(r"^(?:SL Rack )?Substructure\b", re.I)
+DC_INSTALL = re.compile(r"^DC Install\b", re.I)
 _ROOF_MOUNTING = re.compile(r"^Roof Mounting\b(?!.*Surcharge)", re.I)
 _ROOF_SURCHARGE = re.compile(r"^Roof Mounting\b.*Surcharge", re.I)
 # Named extras carry their count in the name ("3x Extra PV Module 480W", "4 Additional Modules (...)").
@@ -43,7 +43,7 @@ _ROOF_TYPES = [
     (re.compile(r"Clay|Mortared", re.I), "Clay Tile"),
     (re.compile(r"Concrete", re.I), "Concrete Tile"),
 ]
-_ROOF_LINES = {"sub": _SUBSTRUCTURE, "dc": _DC_INSTALL, "surcharge": _ROOF_SURCHARGE}
+_ROOF_LINES = {"sub": SUBSTRUCTURE, "dc": DC_INSTALL, "surcharge": _ROOF_SURCHARGE}
 
 
 def _qty(items: pd.DataFrame, mask: pd.Series) -> float:
@@ -76,7 +76,7 @@ def _named_extras(items: pd.DataFrame) -> list[tuple[float, float]]:
 
 def _band_midpoint(names: pd.Series) -> float | None:
     for name in names:
-        match = _SIZE_BAND.match(name)
+        match = SIZE_BAND.match(name)
         if match:
             return (float(match.group(1)) + float(match.group(2))) / 2
     return None
@@ -98,13 +98,13 @@ def extract_pv(items: pd.DataFrame, installer: str) -> dict:
     module_kwp = float((modules["quantity"].fillna(1.0) * modules["module_watt_peak"]).sum()) / 1000
     module_wp = module_kwp * 1000 / module_panels if module_panels else PANEL_WP_ASSUMED
 
-    substructure = _qty(items, names.str.match(_SUBSTRUCTURE))
-    dc_install = _qty(items, names.str.match(_DC_INSTALL))
+    substructure = _qty(items, names.str.match(SUBSTRUCTURE))
+    dc_install = _qty(items, names.str.match(DC_INSTALL))
     roof_mounting = _qty(items, names.str.match(_ROOF_MOUNTING))
 
     extras = _named_extras(items)
     extra_count = sum(count for count, _ in extras)
-    package_pattern = _PACKAGE_23C if is_23c else _PACKAGE_2A8
+    package_pattern = PACKAGE_23C if is_23c else _PACKAGE_2A8
     package_kwp = _first_number(names, package_pattern)
     if is_23c and package_kwp is not None:
         package_panels = _panels_in(package_kwp) + extra_count

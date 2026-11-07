@@ -81,3 +81,19 @@ def test_cross_checks_cover_brief_step3(built):
     assert m, text
     assert int(m.group(2)) < 10
     assert int(m.group(1)) > 1000
+
+
+def test_placeholder_quantity_design_is_implausible_outlier(built):
+    designs, _ = built
+    row = designs[designs.project_id.str.startswith("15699765") & (designs.option_number == 2)]
+    assert len(row) == 1
+    assert row.pv_implausible.all() and row.is_outlier.all()
+    assert (designs.pv_implausible <= designs.is_outlier).all()
+    assert not (designs.pv_implausible & ~designs.is_full_design).any()
+
+
+def test_promo_only_wallbox_options_are_wallbox_true(built):
+    designs, _ = built
+    for prefix in ("d8702db1", "4732dc7b"):
+        row = designs[designs.project_id.str.startswith(prefix) & (designs.option_number == 1)]
+        assert len(row) == 1 and row.wallbox.all(), prefix

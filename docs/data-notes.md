@@ -38,11 +38,14 @@ Verified on the data 2026-11-07 (profiling + `engine/labels.py`). Extraction rul
   assumed (`pv_wp_assumed`). Sensitivity on 923 primary 2a8 designs: median 8.6 / 9.0 / 9.5 kWp at 430 / 450 / 475 W.
 - Battery kWh = Σ BatteryStorage column (Wh/1000 × qty), excluding the EcoFlow AC coupler; name only when the column is empty;
   23c package "+ Y kWh" only when no battery row (72 options). Lines beat packages (all 28 conflicts are planner changes).
-- Wallbox = Wallbox row or a wallbox installation fee (kW unknown then). Heat pump kW from the product name (column is rounded).
+- Wallbox = Wallbox row, a wallbox installation fee (kW unknown then), or - when neither exists - an "Other"-typed promo/product line
+  (`Free .*Wallbox`, `Wallbox Promo`, name starting `EV Charger`; not Prep/Expenses/Cable/Meter/Power Boost/Subsidy Deadline;
+  kW from the name, n = 1). Promo text next to a Wallbox row never adds a second wallbox. Heat pump kW from the product name (column is rounded).
 - 23c "Substructure/Roof Mounting A-B kWp" bands are price tiers, not measurements: panel count × 450 W falls outside the
   line's own band in 33 of 209 options, both below and above (20 panels in a "15-20kWp" tier, 36 in "8.8-15kWp"). The count wins.
   One option names a module wattage only in a surcharge line ("Surcharge AIKO 475W", 24 panels) → kept at 450 W.
-- Outliers (> 30 kWp or > 40 kWh): 2 options (99.9 kWp / 108 kWh commercial; 45 kWh battery-only).
+- Outliers (> 30 kWp or > 40 kWh): 2 options (99.9 kWp / 108 kWh commercial; 45 kWh battery-only). Also outliers: full designs
+  below 1 kWp (`pv_implausible`, placeholder quantities); 6 options (4 of them primary rows): 23c 3, 2a8 3.
 - Among primary full designs: no battery in 5.6% (2a8) / 1.2% (23c); wallbox in 26% / 22%; heat pump in 7 projects (2a8).
   New heat pumps: 31 options in 17 projects, all 2a8 → heat pump = rules + physics, not learned.
 - No prices in the data → savings/payback use stated market assumptions (see PLAN business case).
@@ -73,7 +76,7 @@ Status: v1.1 schema (adds n_wallboxes, roof_mixed, pv_source size_band; is_prima
 | column | type | unit | meaning |
 |---|---|---|---|
 | pv_kwp | float | kWp | new PV size; 0 when the option has no new PV |
-| pv_panels | float | panels | number of new modules; NaN when only a package name gives the size |
+| pv_panels | float | panels | number of new modules. 2a8: Substructure qty (or module lines). 23c package rows (no module lines): kWp / 0.45 (+ named extras), i.e. the installer's own 450 W package math, not a count seen in the data. NaN only when no source gives a size |
 | pv_source | str | | `module_lines`, `package_name`, `substructure`, `roof_mounting`, `size_band` (only a kWp band like "6-8.8kWp" is known → midpoint), `none` |
 | pv_wp_assumed | float | W | assumed W per panel when the data has no module wattage (450); NaN when wattage came from the data or a package name |
 | battery | bool | | battery_kwh > 0 |
@@ -85,7 +88,7 @@ Status: v1.1 schema (adds n_wallboxes, roof_mixed, pv_source size_band; is_prima
 | heatpump | bool | | option contains a heat pump |
 | heatpump_kw | float | kW | nominal heat pump power from the product name; NaN when none |
 | inverter_kw | float | kW | sum of inverter power when inverter lines exist; NaN otherwise (2a8ba8e2 almost never lists inverters) |
-| roof_type | str | | from substructure/DC-install names (`Concrete Tile`, `Clay Tile`, `Concrete`, `Clay`, `Flat`, `Metal`, `Bitumen`, `Slate`, `Standing Seam`, `Beaver Tail`, `Trapezoidal`, …); type with the most panels when several; `Unknown` when none |
+| roof_type | str | | from substructure/DC-install names (`Beaver Tail Tile`, `Bitumen`, `Clay Tile`, `Concrete Tile`, `Facade`, `Flat`, `Metal`, `Slate`, `Unknown`); type with the most panels when several; `Unknown` when none |
 | roof_mixed | bool | | panels on more than one roof type |
 | has_scaffolding | bool | | scaffolding / site-safety line present |
 | has_backup | bool | | emergency-power / backup box line present |
@@ -119,7 +122,8 @@ Status: v1.1 schema (adds n_wallboxes, roof_mixed, pv_source size_band; is_prima
 ### Flags
 | column | type | meaning |
 |---|---|---|
-| is_outlier | bool | pv_kwp > 30 or battery_kwh > 40 (commercial-size); exclude from training and evaluation |
+| pv_implausible | bool | full design with 0 < pv_kwp < 1.0: the planner left placeholder quantities (e.g. one "PV Module 463W" next to a 15-20 kWp roof-mounting tier); the true size is unknown, so it is not guessed |
+| is_outlier | bool | pv_kwp > 30 or battery_kwh > 40 (commercial-size) or pv_implausible; exclude from training and evaluation |
 | pv_sources_disagree | bool | two PV sources in the option give different sizes; the value kept follows the source order in the rules |
 
 ### Extra columns (helpers, may be ignored)

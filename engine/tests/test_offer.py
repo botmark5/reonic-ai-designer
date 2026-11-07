@@ -204,3 +204,22 @@ def test_input_not_mutated_and_order_kept():
     pd.testing.assert_frame_equal(df, before)
     assert list(out.option_number) == [3, 1]
     assert list(out.is_primary) == [False, True]
+
+
+def test_tiny_pv_in_full_design_is_implausible_and_outlier():
+    out = add_project_columns(_opts([{"option_number": 1, "pv_kwp": 0.45}]))
+    assert out.is_full_design.all()
+    assert list(out.pv_implausible) == [True]
+    assert list(out.is_outlier) == [True]
+
+
+def test_tiny_pv_in_pv_extension_is_not_implausible():
+    out = add_project_columns(_opts([{"option_number": 1, "pv_kwp": 0.45, "offer_type": "pv_extension"}]))
+    assert list(out.pv_implausible) == [False]
+    assert list(out.is_outlier) == [False]
+
+
+def test_one_kwp_new_system_is_plausible():
+    out = add_project_columns(_opts([{"option_number": 1, "pv_kwp": 1.0}]))
+    assert list(out.pv_implausible) == [False]
+    assert list(out.is_outlier) == [False]

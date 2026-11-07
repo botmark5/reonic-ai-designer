@@ -25,13 +25,13 @@ from engine.label_rules.home import clean_status_quo
 from engine.label_rules.items import load_raw
 from engine.label_rules.offer import add_project_columns, classify_offer
 from engine.label_rules.pv import (
-    _DC_INSTALL,
-    _PACKAGE_23C,
-    _SIZE_BAND,
-    _SUBSTRUCTURE,
+    DC_INSTALL,
     INSTALLER_2A8,
     INSTALLER_23C,
+    PACKAGE_23C,
     PANEL_WP_ASSUMED,
+    SIZE_BAND,
+    SUBSTRUCTURE,
     TOLERANCE_KWP,
     extract_pv,
     extract_roof_type,
@@ -51,7 +51,7 @@ FRONT_COLUMNS = [
     "pv_kwp", "pv_panels", "pv_source", "pv_wp_assumed", "pv_sources_disagree",
     "battery", "battery_kwh", "battery_source", "wallbox", "wallbox_kw", "n_wallboxes", "heatpump", "heatpump_kw",
     "inverter_kw", "roof_type", "roof_mixed", "has_scaffolding", "has_backup", "brand", "n_line_items",
-    "pv_kwp_min", "pv_kwp_max", "battery_kwh_min", "battery_kwh_max", "is_outlier",
+    "pv_kwp_min", "pv_kwp_max", "battery_kwh_min", "battery_kwh_max", "pv_implausible", "is_outlier",
 ]
 
 
@@ -99,17 +99,17 @@ def make_catalogue(designs: pd.DataFrame) -> dict:
 def build(raw_dir: Path = RAW_DIR) -> tuple[pd.DataFrame, dict]:
     parts, status_quo = load_raw(raw_dir)
     homes = clean_status_quo(status_quo)
-    has_solar = dict(zip(homes.project_id, homes.has_solar.astype(bool)))
+    has_solar = dict(zip(zip(homes.installer, homes.project_id), homes.has_solar.astype(bool)))
 
     rows = []
     keys = ["installer", "project_id", "option_number", "option_id"]
     for (installer, project_id, option_number, option_id), items in parts.groupby(keys, sort=True):
         rec = {"installer": installer, "project_id": project_id, "option_id": option_id, "option_number": int(option_number)}
         rec.update(extract_option(items, installer))
-        rec["offer_type"] = classify_offer(rec, items, has_solar[project_id])
+        rec["offer_type"] = classify_offer(rec, items, has_solar[(installer, project_id)])
         rows.append(rec)
 
-    designs = pd.DataFrame(rows).merge(homes.drop(columns=["installer"]), on="project_id", how="left", validate="many_to_one")
+    designs = pd.DataFrame(rows).merge(homes, on=["installer", "project_id"], how="left", validate="many_to_one")
     designs = add_project_columns(designs)
     designs = designs[FRONT_COLUMNS + [c for c in designs.columns if c not in FRONT_COLUMNS]]
     return designs.reset_index(drop=True), make_catalogue(designs)
@@ -119,10 +119,10 @@ def _per_option_facts(designs: pd.DataFrame, parts: pd.DataFrame) -> pd.DataFram
     """One row per option with the raw-line quantities the cross-checks compare (indexed like designs by installer+option_id)."""
     names, qty = parts["component_name"], parts["quantity"].fillna(1.0)
     f = parts[["installer", "option_id"]].copy()
-    f["sub"] = qty.where(names.str.match(_SUBSTRUCTURE), 0.0)
-    f["dc"] = qty.where(names.str.match(_DC_INSTALL), 0.0)
+    f["sub"] = qty.where(names.str.match(SUBSTRUCTURE), 0.0)
+    f["dc"] = qty.where(names.str.match(DC_INSTALL), 0.0)
     f["pkg_kwh"] = names.map(lambda n: float(m.group(1).replace(",", ".")) if (m := PACKAGE_KWH_RE.search(n)) else float("nan"))
-    f["pkg_kwp"] = names.map(lambda n: float(m.group(1)) if (m := _PACKAGE_23C.match(n)) else float("nan"))
+    f["pkg_kwp"] = names.map(lambda n: float(m.group(1)) if (m := PACKAGE_23C.match(n)) else float("nan"))
     is_module = (parts["component_type"] == "Module") & (parts["module_watt_peak"] > 0)
     f["module_kwp"] = (qty * parts["module_watt_peak"]).where(is_module) / 1000
     f["band"] = names.map(_band_of)
@@ -135,7 +135,7 @@ def _per_option_facts(designs: pd.DataFrame, parts: pd.DataFrame) -> pd.DataFram
 
 
 def _band_of(name: str) -> tuple[float, float] | None:
-    if m := _SIZE_BAND.match(name):
+    if m := SIZE_BAND.match(name):
         return float(m.group(1)), float(m.group(2))
     if m := _UP_TO_BAND.match(name):
         return 0.0, float(m.group(1))

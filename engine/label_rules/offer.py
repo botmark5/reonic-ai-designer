@@ -16,6 +16,7 @@ SUBSTRUCTURE_NAME = re.compile(r"Substructure", re.IGNORECASE)
 
 OUTLIER_PV_KWP = 30
 OUTLIER_BATTERY_KWH = 40
+MIN_PLAUSIBLE_FULL_PV_KWP = 1.0  # a full design below this is placeholder quantities (qty 1 left in the planner)
 SAME_KWH_TOLERANCE = 0.01
 PROJECT_KEY = ["installer", "project_id"]
 
@@ -41,7 +42,7 @@ def classify_offer(design: dict, items: pd.DataFrame, has_solar: bool) -> str:
 
 
 def add_project_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Add is_full_design, is_primary, n_options, is_duplicate_option, variant ranges and is_outlier.
+    """Add is_full_design, is_primary, n_options, is_duplicate_option, variant ranges, pv_implausible and is_outlier.
 
     Also settles the planned-battery flag: when any option of the project sells the battery size the
     planner entered as "existing" (within 0.01 kWh), that battery is the planned one.
@@ -70,7 +71,10 @@ def add_project_columns(df: pd.DataFrame) -> pd.DataFrame:
         out[f"{col}_min"] = g.transform("min")
         out[f"{col}_max"] = g.transform("max")
 
-    out["is_outlier"] = ((out["pv_kwp"] > OUTLIER_PV_KWP) | (out["battery_kwh"] > OUTLIER_BATTERY_KWH)).astype(bool)
+    out["pv_implausible"] = (out["is_full_design"] & (out["pv_kwp"] > 0) & (out["pv_kwp"] < MIN_PLAUSIBLE_FULL_PV_KWP)).astype(bool)
+    out["is_outlier"] = (
+        (out["pv_kwp"] > OUTLIER_PV_KWP) | (out["battery_kwh"] > OUTLIER_BATTERY_KWH) | out["pv_implausible"]
+    ).astype(bool)
 
     # Same-kWh rule for the "existing" battery.
     entered = out["storage_kwh_entered"] if "storage_kwh_entered" in out else out["existing_battery_kwh"]
