@@ -67,7 +67,7 @@ export function Appear({ object, mount, visible, reduced, delay = 0, hitKey, poi
   });
 
   return (
-    <group ref={ref} rotation-y={mount.yaw} visible={false} {...handlers(hitKey, pointer)}>
+    <group ref={ref} rotation-y={mount.yaw} visible={false} {...(visible ? handlers(hitKey, pointer) : {})}>
       <primitive object={object} />
     </group>
   );
@@ -173,6 +173,7 @@ export function Panels({ slots, frames, palette, reduced, pointer, maxCount = 96
     glass.current.instanceMatrix.needsUpdate = true;
     rim.current.instanceMatrix.needsUpdate = true;
     glass.current.computeBoundingSphere();
+    rim.current.computeBoundingSphere();
   });
 
   return (

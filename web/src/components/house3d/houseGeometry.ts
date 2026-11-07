@@ -249,8 +249,8 @@ export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
   for (const z of [-2, 2]) {
     windowAt(g, m, "w", z, 1.75, 1.1, 1.3);
     windowAt(g, m, "w", z, 4.15, 1.0, 1.2);
-    windowAt(g, m, "e", z, 4.15, 1.0, 1.2);
   }
+  windowAt(g, m, "e", -3.4, 4.15, 1.0, 1.2); // behind the garage roof line
   windowAt(g, m, "w", 0, H + 1.0, 0.7, 0.8);
   windowAt(g, m, "e", 0, H + 1.0, 0.7, 0.8);
   for (const x of [-3.5, 0, 3.5]) windowAt(g, m, "n", x, 4.15, 1.0, 1.2);
@@ -289,7 +289,7 @@ export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
     battery: { position: new THREE.Vector3(gEast + 0.01, 0, FRONT_Z - 2.1), yaw: Math.PI / 2 },
     wallbox: { position: new THREE.Vector3(GARAGE_CX + 1.55, 1.25, FRONT_Z + 0.01), yaw: 0 },
     car: { position: new THREE.Vector3(GARAGE_CX, 0, FRONT_Z + 4.0), yaw: Math.PI },
-    heatpump: { position: new THREE.Vector3(-HOUSE.length / 2 + 1.6, 0, FRONT_Z + 0.65), yaw: 0 },
+    heatpump: { position: new THREE.Vector3(2.45, 0, FRONT_Z + 0.05), yaw: 0 }, // between front door and kitchen window
     house: new THREE.Vector3(1.2, 2.2, FRONT_Z),
     sun: new THREE.Vector3(-14, 24, 30),
   };

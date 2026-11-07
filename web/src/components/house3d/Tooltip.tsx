@@ -16,7 +16,7 @@ export function Tooltip({ spec, position }: { spec: CompSpec; position: THREE.Ve
   return (
     <Html position={position} center zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
       <div
-        role="status"
+        aria-hidden
         className="hidden w-max max-w-64 -translate-y-[calc(50%+10px)] rounded-md border border-border bg-surface-1/95 px-3 py-2 text-ink shadow-[0_12px_32px_rgba(16,17,20,0.10)] backdrop-blur-sm sm:block"
       >
         <div className="flex items-center gap-2 text-sm font-semibold">

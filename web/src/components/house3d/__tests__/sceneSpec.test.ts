@@ -74,6 +74,24 @@ describe("buildSceneSpec", () => {
   });
 });
 
+describe("zero panels", () => {
+  it("a PV size that rounds to no panel counts as no PV", () => {
+    const d = withDesign((x) => { x.design.pv.kwp = 0.2; });
+    const s = buildSceneSpec(d, demoHome, "planner", planesFor);
+    expect(s.components.pv.visible).toBe(false);
+    expect(s.components.inverter.visible).toBe(false);
+    expect(s.flows.some((f) => f.from === "sun" || f.from === "panels")).toBe(false);
+  });
+
+  it("a roof that fits nothing keeps PV in the legend with a note, but no flows from an empty roof", () => {
+    const s = buildSceneSpec(demoDesign, demoHome, "planner", planesFor, { maxPanels: 0 });
+    expect(s.layout.placed).toBe(0);
+    expect(s.components.pv).toMatchObject({ visible: true, note: "16 of 16 panels don't fit on this roof" });
+    expect(s.flows.map((f) => f.id)).not.toContain("sun-panels");
+    expect(s.flows.map((f) => f.id)).not.toContain("panels-inverter");
+  });
+});
+
 describe("resolveRoof", () => {
   it("defaults to 35° south, prefers the roof prop over the home, clamps pitch for drawing", () => {
     const bare = { ...demoHome, tilt_deg: null, orientation_deg: null };

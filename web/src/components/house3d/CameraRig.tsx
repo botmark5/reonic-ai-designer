@@ -1,11 +1,17 @@
 "use client";
-import { CameraControls } from "@react-three/drei";
+import { CameraControls, CameraControlsImpl } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 export type Preset = "overview" | "roof" | "garage";
 export const PRESETS: readonly Preset[] = ["overview", "roof", "garage"];
+
+/** A preset request; `n` changes on every click so re-clicking the active preset resets the view. */
+export interface PresetRequest {
+  preset: Preset;
+  n: number;
+}
 
 /** Camera position and target in house coordinates (+z south, +x east / garage side). */
 const VIEWS: Record<Preset, { pos: [number, number, number]; target: [number, number, number] }> = {
@@ -16,23 +22,41 @@ const VIEWS: Record<Preset, { pos: [number, number, number]; target: [number, nu
 
 const IDLE_AFTER = 4; // seconds without input before the slow turn starts
 const IDLE_SPEED = 0.06; // rad/s
+const { DOLLY, NONE } = CameraControlsImpl.ACTION;
 
-export function CameraRig({ preset, rotationY, reduced }: { preset: Preset; rotationY: number; reduced: boolean }) {
+/**
+ * Page scroll wins: vertical swipes scroll the page (horizontal ones orbit) and the wheel zooms only with Ctrl/⌘
+ * (trackpad pinch sends ctrl+wheel). camera-controls sets touch-action: none on the element it connects to
+ * (drei connects it in its own, earlier, child effect).
+ */
+function letPageScroll(c: CameraControlsImpl): () => void {
+  const el = (c as unknown as { _domElement?: HTMLElement })._domElement;
+  if (!el) return () => {};
+  el.style.touchAction = "pan-y";
+  const onWheel = (e: WheelEvent) => { c.mouseButtons.wheel = e.ctrlKey || e.metaKey ? DOLLY : NONE; };
+  el.addEventListener("wheel", onWheel, { capture: true, passive: true });
+  return () => el.removeEventListener("wheel", onWheel, { capture: true });
+}
+
+export function CameraRig({ request, rotationY, reduced }: { request: PresetRequest; rotationY: number; reduced: boolean }) {
   const ref = useRef<CameraControls>(null);
   const lastInput = useRef(0);
   const clock = useRef(0);
   const first = useRef(true);
+  const reducedRef = useRef(reduced);
+
+  useEffect(() => { reducedRef.current = reduced; }, [reduced]);
 
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
     const rot = new THREE.Matrix4().makeRotationY(rotationY);
-    const p = new THREE.Vector3(...VIEWS[preset].pos).applyMatrix4(rot);
-    const t = new THREE.Vector3(...VIEWS[preset].target).applyMatrix4(rot);
-    void c.setLookAt(p.x, p.y, p.z, t.x, t.y, t.z, !reduced && !first.current);
+    const p = new THREE.Vector3(...VIEWS[request.preset].pos).applyMatrix4(rot);
+    const t = new THREE.Vector3(...VIEWS[request.preset].target).applyMatrix4(rot);
+    void c.setLookAt(p.x, p.y, p.z, t.x, t.y, t.z, !reducedRef.current && !first.current);
     first.current = false;
     lastInput.current = clock.current;
-  }, [preset, rotationY, reduced]);
+  }, [request, rotationY]);
 
   useEffect(() => {
     const c = ref.current;
@@ -40,7 +64,9 @@ export function CameraRig({ preset, rotationY, reduced }: { preset: Preset; rota
     const mark = () => { lastInput.current = clock.current; };
     c.addEventListener("controlstart", mark);
     c.addEventListener("control", mark);
+    const undo = letPageScroll(c);
     return () => {
+      undo();
       c.removeEventListener("controlstart", mark);
       c.removeEventListener("control", mark);
     };

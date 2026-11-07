@@ -3,7 +3,7 @@ import { PerformanceMonitor } from "@react-three/drei";
 import { Canvas, type RootState } from "@react-three/fiber";
 import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
-import { CameraRig, type Preset } from "./CameraRig";
+import { CameraRig, type PresetRequest } from "./CameraRig";
 import { EnergyFlow } from "./EnergyFlow";
 import { Appear, EQUIPMENT_HIT, Panels, type Pointer } from "./Equipment";
 import { buildEquipment, type EquipmentKey } from "./equipmentGeometry";
@@ -16,7 +16,7 @@ export interface SceneProps {
   spec: SceneSpec;
   palette: Palette;
   reduced: boolean;
-  preset: Preset;
+  preset: PresetRequest;
   active: CompKey | null;
   pointer: Pointer;
   onMiss: () => void;
@@ -123,7 +123,7 @@ function World({ spec, palette, reduced, preset, active, pointer }: Omit<ScenePr
         <EnergyFlow flows={spec.flows} nodes={nodes} sunDir={sunLocal} rayTargets={rays} palette={palette} reduced={reduced} />
         {activeSpec?.visible && <Tooltip spec={activeSpec} position={labels[activeSpec.key]} />}
       </group>
-      <CameraRig preset={preset} rotationY={rotationY} reduced={reduced} />
+      <CameraRig request={preset} rotationY={rotationY} reduced={reduced} />
     </>
   );
 }
@@ -137,12 +137,12 @@ export default function Scene(props: SceneProps) {
       flat
       dpr={[1, dpr]}
       camera={{ fov: 32, near: 0.5, far: 200, position: [17, 10, 24] }}
-      gl={{ antialias: true, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
+      gl={{ antialias: true, powerPreference: "high-performance" }}
       onPointerMissed={props.onMiss}
       onCreated={props.onReady}
       style={{ touchAction: "pan-y" }}
     >
-      <PerformanceMonitor onDecline={() => setDpr(1)} onIncline={() => setDpr(2)} />
+      <PerformanceMonitor flipflops={3} onDecline={() => setDpr(1)} onIncline={() => setDpr(2)} onFallback={() => setDpr(1)} />
       <World {...props} />
     </Canvas>
   );

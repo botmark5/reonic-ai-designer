@@ -71,8 +71,8 @@ export function buildSceneSpec(
   const roof = resolveRoof(home, roofInput);
   const homeowner = mode === "homeowner";
 
-  const pvOn = pv.include && positive(pv.kwp);
-  const designPanels = pvOn ? panelCount(pv.kwp) : 0;
+  const designPanels = pv.include ? panelCount(pv.kwp) : 0;
+  const pvOn = designPanels > 0; // < 0.225 kWp rounds to no panel at all
   const layout = layoutPanels(panelCount(pvOn ? pv.kwp : 0, roofInput?.maxPanels), planesFor(roof.pitchDeg));
   const missing = designPanels - layout.placed;
 
@@ -111,8 +111,8 @@ export function buildSceneSpec(
   };
 
   const all: Array<Flow & { on: boolean }> = [
-    { id: "sun-panels", from: "sun", to: "panels", color: "pv", on: pvOn },
-    { id: "panels-inverter", from: "panels", to: "inverter", color: "pv", on: pvOn },
+    { id: "sun-panels", from: "sun", to: "panels", color: "pv", on: layout.placed > 0 },
+    { id: "panels-inverter", from: "panels", to: "inverter", color: "pv", on: layout.placed > 0 },
     { id: "inverter-battery", from: "inverter", to: "battery", color: "battery", on: pvOn && batOn },
     { id: "inverter-house", from: "inverter", to: "house", color: "pv", on: pvOn },
     { id: "house-wallbox", from: "house", to: "wallbox", color: "wallbox", on: wbOn },

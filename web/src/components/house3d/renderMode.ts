@@ -23,7 +23,9 @@ export function detectEnv(): RenderEnv {
   let webgl = false;
   try {
     const c = document.createElement("canvas");
-    webgl = !!(c.getContext("webgl2") ?? c.getContext("webgl"));
+    const ctx = (c.getContext("webgl2") ?? c.getContext("webgl")) as WebGLRenderingContext | null;
+    webgl = !!ctx;
+    ctx?.getExtension("WEBGL_lose_context")?.loseContext();
   } catch {
     webgl = false;
   }

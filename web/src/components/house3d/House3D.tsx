@@ -1,10 +1,10 @@
 "use client";
 import type { RootState } from "@react-three/fiber";
 import dynamic from "next/dynamic";
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { DesignResponse, Home } from "../../lib/types";
 import { cn } from "../../lib/utils";
-import { PRESETS, type Preset } from "./CameraRig";
+import { PRESETS, type Preset, type PresetRequest } from "./CameraRig";
 import type { Pointer } from "./Equipment";
 import { useReducedMotion, useThemeName } from "./hooks";
 import { roofPlanes } from "./houseGeometry";
@@ -15,7 +15,22 @@ import type { House3DMode, RoofInput } from "./types";
 
 const Scene = dynamic(() => import("./Scene"), { ssr: false });
 
-export const FALLBACK_IMAGE = "/models/house-fallback.png";
+/** Still images of the house with panels only (no other equipment), so they never show something the offer lacks. */
+export const FALLBACK_IMAGE = { light: "/models/house-fallback.png", dark: "/models/house-fallback-dark.png" } as const;
+
+/** If WebGL fails after all (context limit, blocked GPU), show the still image instead of breaking the page. */
+class SceneBoundary extends Component<{ onError: () => void; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onError();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 export interface House3DProps {
   design: DesignResponse;
@@ -51,16 +66,21 @@ const pill =
 export function House3D({ design, home, mode, roof, static: forceStatic = false, className }: House3DProps) {
   const theme = useThemeName();
   const reduced = useReducedMotion();
-  const renderMode = useRenderMode(forceStatic);
+  const [failed, setFailed] = useState(false);
+  const renderMode = useRenderMode(forceStatic || failed);
   const palette = useMemo(() => getPalette(theme), [theme]);
   const spec = useMemo(() => buildSceneSpec(design, home, mode, roofPlanes, roof), [design, home, mode, roof]);
 
-  const [preset, setPreset] = useState<Preset>("overview");
+  const [preset, setPreset] = useState<PresetRequest>({ preset: "overview", n: 0 });
   const [hovered, setHovered] = useState<CompKey | null>(null);
   const [selected, setSelected] = useState<CompKey | null>(null);
   const [ready, setReady] = useState(false);
-  const gl = useRef<RootState["gl"] | null>(null);
-  const active = hovered ?? selected;
+  const three = useRef<RootState | null>(null);
+  const shown = (k: CompKey | null) => (k && spec.components[k].visible ? k : null);
+  const active = shown(hovered) ?? shown(selected);
+
+  // never leave the page with a pointer cursor
+  useEffect(() => () => { document.body.style.cursor = ""; }, []);
 
   const pointer = useMemo<Pointer>(() => ({
     onOver: (k) => { setHovered(k); document.body.style.cursor = "pointer"; },
@@ -69,22 +89,24 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
   }), []);
 
   const onReady = useCallback((state: RootState) => {
-    gl.current = state.gl;
+    three.current = state;
+    state.gl.domElement.addEventListener("webglcontextlost", () => setFailed(true), { once: true });
     requestAnimationFrame(() => requestAnimationFrame(() => setReady(true)));
   }, []);
 
   const saveImage = useCallback(() => {
-    const canvas = gl.current?.domElement;
-    if (!canvas) return;
+    const s = three.current;
+    if (!s) return;
+    s.gl.render(s.scene, s.camera); // draw now, so the buffer is current without preserveDrawingBuffer
     const a = document.createElement("a");
-    a.href = canvas.toDataURL("image/png");
+    a.href = s.gl.domElement.toDataURL("image/png");
     a.download = "house-design.png";
     a.click();
   }, []);
 
   const legend = COMP_KEYS.filter((k) => spec.components[k].visible && !(mode === "homeowner" && k === "inverter"));
   const show3d = renderMode === "3d";
-  const activeSpec = active && spec.components[active].visible ? spec.components[active] : null;
+  const activeSpec = active ? spec.components[active] : null;
 
   return (
     <figure
@@ -96,7 +118,7 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
       <div className="relative aspect-[4/3] w-full md:aspect-[16/10]">
       {/* eslint-disable-next-line @next/next/no-img-element -- static fallback must work without the image optimiser */}
       <img
-        src={FALLBACK_IMAGE}
+        src={FALLBACK_IMAGE[theme]}
         alt={show3d ? "" : spec.summary}
         aria-hidden={show3d}
         className={cn(
@@ -110,6 +132,7 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
           aria-label={spec.summary}
           className={cn("absolute inset-0 transition-opacity duration-200", ready ? "opacity-100" : "opacity-0")}
         >
+          <SceneBoundary onError={() => setFailed(true)}>
           <Scene
             spec={spec}
             palette={palette}
@@ -120,6 +143,7 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
             onMiss={() => setSelected(null)}
             onReady={onReady}
           />
+          </SceneBoundary>
         </div>
       )}
       </div>
@@ -150,14 +174,24 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
             );
           })}
         </ul>
-        {activeSpec && (
-          <p role="status" className="text-[13px] leading-[18px] text-ink-body sm:hidden">
-            <span className="font-semibold text-ink">{activeSpec.title}</span>
-            {activeSpec.size && <span className="font-mono tabular-nums"> · {activeSpec.size}</span>}
-            {activeSpec.reason && <> · {activeSpec.reason}</>}
-            {activeSpec.note && <span className="text-warning-text"> · {activeSpec.note}</span>}
-          </p>
-        )}
+        {/* Details of the selected part. Always mounted (live region); visible on phones and in the still image,
+            on larger screens in 3D the floating tooltip shows it and this stays for screen readers. */}
+        <p
+          role="status"
+          className={cn(
+            "text-[13px] leading-[18px] text-ink-body empty:hidden",
+            show3d ? "sm:sr-only" : "pointer-events-auto rounded-md bg-surface-1/90 px-2 py-1 backdrop-blur-sm sm:max-w-md",
+          )}
+        >
+          {activeSpec && (
+            <>
+              <span className="font-semibold text-ink">{activeSpec.title}</span>
+              {activeSpec.size && <span className="font-mono tabular-nums"> · {activeSpec.size}</span>}
+              {activeSpec.reason && <> · {activeSpec.reason}</>}
+              {activeSpec.note && <span className="text-warning-text"> · {activeSpec.note}</span>}
+            </>
+          )}
+        </p>
         {show3d && (
           <div className="pointer-events-auto flex shrink-0 gap-1.5">
             <div role="group" aria-label="Camera view" className="flex gap-1 rounded-full bg-surface-1/90 p-1 backdrop-blur-sm">
@@ -165,9 +199,9 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
                 <button
                   key={p}
                   type="button"
-                  aria-pressed={preset === p}
-                  onClick={() => setPreset(p)}
-                  className={cn(pill, "h-7", preset === p ? "bg-primary text-primary-ink" : "text-ink-body hover:bg-surface-2")}
+                  aria-pressed={preset.preset === p}
+                  onClick={() => setPreset((r) => ({ preset: p, n: r.n + 1 }))}
+                  className={cn(pill, "h-7", preset.preset === p ? "bg-primary text-primary-ink" : "text-ink-body hover:bg-surface-2")}
                 >
                   {PRESET_LABEL[p]}
                 </button>
