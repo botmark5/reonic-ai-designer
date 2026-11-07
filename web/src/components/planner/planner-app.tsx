@@ -110,7 +110,7 @@ function Workspace({
           </div>
         </div>
 
-        <RefineBox home={s.home} locks={s.locks} onResult={p.applyRefine} showExamples={!s.change} />
+        <RefineBox home={s.home} locks={s.locks} response={r} onResult={p.applyRefine} showExamples={!s.change} />
 
         <div aria-live="polite" className="empty:hidden">
           {!s.busy && s.change && (s.change.diff.lines.length > 0 || s.change.note) && (
