@@ -24,7 +24,7 @@ VALUE_BY_TYPE = {
     "Heatpump": ("heatpump_nominal_power_kw", "heat pump", "W"),
 }
 FLAGS = [
-    "is_duplicate_option", "is_outlier", "pv_sources_disagree", "pv_wp_assumed", "roof_mixed", "has_backup",
+    "is_duplicate_option", "is_outlier", "pv_sources_disagree", "roof_mixed", "has_backup",
 ]
 
 
@@ -48,6 +48,15 @@ def _num(x) -> str:
     return "n/a" if pd.isna(x) else f"{float(x):g}"
 
 
+def _true(x) -> bool:
+    """NaN-safe truth: a missing value is not True."""
+    return bool(pd.notna(x) and x)
+
+
+def _yes(x) -> str:
+    return "yes" if _true(x) else "no"
+
+
 def _value(item: pd.Series) -> str:
     spec = VALUE_BY_TYPE.get(item.component_type)
     if spec is None or pd.isna(item.get(spec[0])):
@@ -60,27 +69,29 @@ def _cell(text) -> str:
 
 
 def _design_line(d: pd.Series) -> str:
+    assumed = f" @ {_num(d.pv_wp_assumed)} W assumed" if pd.notna(d.get("pv_wp_assumed")) else ""
     parts = [
         f"{d.offer_type}",
-        f"PV {_num(d.pv_kwp)} kWp ({_num(d.pv_panels)} panels, {d.pv_source})",
+        f"PV {_num(d.pv_kwp)} kWp ({_num(d.pv_panels)} panels{assumed}, {d.pv_source})",
         f"battery {_num(d.battery_kwh)} kWh ({d.battery_source})",
-        f"wallbox {'yes' if d.wallbox else 'no'}" + (f" {_num(d.wallbox_kw)} kW" if d.wallbox else ""),
-        f"heat pump {_num(d.heatpump_kw)} kW" if d.heatpump else "heat pump no",
+        f"wallbox {_yes(d.wallbox)}" + (f" {_num(d.wallbox_kw)} kW" if _true(d.wallbox) else ""),
+        f"heat pump {_num(d.heatpump_kw)} kW" if _true(d.heatpump) else "heat pump no",
         f"inverter {_num(d.inverter_kw)} kW",
         f"roof {d.roof_type}",
-        f"scaffolding {'yes' if d.has_scaffolding else 'no'}",
+        f"scaffolding {_yes(d.has_scaffolding)}",
         f"brand {d.brand}",
     ]
-    flags = [f for f in FLAGS if f in d and bool(d[f])]
+    flags = [f for f in FLAGS if f in d and _true(d[f])]
     if flags:
         parts.append("flags: " + ", ".join(flags))
     return "; ".join(parts)
 
 
 def _project_header(d: pd.Series) -> str:
-    kwh = f"{_num(d.annual_kwh_raw)} kWh/yr" + ("" if d.consumption_known else " (default)")
+    marker = " (invalid)" if _true(d.get("demand_is_invalid")) else " (default)" if _true(d.get("demand_is_default")) else ""
+    kwh = f"{_num(d.annual_kwh_raw)} kWh/yr{marker}"
     return (
-        f"installer {d.installer}; annual consumption {kwh}; EV {'yes' if d.has_ev else 'no'}; "
+        f"installer {d.installer}; annual consumption {kwh}; EV {_yes(d.has_ev)}; "
         f"existing PV {_num(d.existing_pv_kwp)} kWp; existing battery {_num(d.existing_battery_kwh)} kWh"
     )
 
@@ -99,7 +110,7 @@ def render_spotcheck(designs: pd.DataFrame, parts: pd.DataFrame, n: int = 20, se
         proj = designs[designs.project_id == pid].sort_values(["is_primary", "option_number"], ascending=[False, True])
         out += [f"## {k}. Project {pid}", "", _project_header(proj.iloc[0]), ""]
         for _, d in proj.iterrows():
-            mark = " (primary)" if d.is_primary else ""
+            mark = " (primary)" if _true(d.is_primary) else ""
             out += [f"### Option {int(d.option_number)}{mark}", "", f"Extracted: {_design_line(d)}", ""]
             items = parts[(parts.project_id == pid) & (parts.option_number == d.option_number)]
             if "installer" in items:

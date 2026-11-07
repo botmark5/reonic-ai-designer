@@ -9,13 +9,14 @@ def _design(installer, pid, opt, primary, pv, battery_kwh, **extra):
     row = {
         "installer": installer, "project_id": pid, "option_number": opt, "is_primary": primary,
         "offer_type": "full", "is_full_design": True,
-        "pv_kwp": pv, "pv_panels": round(pv * 1000 / 450), "pv_source": "module_items", "pv_wp_assumed": False,
+        "pv_kwp": pv, "pv_panels": round(pv * 1000 / 450), "pv_source": "module_items",
         "pv_sources_disagree": False, "battery_kwh": battery_kwh, "battery_source": "item" if battery_kwh else "none",
         "wallbox": True, "wallbox_kw": 11.0, "n_wallboxes": 1, "heatpump": False, "heatpump_kw": float("nan"),
         "inverter_kw": 10.0, "roof_type": "tile", "roof_mixed": False, "has_scaffolding": True, "has_backup": False,
         "brand": "Acme", "is_outlier": False, "is_duplicate_option": False,
         "annual_kwh_raw": 4200.0, "consumption_known": True, "has_ev": False,
         "existing_pv_kwp": 0.0, "existing_battery_kwh": 0.0,
+        "pv_wp_assumed": float("nan"), "demand_is_default": False, "demand_is_invalid": False,
     }
     row.update(extra)
     return row
@@ -26,7 +27,7 @@ def _frames():
         _design("2a8ba8e2", "projAAAA", 1, True, 8.55, 9.0),
         _design("2a8ba8e2", "projAAAA", 2, False, 6.3, 0.0),
         _design("23c108b7", "projBBBB", 1, False, 12.15, 7.7),
-        _design("23c108b7", "projBBBB", 2, True, 4.05, 0.0, consumption_known=False, is_outlier=True),
+        _design("23c108b7", "projBBBB", 2, True, 4.05, 0.0, consumption_known=False, demand_is_default=True, is_outlier=True),
     ])
     items = []
     for inst, pid, opt in [("2a8ba8e2", "projAAAA", 1), ("2a8ba8e2", "projAAAA", 2),
@@ -78,3 +79,37 @@ def test_sample_is_stratified_and_deterministic():
     assert s == sample_projects(designs, n=20, seed=42)
     small = sample_projects(designs, n=2, seed=42)
     assert {p[0] for p in small} == {"a", "b"}
+
+
+def _render_one(**extra):
+    designs = pd.DataFrame([_design("2a8ba8e2", "projCCCC", 1, True, 0.0, 0.0, **extra)])
+    parts = make_items([{"name": "Wallbox 11", "type": "Wallbox", "wb_charging_speed_kw": 11000}])
+    parts.insert(0, "installer", "2a8ba8e2")
+    parts["project_id"], parts["option_number"] = "projCCCC", 1
+    return render_spotcheck(designs, parts, n=1, seed=42)
+
+
+def test_nan_pv_wp_assumed_is_not_a_flag():
+    md = _render_one()
+    assert "pv_wp_assumed" not in md and "assumed" not in md
+
+
+def test_assumed_panel_wattage_shown_in_pv_part():
+    md = _render_one(pv_kwp=8.55, pv_panels=19, pv_wp_assumed=450.0)
+    assert "19 panels @ 450 W assumed" in md
+    assert "pv_wp_assumed" not in md
+
+
+def test_nan_bools_render_as_no():
+    md = _render_one(wallbox=float("nan"), heatpump=float("nan"), has_scaffolding=float("nan"), has_ev=float("nan"),
+                     is_outlier=float("nan"))
+    assert "wallbox no" in md and "heat pump no" in md and "scaffolding no" in md and "EV no" in md
+    assert "flags" not in md
+
+
+def test_consumption_markers():
+    assert "(default)" in _render_one(consumption_known=False, demand_is_default=True)
+    md = _render_one(consumption_known=False, demand_is_invalid=True, annual_kwh_raw=1.0)
+    assert "(invalid)" in md and "(default)" not in md
+    md = _render_one()
+    assert "(default)" not in md and "(invalid)" not in md
