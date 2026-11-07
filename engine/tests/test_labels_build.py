@@ -54,8 +54,11 @@ def test_sizes_non_negative(built):
 def test_battery_sizes_in_catalogue(built):
     designs, catalogue = built
     for inst, d in designs[~designs.is_outlier & designs.battery].groupby("installer"):
-        sold = {float(k) for k in catalogue[inst]["battery_kwh"]}
-        assert set(d.battery_kwh.round(2)) <= sold
+        sizes = {float(k): n for k, n in catalogue[inst]["battery_kwh"].items()}
+        assert set(d.battery_kwh.round(2)) <= set(sizes)
+        # independent of the set check: every battery option is counted once, and sizes are home-battery sized
+        assert sum(sizes.values()) == len(d)
+        assert all(1 < kwh <= 40 for kwh in sizes)
 
 
 def test_commercial_project_is_outlier(built):
