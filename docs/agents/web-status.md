@@ -9,7 +9,8 @@ _Web agent: replace this with what changed, what is next, what is blocking, and 
   roof drives `<House3D roof>`. The offline estimate also respects the roof cap.
 - Changed: /reality reads both /eval shapes: headline from `segments.full_designs` when present (else all projects),
   `segments.add_ons` as a separate block; P10–P90 coverage tile (new full systems) + add-on row from
-  `pv_interval_coverage_pct` (#43/#46). Ties at the shown precision read "Same as rule", not "Below".
+  `pv_interval_coverage_pct` (#43/#46). All headline tiles, the add-on block and coverage read the ANSWERED mode
+  (`with_existing_pv_answer.segments`) when present; coverage rows need pv_n >= 20. Ties read "Same as rule".
 - Changed: /reality "Battery retrofit" example is labelled "Unanswered mode" while /project designs without the
   existing-PV answer (#47); the label disappears by itself once the engine returns a battery retrofit for it.
 - Changed: with no new PV (pv.include=false) the PV range is hidden from the planner card and from the refine agent

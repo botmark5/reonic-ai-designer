@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { verdicts, coverage, headlineSource, headlines } from "./reality";
+import { verdicts, coverage, headlineSource, headlines, trustedCoverage } from "./reality";
 import type { ExpertVariant } from "./types";
 
 const v = (o: Partial<ExpertVariant>): ExpertVariant => ({ option_number: 1, is_primary: true, pv_kwp: 9, battery_kwh: 10, has_wallbox: false, heatpump_kw: 0, ...o });
@@ -91,5 +91,22 @@ describe("headlines ties", () => {
     ]);
     expect(h.tie).toBe(true);
     expect(h.wins).toBeNull();
+  });
+});
+
+describe("answered mode and trusted coverage", () => {
+  it("prefers the answered mode's new full systems and add-ons", () => {
+    const full = { design_model: { n_projects: 253, pv_n: 240, pv_interval_coverage_pct: 79.1 } };
+    const addOns = { design_model: { n_projects: 62, pv_n: 4, pv_interval_coverage_pct: 0 } };
+    const s = headlineSource({
+      metrics: { design_model: {} },
+      segments: { full_designs: { design_model: { pv_interval_coverage_pct: 80.7 } } },
+      with_existing_pv_answer: { metrics: { design_model: {} }, segments: { full_designs: full, add_ons: addOns } },
+    });
+    expect(s.answered).toBe(true);
+    expect(s.metrics).toBe(full);
+    expect(trustedCoverage(s.metrics.design_model)).toBe(79.1);
+    expect(trustedCoverage(s.addOns?.design_model)).toBeNull(); // only 4 homes
+    expect(trustedCoverage({ pv_n: 30, pv_interval_coverage_pct: null })).toBeNull();
   });
 });
