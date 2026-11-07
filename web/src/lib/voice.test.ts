@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { mockDesign } from "./engine";
+import { engine } from "./engine";
+import { mockDesign } from "./engine-mock";
 import { EMPTY_LOCKS, type DesignRequest, type DesignResponse } from "./types";
 import type { SolarResult } from "./solar";
 import {
@@ -16,6 +17,7 @@ import {
   type CallPatch,
   type VoiceDeps,
   type VoiceStore,
+  voiceDeps,
 } from "./voice";
 
 // ---------------------------------------------------------------------------
@@ -410,7 +412,7 @@ describe("handleExplain", () => {
     expect(await res.json()).toMatchObject({ by: "claude", text: "Your roof can carry 10.8 kWp." });
     const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.anthropic.com/v1/messages");
-    expect(JSON.parse(String(init.body)).model).toBe("claude-sonnet-5-5");
+    expect(JSON.parse(String(init.body))).toMatchObject({ model: "claude-sonnet-5-5", thinking: { type: "between_tools" } });
   });
 
   it("returns audio when TTS is enabled and requested", async () => {
@@ -431,5 +433,30 @@ describe("handleExplain", () => {
 
   it("German template", () => {
     expect(offerTemplate(d0, "de")).toContain("10,8 kWp");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// default deps: never store B's offline estimate as a voice draft
+// ---------------------------------------------------------------------------
+describe("voiceDeps().design", () => {
+  const req: DesignRequest = { installer: "2a8ba8e2", home: normaliseFacts({ annual_kwh: 4000 }).home, locks: EMPTY_LOCKS };
+  const offline = () => ({ ...mockDesign(req), served: { source: "offline" as const, reason: "tunnel down", ms: 1 } });
+
+  it("rejects the offline estimate when an engine is configured", async () => {
+    vi.stubEnv("ENGINE_URL", "https://engine.example");
+    const spy = vi.spyOn(engine, "design").mockResolvedValue(offline());
+    await expect(voiceDeps(() => {}).design(req)).rejects.toThrow(/engine offline/);
+    spy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  it("accepts the mock when no engine is configured (dev)", async () => {
+    vi.stubEnv("ENGINE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_ENGINE_URL", "");
+    const spy = vi.spyOn(engine, "design").mockResolvedValue(offline());
+    await expect(voiceDeps(() => {}).design(req)).resolves.toMatchObject({ model_version: "MOCK" });
+    spy.mockRestore();
+    vi.unstubAllEnvs();
   });
 });

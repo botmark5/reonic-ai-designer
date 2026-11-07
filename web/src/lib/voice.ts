@@ -11,7 +11,7 @@
  */
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { DEFAULT_INSTALLER, getEngine } from "./engine";
+import { DEFAULT_INSTALLER, engine, engineUrl } from "./engine";
 import { lookupSolar, roofFromSolar, type SolarResult } from "./solar";
 import { getServerSupabase, type TranscriptTurn } from "./supabase";
 import { EMPTY_LOCKS, type DesignRequest, type DesignResponse, type Home, type Locks } from "./types";
@@ -27,6 +27,7 @@ const DEFAULT_KWH = 4000;
 const CREATE_BUDGET_MS = 2500; // the agent must be able to speak within ~3 s
 const SOLAR_BUDGET_MS = 900;
 const RETRY_ENGINE_MS = 20000;
+const RETRY_GAP_MS = 8000; // B's engine client cools down for 15 s after an outage
 const SIGNATURE_TOLERANCE_S = 30 * 60;
 const EXPLAIN_MODEL = "claude-sonnet-5-5";
 
@@ -342,7 +343,13 @@ export function voiceDeps(defer: VoiceDeps["defer"]): VoiceDeps {
   const env = process.env;
   return {
     store: db ? supabaseStore(db) : nullStore,
-    design: (req) => getEngine().design(req),
+    design: async (req) => {
+      const r = await engine.design(req);
+      // B's client answers with a rule-of-thumb "offline estimate" when the engine is down. A voice draft must come from
+      // the engine, so treat that as "not ready" (pending + retry). Without ENGINE_URL at all (dev), the mock is accepted.
+      if (r.served?.source === "offline" && engineUrl()) throw new Error(`engine offline (${r.served.reason})`);
+      return r;
+    },
     solar: (address) => lookupSolar(address),
     defer,
     installer: env.VOICE_INSTALLER || DEFAULT_INSTALLER,
@@ -423,8 +430,15 @@ export async function createDraftFromFacts(
   }
 
   deps.defer(async () => {
-    const late = await withTimeout(deps.design(req), RETRY_ENGINE_MS, "engine retry");
-    if (late) await deps.store.insertDesign({ call_id: callId, home, locks: EMPTY_LOCKS, design: late });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await new Promise((r) => setTimeout(r, RETRY_GAP_MS));
+      const late = await withTimeout(deps.design(req), RETRY_GAP_MS, `engine retry ${attempt + 1}`);
+      if (late) {
+        await deps.store.insertDesign({ call_id: callId, home, locks: EMPTY_LOCKS, design: late });
+        return;
+      }
+    }
+    log("engine still unavailable: call stored without a design");
   });
   return { ...toolInstruction(null), call_id: callId, design_id: null, pending: true };
 }
@@ -593,7 +607,8 @@ export async function offerScript(d: DesignResponse, lang: Lang, deps: VoiceDeps
       headers: { "content-type": "application/json", "x-api-key": deps.anthropicKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
         model: EXPLAIN_MODEL,
-        max_tokens: 400,
+        max_tokens: 600,
+        thinking: { type: "between_tools" }, // = no thinking before the answer (thinking ate the whole budget; "disabled" is rejected by this model)
         system:
           "You write a short spoken summary of a home energy offer for the homeowner, to be read aloud. " +
           "Plain everyday words, warm and factual, no jargon, no lists, no markdown. At most 110 words (about 45 seconds). " +
@@ -605,7 +620,10 @@ export async function offerScript(d: DesignResponse, lang: Lang, deps: VoiceDeps
     if (!res.ok) throw new Error(`Anthropic ${res.status}`);
     const json = await res.json();
     const text = (json?.content ?? []).filter((c: { type?: string }) => c?.type === "text").map((c: { text: string }) => c.text).join("").trim();
-    if (!text) throw new Error("empty text");
+    if (!text) {
+      const kinds = (json?.content ?? []).map((c: { type?: string }) => c?.type).join("+") || "none";
+      throw new Error(`no text (stop_reason ${json?.stop_reason ?? "?"}, blocks ${kinds})`);
+    }
     return { text, by: "claude" };
   } catch (e) {
     log(`explain via Claude failed, using template: ${e instanceof Error ? e.message : "unknown error"}`);

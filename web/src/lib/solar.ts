@@ -3,6 +3,7 @@
  * Server-only (uses GOOGLE_MAPS_API_KEY). Never throws: every failure is a status the caller can show or ignore.
  * Results are cached in memory per server instance (24 h; failures 10 min).
  */
+import "server-only";
 
 export interface RoofSegment {
   pitch_deg: number;

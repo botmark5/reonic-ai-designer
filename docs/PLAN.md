@@ -40,7 +40,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 
 ## Phase 4 — Stretch
 - [ ] Homeowner view (variants only, savings/payback/autarky in plain words)
-- [ ] ElevenLabs "Explain my offer" voice + voice agent calling /design
+- [x] ElevenLabs "Explain my offer" voice + voice agent calling /design (backend: web/voice — create_design tool, post-call webhook, /api/solar, /api/voice/explain; audio off until the voice is confirmed)
 - [ ] Validation screen
 - [ ] Confidence calibration, A→B findings for the deck, fix worst 3 edge cases
 
