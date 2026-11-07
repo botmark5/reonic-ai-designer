@@ -65,6 +65,39 @@ Headline (Mark's request): **new full systems**, planner answered 'Solar already
 | battery size: classifier + installer kWh/kWp rule (mean) | CV 2.35 -> 2.25 kWh, within one step 57 -> 61 %; locked test 49 -> 54 % | **shipped** |
 | external data: PVGIS (EU JRC) yield per tilt x orientation + monthly split | physics only (never labels) | **shipped** (physics) |
 
+### Round 2: deterministic, hybrid and tuned approaches for PV size (5-fold CV by customer, training part, new systems, n=1046)
+| approach | PV MAE kWp | within ±1.5 kWp | note |
+|---|---|---|---|
+| current LightGBM (Huber + monotone) | 2.49 | 43 % | shipped |
+| best of 14 random hyperparameter settings (4 leaves) | 2.47 | 44 % | −0.6 %, inside fold noise (±0.18) and selection bias: not changed |
+| hybrid: LightGBM + physics optimiser kWp/autarky as inputs | 2.49 | 43 % | physics adds no information about expert choices |
+| hybrid: mean of LightGBM and a power law | 2.48 | 43 % | same |
+| power law per installer, kWp = a · MWh^b (fitted) | 2.56 | 42 % | deterministic; no better than the band median |
+| per-installer LightGBM | 2.57 | 41 % | pooling both installers wins (little data each) |
+| band median (best baseline) | 2.57 | 41 % | |
+| economic optimum (20-yr net benefit, physics) x installer ratio | 2.77 | 39 % | experts do not size for maximum return |
+| economic optimum, raw | 10.20 | 1 % | with feed-in pay, more PV always "pays": hits the grid limit |
+
+### Round 2: battery size given the PV (5-fold CV, training part, new systems with a battery, n=1006)
+| approach | battery MAE kWh | within one catalogue step |
+|---|---|---|
+| **classifier + installer kWh/kWp rule (mean)** | **2.25** | **61 %** (shipped) |
+| median by installer x PV band | 2.27 | 56 % |
+| classifier alone | 2.35 | 57 % |
+| classifier + kWh/kWp + kWh/MWh rules (mean of 3) | 2.38 | 58 % |
+| installer kWh/kWp rule | 2.48 | 53 % |
+| published rule: 1 kWh per kWp (HTW Berlin / installers' rule of thumb) | 2.54 | 54 % |
+| installer mode | 2.72 | 44 % |
+| installer kWh per MWh consumption | 3.62 | 44 % |
+| published rule: 1 kWh per 1,000 kWh consumption | 4.46 | 21 % |
+
+**Conclusion.** PV size has reached what these inputs can explain: every learner, rule, hybrid and tuning lands within
+2.47–2.57 kWp, and the remaining error is information the data does not contain (roof size and shape, customer budget
+and wishes). The biggest lever is new inputs, not new algorithms: the optional roof capacity from Google Solar (now an
+input, used as a cap) and the existing-PV question (PV yes/no 90 → 100 %). Installers here size batteries by PV size,
+not by consumption. External registries (Marktstammdatenregister) hold installed sizes without household data, so they
+could only serve as a plausibility check, not as training labels.
+
 ## Error analysis (locked test set, shipped model)
 
 ## Mode: not answered
