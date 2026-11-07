@@ -8,7 +8,7 @@ Independent of HOW the labels are built (engine/labels.py) and of WHICH model is
     python -m engine.evaluate --labels engine/artifacts/expert_designs.parquet
 
 Protocol
-    held-out : 80/20 split BY PROJECT (never by row), stratified by installer, seed 42
+    held-out : 80/20 split BY CUSTOMER / PROJECT (never by row), stratified by installer, seed 42
     transfer : train on installer A, test on installer B (and B -> A)
     truth    : the primary option of each project; the min/max over ALL its options = "variant range"
 """
@@ -54,9 +54,37 @@ def load_labels(path: Path | str) -> pd.DataFrame:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Label table not found: {path}. It is produced by engine/labels.py (branch engine/labels).")
-    df = pd.read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path)
+    df = normalize_labels(pd.read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path))
     validate_labels(df)
     return df
+
+
+# engine/labels schema v1.1 uses battery / wallbox / heatpump and has no has_pv column
+LABEL_ALIASES = {"battery": "has_battery", "wallbox": "has_wallbox", "heatpump": "has_heatpump"}
+
+
+def normalize_labels(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Accept both label schemas: the contract above and engine/labels v1.1. Idempotent.
+    - battery/wallbox/heatpump -> has_battery/has_wallbox/has_heatpump; has_pv = pv_kwp > 0
+    - missing sizes (NaN = none in v1.1) -> 0
+    - is_outlier (pv > 30 kWp or battery > 40 kWh, commercial size): those options are dropped, and a project
+      whose primary option is an outlier is dropped entirely
+    """
+    df = df.copy()
+    for src, dst in LABEL_ALIASES.items():
+        if dst not in df.columns and src in df.columns:
+            df[dst] = df[src].fillna(False).astype(bool)
+    if "has_pv" not in df.columns and "pv_kwp" in df.columns:
+        df["has_pv"] = df.pv_kwp.fillna(0) > 0
+    for c in ("pv_kwp", "battery_kwh", "heatpump_kw"):
+        if c in df.columns:
+            df[c] = df[c].fillna(0.0)
+    if "is_outlier" in df.columns:
+        out = df.is_outlier.fillna(False).astype(bool)
+        bad_projects = set(df.loc[out & df.is_primary.astype(bool), "project_id"])
+        df = df[~out & ~df.project_id.isin(bad_projects)]
+    return df.reset_index(drop=True)
 
 
 def validate_labels(df: pd.DataFrame) -> None:
@@ -84,7 +112,7 @@ def load_inputs(raw_dir: Path | str = RAW_DIR) -> pd.DataFrame:
             continue
         sq = pd.read_csv(f)
         frames.append(pd.DataFrame({
-            "project_id": sq.project_id, "installer": d.name,
+            "project_id": sq.project_id, "installer": d.name, "customer_contact_id": sq.customer_contact_id,
             "annual_kwh": sq.energy_demand_wh / 1000,
             "price_eur_kwh": sq.energy_price_per_wh * 1000,
             "load_profile": sq.load_profile, "has_ev": sq.has_ev.astype(bool),
@@ -127,6 +155,7 @@ def load_catalogue(labels: pd.DataFrame, path: Path | str | None = ARTIFACTS / "
 # ---------------------------------------------------------------------------
 def build_eval_table(labels: pd.DataFrame, inputs: pd.DataFrame) -> pd.DataFrame:
     """One row per project: inputs, the primary (expert) design and the min/max over all options."""
+    labels = normalize_labels(labels)
     validate_labels(labels)
     ranges = labels.groupby("project_id").agg(
         pv_min=("pv_kwp", "min"), pv_max=("pv_kwp", "max"),
@@ -147,12 +176,17 @@ def build_eval_table(labels: pd.DataFrame, inputs: pd.DataFrame) -> pd.DataFrame
 # Splits
 # ---------------------------------------------------------------------------
 def grouped_split(table: pd.DataFrame, test_size: float = 0.2, seed: int = SEED):
-    """Split by project_id (a project is never in both parts), stratified by installer when possible."""
-    ids = table[["project_id", "installer"]].drop_duplicates("project_id")
+    """
+    Split by CUSTOMER when customer_contact_id is known (41 customers have 2 projects), else by project_id:
+    a project (and a customer's other project) is never in both parts. Stratified by installer when possible.
+    """
+    key = "customer_contact_id" if "customer_contact_id" in table.columns and table.customer_contact_id.notna().all() \
+        else "project_id"
+    ids = table[[key, "installer"]].drop_duplicates(key)
     strat = ids.installer if ids.installer.value_counts().min() >= 2 else None
-    train_ids, test_ids = train_test_split(ids.project_id, test_size=test_size, random_state=seed, stratify=strat)
-    return (table[table.project_id.isin(set(train_ids))].reset_index(drop=True),
-            table[table.project_id.isin(set(test_ids))].reset_index(drop=True))
+    train_ids, test_ids = train_test_split(ids[key], test_size=test_size, random_state=seed, stratify=strat)
+    return (table[table[key].isin(set(train_ids))].reset_index(drop=True),
+            table[table[key].isin(set(test_ids))].reset_index(drop=True))
 
 
 def installer_transfer(table: pd.DataFrame):
@@ -270,6 +304,10 @@ def compute_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) ->
     m["pv_kwp_mae"] = float(err.abs().mean()) if err.notna().any() else None
     m["pv_kwp_within_1.5_pct"] = _rate((err.abs() <= 1.5).to_numpy())
     m["pv_n"], m["pv_n_missing_pred"] = int(pv.sum()), int(err.isna().sum())
+    # size error alone: projects where expert AND prediction include PV (separates "yes/no" from "how big")
+    both = pv & (pred.pv_kwp.astype(float).fillna(0) > 0).to_numpy()
+    e2 = (pred.pv_kwp.astype(float) - truth.pv_kwp)[both]
+    m["pv_kwp_mae_when_both_pv"] = float(e2.abs().mean()) if len(e2) else None
 
     # battery size (projects where the expert installed a battery)
     bat = truth.has_battery.to_numpy()
@@ -286,6 +324,9 @@ def compute_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) ->
         within.append(d <= 1)
     m["battery_within_one_step_pct"] = _rate(within)
     m["battery_n"], m["battery_n_missing_pred"] = int(bat.sum()), int(err.isna().sum())
+    both = bat & (p_kwh.fillna(0) > 0).to_numpy()
+    e2 = (p_kwh - truth.battery_kwh)[both]
+    m["battery_kwh_mae_when_both_battery"] = float(e2.abs().mean()) if len(e2) else None
 
     # variant-range hit rate (all projects; a single-option project's range is one point)
     pk = pred.pv_kwp.astype(float)
@@ -336,7 +377,7 @@ def run_evaluation(labels: pd.DataFrame, predictors: dict, inputs: pd.DataFrame 
     assert not set(train.project_id) & set(test.project_id), "project leak between train and test"
     all_preds = {**BASELINES, **predictors}
 
-    results = {"protocol": dict(split="grouped by project_id, stratified by installer", test_size=test_size, seed=seed,
+    results = {"protocol": dict(split="grouped by customer_contact_id (else project_id), stratified by installer", test_size=test_size, seed=seed,
                                 n_train=len(train), n_test=len(test), pv_tolerance_kwp=PV_TOLERANCE_KWP,
                                 battery_tolerance_steps=BATTERY_TOLERANCE_STEPS, catalogue=catalogue),
                "metrics": {}, "by_installer": {}, "transfer": {}, "baselines": list(BASELINES)}
