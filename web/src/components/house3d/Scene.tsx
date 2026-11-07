@@ -28,6 +28,8 @@ export interface SceneProps {
   flows: LiveFlow[];
   batteryKwh: number | null;
   flyIn: boolean;
+  /** false while the canvas is scrolled out of view: the render loop pauses. */
+  inView: boolean;
   onMiss: () => void;
   onReady: (state: RootState) => void;
 }
@@ -103,12 +105,25 @@ function Daylight({ moment, palette, reduced }: { moment: DayStep; palette: Pale
         shadow-camera-far={110}
         shadow-bias={-0.0003}
         shadow-normalBias={0.035}
+        shadow-radius={3}
       />
     </>
   );
 }
 
-function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn }: Omit<SceneProps, "onMiss" | "onReady" | "dark">) {
+/** The sun's shadow map is drawn once per frame, not once per render call (contact shadows and AO render too). */
+function ShadowsOncePerFrame() {
+  useFrame((state) => { state.gl.shadowMap.needsUpdate = true; }, -1);
+  return null;
+}
+
+/** Exposure follows the theme (the renderer outlives theme switches). */
+function Exposure({ dark }: { dark: boolean }) {
+  useFrame((state) => { state.gl.toneMappingExposure = dark ? 0.95 : 1.02; }, -1);
+  return null;
+}
+
+function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
   const rotationY = THREE.MathUtils.degToRad(180 - spec.roof.azimuthDeg);
   const house = useMemo(() => buildHouse(spec.roof.pitchDeg, palette), [spec.roof.pitchDeg, palette]);
   const equipment = useMemo(() => buildEquipment(palette), [palette]);
@@ -164,19 +179,22 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
 
   const activeSpec = active ? c[active] : null;
   const modules = c.battery.visible ? batteryModuleCount(batteryKwh) : 0;
+  const intro = flyIn && !reduced; // first appearance animates only with the fly-in
+  // contact shadows re-render only for a few seconds after something on the ground changed
+  const groundKey = `${spec.layout.placed}|${modules}|${c.wallbox.visible}|${c.heatpump.visible}|${spec.roof.pitchDeg}|${palette.surface0}`;
 
   return (
     <>
       <group rotation-y={rotationY}>
         <primitive object={house.group} />
-        <Panels slots={spec.layout.slots} frames={frames} palette={palette} reduced={reduced} pointer={pointer} />
-        <Appear object={equipment.inverter} mount={anchors.inverter} visible={c.inverter.visible} reduced={reduced} delay={0.05} hitKey="inverter" pointer={pointer} />
-        <Appear object={equipment.wallbox} mount={anchors.wallbox} visible={c.wallbox.visible} reduced={reduced} delay={0.05} hitKey="wallbox" pointer={pointer} />
-        <Appear object={equipment.heatpump} mount={anchors.heatpump} visible={c.heatpump.visible} reduced={reduced} delay={0.05} hitKey="heatpump" pointer={pointer} />
-        <Battery mount={anchors.battery} modules={modules} soc={moment.soc} palette={palette} reduced={reduced} pointer={pointer} />
-        <Car object={equipment.car} path={anchors.carPath} visible={c.wallbox.visible} reduced={reduced} pointer={pointer} />
+        <Panels slots={spec.layout.slots} frames={frames} palette={palette} reduced={reduced} intro={intro} pointer={pointer} />
+        <Appear object={equipment.inverter} mount={anchors.inverter} visible={c.inverter.visible} reduced={reduced} intro={intro} delay={0.05} hitKey="inverter" pointer={pointer} />
+        <Appear object={equipment.wallbox} mount={anchors.wallbox} visible={c.wallbox.visible} reduced={reduced} intro={intro} delay={0.05} hitKey="wallbox" pointer={pointer} />
+        <Appear object={equipment.heatpump} mount={anchors.heatpump} visible={c.heatpump.visible} reduced={reduced} intro={intro} delay={0.05} hitKey="heatpump" pointer={pointer} />
+        <Battery mount={anchors.battery} modules={modules} soc={moment.soc} palette={palette} reduced={reduced} intro={intro} pointer={pointer} />
+        <Car object={equipment.car} path={anchors.carPath} visible={c.wallbox.visible} reduced={reduced} intro={intro} pointer={pointer} />
         <EnergyFlow flows={flows} nodes={nodes} sunDir={sunLocal} rayTargets={rays} gradientStops={palette.flow} reduced={reduced} />
-        <ContactShadows position={[1.2, 0.012, 2]} scale={38} resolution={512} blur={2.6} far={7} opacity={0.38} color="#1b1d20" />
+        <ContactShadows key={groundKey} frames={reduced ? 2 : 200} position={[1.2, 0.012, 2]} scale={38} resolution={512} blur={2.6} far={7} opacity={0.38} color="#1b1d20" />
         {activeSpec?.visible && <Tooltip spec={activeSpec} position={labels[activeSpec.key]} />}
       </group>
       <Daylight moment={moment} palette={palette} reduced={reduced} />
@@ -202,7 +220,7 @@ function Studio() {
 }
 
 /** The R3F canvas. Client-only: load it through next/dynamic with ssr: false (see House3D). */
-export default function Scene({ onMiss, onReady, dark, ...props }: SceneProps) {
+export default function Scene({ onMiss, onReady, dark, inView, ...props }: SceneProps) {
   const [tier, setTier] = useState<Tier>(2);
   const [monitor, setMonitor] = useState(false);
   useEffect(() => {
@@ -211,14 +229,15 @@ export default function Scene({ onMiss, onReady, dark, ...props }: SceneProps) {
   }, []);
   return (
     <Canvas
-      shadows="soft"
+      shadows
+      frameloop={inView ? "always" : "never"}
       dpr={[1, tier === 2 ? 2 : tier === 1 ? 1.5 : 1]}
       camera={{ fov: 30, near: 0.5, far: 260, position: [19, 10.5, 30] }}
       gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
       onPointerMissed={onMiss}
       onCreated={(state) => {
         state.gl.toneMapping = THREE.NeutralToneMapping;
-        state.gl.toneMappingExposure = dark ? 0.95 : 1.02;
+        state.gl.shadowMap.autoUpdate = false; // see ShadowsOncePerFrame
         onReady(state);
       }}
       style={{ touchAction: "pan-y" }}
@@ -231,6 +250,8 @@ export default function Scene({ onMiss, onReady, dark, ...props }: SceneProps) {
           onFallback={() => setTier(1)}
         />
       )}
+      <ShadowsOncePerFrame />
+      <Exposure dark={dark} />
       <Studio />
       <World {...props} />
       {tier === 2 && <AmbientOcclusion intensity={dark ? 0.85 : 1} />}

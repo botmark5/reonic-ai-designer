@@ -63,8 +63,8 @@ describe("buildEquipment", () => {
 });
 
 describe("batteryModuleCount", () => {
-  it("stacks ≈ 2.5 kWh modules, 1 to 6", () => {
-    expect([5, 7, 10, 14, 20].map(batteryModuleCount)).toEqual([2, 3, 4, 6, 6]);
+  it("stacks ≈ 2.5 kWh modules, 1 to 8", () => {
+    expect([5, 7, 10, 14, 20, 30].map(batteryModuleCount)).toEqual([2, 3, 4, 6, 8, 8]);
     expect(batteryModuleCount(1)).toBe(1);
     expect(batteryModuleCount(null)).toBe(0);
     expect(batteryModuleCount(0)).toBe(0);

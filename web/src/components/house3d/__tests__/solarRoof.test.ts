@@ -19,6 +19,10 @@ describe("roofFromSolarResult", () => {
   it("east-west roof keeps its direction", () => {
     expect(roofFromSolarResult(ok([{ pitch_deg: 30, azimuth_deg: 92, area_m2: 50 }, { pitch_deg: 30, azimuth_deg: 272, area_m2: 50 }]))?.azimuthDeg).toBe(92);
   });
+  it("ignores faces with missing numbers instead of throwing", () => {
+    const r = roofFromSolarResult(ok([{ pitch_deg: 30, azimuth_deg: 180, area_m2: Number.NaN }, { pitch_deg: 32, azimuth_deg: 175, area_m2: 40 }]));
+    expect(r?.azimuthDeg).toBe(175);
+  });
   it("no data → undefined (defaults apply)", () => {
     expect(roofFromSolarResult(null)).toBeUndefined();
     expect(roofFromSolarResult({ status: "not_covered", reason: "no imagery" })).toBeUndefined();

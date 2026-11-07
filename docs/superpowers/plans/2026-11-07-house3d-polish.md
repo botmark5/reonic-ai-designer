@@ -7,7 +7,7 @@ appears only on the energy system, a time-of-day story with real sun and energy 
 when the design changes. Public props stay compatible (B already mounts it).
 
 **Design read:** interactive 3D centrepiece inside an operate-mode app, for planners and homeowners; architectural-model
-language; R3F + drei + postprocessing (N8AO); Geist / Geist Mono; dials variance 5, motion 6, density 3.
+language; R3F + drei + three's GTAOPass (N8AO 2.0.1 is incompatible with three 0.187); Geist / Geist Mono; dials variance 5, motion 6, density 3.
 
 ## Before (screenshot 19:40)
 Coloured house (beige walls, green trees/ground, brown door, blue glass, grey car), dashed flows in four component
@@ -18,7 +18,7 @@ colours, flat light with hard shadows, no AO, generic "Overview" naming, static 
   quiet `surface-0` background, no green.
 - Light: golden-hour key light whose colour and angle follow the sun; hemisphere fill; neutral tone mapping so whites
   don't blow out; custom Lightformer environment (no network) for soft reflections; PCF soft sun shadows +
-  ContactShadows + N8AO ambient occlusion (dropped first when PerformanceMonitor declines).
+  ContactShadows + GTAO ambient occlusion at half resolution (dropped first when PerformanceMonitor declines).
 - Colour only on the system: dark glass panels (clearcoat, catches the sun), battery `#2f9fd0`, heat pump `#d4604a`,
   wallbox `#52525b`, flows in the AI gradient amber `#e9a23b` → orange `#ef8a4c` → salmon `#ec8a7c`.
 - Labels Geist, numbers Geist Mono tabular.
@@ -42,9 +42,9 @@ colours, flat light with hard shadows, no AO, generic "Overview" naming, static 
 - `palette.ts`, `houseGeometry.ts`, `equipmentGeometry.ts`: model materials, base board, grid post, battery modules
 - `Scene.tsx` (lighting, env, AO, contact shadows), `Equipment.tsx` (springs: panels, battery, car), `EnergyFlow.tsx`
   (gradient flows by time), `CameraRig.tsx` (fly-in, presets), `House3D.tsx` (time slider, live numbers, layout)
-- web/package.json: `@react-three/postprocessing`, `postprocessing`
+- no new packages (postprocessing/N8AO tried and removed)
 
 ## Done when
-60 fps-class on a MacBook Air (DPR ≤ 2, AO half-res and first to go), still-image fallback (regenerated), reduced
+60 fps-class on a MacBook Air (DPR ≤ 2, GTAO half-res and first to go), still-image fallback (regenerated), reduced
 motion (no fly-in, no idle turn, static flows, instant changes), tests/lint/build green, fresh review, PR merged,
 b-web told.

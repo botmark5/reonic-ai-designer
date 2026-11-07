@@ -75,6 +75,24 @@ function FlowLine({ points, colors, kw, reduced, thin = false }: {
   );
 }
 
+const RAY_POINTS = [new THREE.Vector3(0, 6, 0), new THREE.Vector3(0, 3, 0), new THREE.Vector3(0, 0, 0)];
+const Y = new THREE.Vector3(0, 1, 0);
+
+function SunRay({ target, sunDir, colors, kw, reduced }: {
+  target: THREE.Vector3; sunDir: THREE.Vector3; colors: THREE.Color[]; kw: number; reduced: boolean;
+}) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame(() => {
+    const g = ref.current;
+    if (g) g.quaternion.setFromUnitVectors(Y, sunDir);
+  });
+  return (
+    <group ref={ref} position={target}>
+      <FlowLine points={RAY_POINTS} colors={colors} kw={kw} reduced={reduced} thin />
+    </group>
+  );
+}
+
 export function EnergyFlow({ flows, nodes, sunDir, rayTargets, gradientStops, reduced }: {
   flows: LiveFlow[];
   nodes: Record<FlowNodeId, THREE.Vector3>;
@@ -97,17 +115,8 @@ export function EnergyFlow({ flows, nodes, sunDir, rayTargets, gradientStops, re
     [nodes, gradientStops],
   );
 
-  // sun rays: straight, from the sun's direction onto the panels (amber only: they carry sunlight, not power yet)
-  const rays = useMemo(
-    () =>
-      rayTargets.map((t, i) => {
-        const from = t.clone().addScaledVector(sunDir, 6);
-        const pts = [from, from.clone().lerp(t, 0.5), t.clone()];
-        return { id: `ray-${i}`, points: pts, colors: gradient(3, [gradientStops[0], gradientStops[0], gradientStops[1]]) };
-      }),
-    [rayTargets, sunDir, gradientStops],
-  );
-
+  // sun rays: fixed geometry along +y, each turned towards the sun every frame (no line rebuilds while the day plays)
+  const rayColors = useMemo(() => gradient(3, [gradientStops[0], gradientStops[0], gradientStops[1]]), [gradientStops]);
   const sunKw = sunDir.y > 0.02 ? (kw["sun-panels"] ?? 0) : 0;
 
   return (
@@ -115,8 +124,8 @@ export function EnergyFlow({ flows, nodes, sunDir, rayTargets, gradientStops, re
       {lines.map((l) => (
         <FlowLine key={l.id} points={l.points} colors={l.colors} kw={kw[l.id] ?? 0} reduced={reduced} />
       ))}
-      {rays.map((r) => (
-        <FlowLine key={r.id} points={r.points} colors={r.colors} kw={sunKw} reduced={reduced} thin />
+      {rayTargets.map((t, i) => (
+        <SunRay key={i} target={t} sunDir={sunDir} colors={rayColors} kw={sunKw} reduced={reduced} />
       ))}
     </group>
   );

@@ -80,6 +80,15 @@ describe("simulateDay", () => {
   });
 });
 
+describe("heat pump in May", () => {
+  it("uses a plausible 2-4 kWh of electricity a day (hot water), not more than the household", () => {
+    const d = simulateDay({ ...base, heatpumpKw: 9 });
+    const kwh = d.steps.slice(0, -1).reduce((a, s) => a + s.heatpump * d.dt, 0);
+    expect(kwh).toBeGreaterThan(2);
+    expect(kwh).toBeLessThan(4);
+  });
+});
+
 describe("activeFlows", () => {
   it("lists only flows above a visible threshold, strongest first", () => {
     const s = sampleDay(simulateDay(base), 12.5);

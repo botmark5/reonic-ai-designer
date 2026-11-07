@@ -104,6 +104,16 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
   const [hovered, setHovered] = useState<CompKey | null>(null);
   const [selected, setSelected] = useState<CompKey | null>(null);
   const [ready, setReady] = useState(false);
+  const [inView, setInView] = useState(true);
+  const figure = useRef<HTMLElement>(null);
+  // pause rendering while scrolled out of view
+  useEffect(() => {
+    const el = figure.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => setInView(e.isIntersecting), { rootMargin: "120px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
   const three = useRef<RootState | null>(null);
   const shown = (k: CompKey | null) => (k && spec.components[k].visible ? k : null);
   const active = shown(hovered) ?? shown(selected);
@@ -184,6 +194,7 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
 
   return (
     <figure
+      ref={figure}
       className={cn("relative isolate w-full overflow-hidden rounded-lg border border-border bg-surface-0", className)}
     >
       <div className="relative aspect-[4/3] w-full md:aspect-[16/10]">
@@ -213,6 +224,7 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
                 flows={flows}
                 batteryKwh={design.design.battery.kwh}
                 flyIn={flyIn}
+                inView={inView}
                 onMiss={() => setSelected(null)}
                 onReady={onReady}
               />
@@ -254,10 +266,8 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
                       type="button"
                       aria-pressed={selected === r.comp}
                       onClick={() => setSelected((s) => (s === r.comp ? null : r.comp!))}
-                      onMouseEnter={() => setHovered(r.comp!)}
-                      onMouseLeave={() => setHovered(null)}
-                      onFocus={() => setHovered(r.comp!)}
-                      onBlur={() => setHovered(null)}
+                      onPointerEnter={(e) => { if (e.pointerType === "mouse") setHovered(r.comp!); }}
+                      onPointerLeave={(e) => { if (e.pointerType === "mouse") setHovered(null); }}
                       className={cn(
                         rowCls,
                         "outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-focus",
@@ -372,7 +382,7 @@ function TimeBar({ day, hour, playing, valueText, onHour, onTogglePlay, classNam
           type="range"
           min={DAY_START}
           max={DAY_END}
-          step={0.25}
+          step={playing ? "any" : 0.25}
           value={hour}
           onChange={(e) => onHour(Number(e.target.value))}
           aria-label="Time of day"
@@ -387,6 +397,7 @@ function TimeBar({ day, hour, playing, valueText, onHour, onTogglePlay, classNam
             "[&::-moz-range-track]:h-[3px] [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-border-strong/40",
             "[&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-border-strong [&::-moz-range-thumb]:bg-surface-1",
             "focus-visible:[&::-webkit-slider-thumb]:ring-2 focus-visible:[&::-webkit-slider-thumb]:ring-focus",
+            "focus-visible:[&::-moz-range-thumb]:ring-2 focus-visible:[&::-moz-range-thumb]:ring-focus",
           )}
         />
         <div aria-hidden className="mt-0.5 flex justify-between font-mono text-[11px] tabular-nums text-ink-muted">

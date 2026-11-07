@@ -10,7 +10,7 @@ const offSouth = (az: number) => Math.abs(((((az - 180) % 360) + 540) % 360) - 1
  */
 export function roofFromSolarResult(s: SolarResult | null | undefined): RoofInput | undefined {
   if (!s || s.status !== "ok") return undefined;
-  const faces = s.segments.filter((x) => Number.isFinite(x.pitch_deg) && Number.isFinite(x.azimuth_deg));
+  const faces = s.segments.filter((x) => [x.pitch_deg, x.azimuth_deg, x.area_m2].every(Number.isFinite));
   const place = { latitude: s.lat, longitude: s.lng };
   if (!faces.length) return { ...place, maxPanels: s.max_panels || undefined };
   const maxArea = Math.max(...faces.map((x) => x.area_m2));

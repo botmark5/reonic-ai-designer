@@ -32,6 +32,7 @@ export function AmbientOcclusion({ intensity = 1 }: { intensity?: number }) {
   const { composer, ao } = useMemo(() => {
     const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
     const composer = new EffectComposer(gl, target);
+    composer.renderTarget2.samples = 0; // ping-pong target after the scene pass: no MSAA needed (saves ~half the memory)
     composer.addPass(new RenderPass(scene, camera));
     const ao = new HalfResGTAOPass(scene, camera, 2, 2);
     ao.output = GTAOPass.OUTPUT.Default;

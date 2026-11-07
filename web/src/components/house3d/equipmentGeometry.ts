@@ -118,10 +118,11 @@ export function buildEquipment(p: Palette): Record<EquipmentKey, THREE.Group> {
 
 /** One battery module (≈ 2.5 kWh): white housing with a thin battery-blue seam. Origin bottom-centre-back. */
 export const BATTERY_MODULE = { w: 0.62, h: 0.3, d: 0.24, kwh: 2.5 } as const;
+export const MAX_BATTERY_MODULES = 8;
 
 export function batteryModuleCount(kwh: number | null | undefined): number {
   if (kwh == null || !Number.isFinite(kwh) || kwh <= 0) return 0;
-  return Math.min(6, Math.max(1, Math.round(kwh / BATTERY_MODULE.kwh)));
+  return Math.min(MAX_BATTERY_MODULES, Math.max(1, Math.round(kwh / BATTERY_MODULE.kwh)));
 }
 
 export function buildBatteryParts(p: Palette) {

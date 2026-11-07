@@ -56,6 +56,7 @@ export function CameraRig({ request, rotationY, reduced, flyIn }: {
   const ref = useRef<CameraControls>(null);
   const first = useRef(true);
   const flying = useRef(false);
+  const lastRot = useRef(rotationY);
   const reducedRef = useRef(reduced);
   const scrollSetup = useRef<{ el: HTMLElement | null; undo: () => void }>({ el: null, undo: () => {} });
 
@@ -65,7 +66,12 @@ export function CameraRig({ request, rotationY, reduced, flyIn }: {
     const c = ref.current;
     if (!c) return;
     const rot = new THREE.Matrix4().makeRotationY(rotationY);
-    if (first.current && flyIn && !reducedRef.current) {
+    const turned = lastRot.current !== rotationY;
+    lastRot.current = rotationY;
+    if (!first.current && flying.current && turned) {
+      // the roof arrived (e.g. from /api/solar) during the fly-in: keep gliding, just to the turned street view
+      void look(c, VIEWS.street, rot, true).then(() => { flying.current = false; c.smoothTime = SMOOTH; });
+    } else if (first.current && flyIn && !reducedRef.current) {
       // fly-in: start high and wide, glide to the street view; any input or key skips it
       void look(c, FLY_FROM, rot, false);
       c.smoothTime = FLY_SMOOTH;
@@ -81,9 +87,11 @@ export function CameraRig({ request, rotationY, reduced, flyIn }: {
 
   // skip the fly-in on any key; a drag or pinch takes over the camera by itself
   useEffect(() => {
-    const skip = () => {
+    const skip = (e: KeyboardEvent) => {
       const c = ref.current;
       if (!c || !flying.current) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return; // typing elsewhere
       flying.current = false;
       c.smoothTime = SMOOTH;
       void look(c, VIEWS.street, new THREE.Matrix4().makeRotationY(rotationY), false);

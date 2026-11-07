@@ -90,7 +90,8 @@ function household(annualKwh: number, t: number): number {
 function heatpumpLoad(kw: number | null, t: number): number {
   if (!kw || kw <= 0) return 0;
   const hotWater = (t >= 6 && t < 8) || (t >= 18 && t < 21);
-  return kw * (hotWater ? 0.16 : 0.05);
+  // May: hot water only, ≈ 3 kWh of electricity a day for a 9 kW unit
+  return kw * (hotWater ? 0.045 : 0.006);
 }
 
 export function simulateDay(input: DayInput): Day {
