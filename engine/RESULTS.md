@@ -91,6 +91,19 @@ Headline (Mark's request): **new full systems**, planner answered 'Solar already
 | installer kWh per MWh consumption | 3.62 | 44 % |
 | published rule: 1 kWh per 1,000 kWh consumption | 4.46 | 21 % |
 
+### Round 3: PV as a choice among real sizes, all variants, top-3 alternatives (CV, training part, n=1046)
+| approach | PV MAE kWp | single within ±1.5 | top-3 within ±1.5 | top-3 exact |
+|---|---|---|---|---|
+| regression + snap (shipped point), top-3 = nearest sizes | 2.49 | 43 % | 54 % | 21 % |
+| classifier over the installer's real sizes (expected value + snap) | 2.58 | 42 % | 69 % | 25 % |
+| classifier over sizes (argmax) | 3.04 | 37 % | 72 % | 25 % |
+| train on all offer variants (weight 1/n) | 2.49 | 43 % | – | – |
+| **point = regression, 2 alternatives = size classifier (shipped)** | **2.49** | **43 %** | **71 %** | **24 %** |
+
+Locked test set (shipped): the expert's PV is within 1.5 kWp of one of our 3 options in **67–70 %** of projects (single
+proposal: 40–45 %), exactly among them in ~22 %; the proposal's MAE is unchanged. API: `design.pv.alternatives`;
+/eval: `pv_top3_within_1.5_pct`, `pv_top3_exact_pct`.
+
 **Conclusion.** PV size has reached what these inputs can explain: every learner, rule, hybrid and tuning lands within
 2.47–2.57 kWp, and the remaining error is information the data does not contain (roof size and shape, customer budget
 and wishes). The biggest lever is new inputs, not new algorithms: the optional roof capacity from Google Solar (now an

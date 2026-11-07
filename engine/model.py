@@ -188,6 +188,22 @@ class DesignModel:
         self.battery_ratio_ = (nb.battery_kwh / nb.pv_kwp).groupby(nb.installer).median().to_dict()
         self.battery_mode_ = self._choose_battery_mode(Xb, tt) if self._on("use_battery_mix") else "classifier"
 
+        # PV alternatives: a classifier over the sizes each installer really sells (>= 10x in new systems).
+        # Only used for the 2 alternatives next to the regression's proposal (research CV: the expert's size is
+        # within 1.5 kWp of one of the 3 options in 71 % of cases vs 54 % with the nearest sizes; exact 24 vs 21 %).
+        self.pv_sizes_ = {}
+        newpv = tt[tt.has_pv.astype(bool) & (tt.offer_group == "pv")]
+        for i, g in newpv.groupby("installer"):
+            vc = g.pv_kwp.round(2).value_counts()
+            self.pv_sizes_[i] = np.array(sorted(float(k) for k, n in vc.items() if n >= 10))
+        rows = (tt.has_pv.astype(bool) & (tt.offer_group == "pv") & tt.installer.map(lambda i: len(self.pv_sizes_.get(i, [])) > 0)).to_numpy()
+        self.pv_size_clf_ = None
+        if rows.sum() >= 50:
+            sizes = [self.pv_sizes_[i][np.argmin(np.abs(self.pv_sizes_[i] - v))] for v, i in zip(tt.pv_kwp[rows], tt.installer[rows])]
+            codes = np.round(np.asarray(sizes) * 100).astype(int)
+            if len(set(codes)) >= 2:
+                self.pv_size_clf_ = LGBMClassifier(**_lgb(num_leaves=7, min_child_samples=15, n_estimators=300)).fit(X[rows], codes)
+
         # 4. wallbox yes/no (all offers; "wallbox only" / "other" offers then fix it by their type).
         # Training it only on PV/retrofit offers was tested and was worse (70.6 vs 71.2 % held-out).
         self.wallbox_ = LGBMClassifier(**_lgb(num_leaves=7, min_child_samples=30)).fit(
@@ -400,6 +416,26 @@ class DesignModel:
         level = min(1.0, target * (1 + 1 / len(score)))
         return float(max(0.0, np.quantile(score, level)))
 
+    def pv_alternatives(self, X: pd.DataFrame, installers, points, caps=None, n: int = 2) -> list[list[dict]]:
+        """For each home: the n most likely OTHER sizes this installer sells (size classifier), with their share."""
+        clf = getattr(self, "pv_size_clf_", None)
+        out = []
+        if clf is None:
+            return [[] for _ in range(len(X))]
+        proba, kwp = clf.predict_proba(X), clf.classes_ / 100
+        caps = caps if caps is not None else [np.inf] * len(X)
+        for row, inst, p0, cap in zip(proba, installers, points, caps):
+            allowed = np.isin(np.round(kwp, 2), np.round(self.pv_sizes_.get(inst, kwp), 2)) & (kwp <= cap + 1e-9)
+            p = row * allowed
+            if p.sum() <= 0:                       # nothing this installer sells fits (e.g. under the roof cap)
+                out.append([])
+                continue
+            p = p / p.sum()
+            alts = [dict(kwp=float(kwp[k]), share=round(float(p[k]), 2))
+                    for k in np.argsort(p)[::-1] if abs(kwp[k] - p0) > 0.05 and p[k] > 0][:n]
+            out.append(alts)
+        return out
+
     def snap_pv_to_catalogue(self, kwp: float, installer: str) -> tuple[float, str | None]:
         """Standard package of this installer if within 1 kWp, else whole 450 W modules. Returns (kWp, package note)."""
         if kwp <= 0:
@@ -569,7 +605,12 @@ class DesignModel:
         # calibrated P10-P90 PV range (always contains the proposed size), for the coverage metric
         out["pv_lo"] = np.minimum(out.get("pv_lo", out.pv_kwp), out.pv_kwp)
         out["pv_hi"] = np.maximum(out.get("pv_hi", out.pv_kwp), out.pv_kwp)
-        return out[DESIGN_COLUMNS + ["offer_type", "pv_lo", "pv_hi"]]
+        # two PV alternatives (for the "expert among our top 3" metric); NaN when none
+        alts = self.pv_alternatives(self._last["X"], df.get("installer", pd.Series([""] * len(df))).tolist(),
+                                    out.pv_kwp.tolist())
+        out["pv_alt1"] = [a[0]["kwp"] if len(a) > 0 else np.nan for a in alts]
+        out["pv_alt2"] = [a[1]["kwp"] if len(a) > 1 else np.nan for a in alts]
+        return out[DESIGN_COLUMNS + ["offer_type", "pv_lo", "pv_hi", "pv_alt1", "pv_alt2"]]
 
     # ------------------------------------------------------------------ explanations
     def _drivers(self, model, X: pd.DataFrame, unit: str, class_index: int | None = None, top: int = 3) -> list[str]:
@@ -650,6 +691,9 @@ class DesignModel:
                               "'new system' vs. 'battery add-on'.")
         design["pv"] = dict(include=bool(r.has_pv), kwp=float(r.pv_kwp) if r.has_pv else None, range=[lo, hi],
                             confidence=round(pv_conf, 2), reasons=pv_reasons)
+        if r.has_pv:
+            cap = float(home["roof_max_kwp"]) if home.get("roof_max_kwp") else np.inf
+            design["pv"]["alternatives"] = self.pv_alternatives(X, [installer], [float(r.pv_kwp)], [cap])[0]
 
         # battery
         cdf = np.cumsum(proba)

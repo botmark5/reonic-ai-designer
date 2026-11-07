@@ -439,6 +439,14 @@ def compute_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) ->
     if {"pv_lo", "pv_hi"} <= set(pred.columns):
         inside = ((truth.pv_kwp >= pred.pv_lo.astype(float) - 1e-9) & (truth.pv_kwp <= pred.pv_hi.astype(float) + 1e-9))
         m["pv_interval_coverage_pct"] = _rate(inside.to_numpy()[both]) if both.any() else None
+    # top 3 = proposal + 2 alternatives: is the expert's PV among them (exactly / within 1.5 kWp)?
+    if {"pv_alt1", "pv_alt2"} <= set(pred.columns):
+        opts = np.stack([pred.pv_kwp.astype(float).to_numpy(), pred.pv_alt1.astype(float).to_numpy(),
+                         pred.pv_alt2.astype(float).to_numpy()], axis=1)
+        dist = np.abs(opts - truth.pv_kwp.to_numpy()[:, None])
+        dist = np.where(np.isnan(dist), np.inf, dist)
+        m["pv_top3_exact_pct"] = _rate((dist.min(axis=1) < 0.05)[both]) if both.any() else None
+        m["pv_top3_within_1.5_pct"] = _rate((dist.min(axis=1) <= 1.5)[both]) if both.any() else None
 
     # battery size (projects where the expert installed a battery)
     bat = truth.has_battery.to_numpy()
