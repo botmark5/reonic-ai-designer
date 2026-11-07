@@ -33,7 +33,9 @@ from engine.interim_labels import build_catalogue
 
 ARTIFACTS = Path(__file__).resolve().parent / "artifacts"
 MODEL_PATH = ARTIFACTS / "design_model.joblib"
-MODULE_KWP = 0.45            # PV snaps to whole modules of 450 W
+MODULE_KWP = 0.45            # PV snaps to whole modules of 450 W ...
+PACKAGE_MIN_SOLD = 10        # ... or to an exact kWp the installer sold >= 10 times (its standard packages)
+PACKAGE_MAX_MOVE_KWP = 1.0   #     if that package is within 1 kWp (CV on training: exact matches 6.8 -> 10.5 %)
 SEED = 42
 
 
@@ -43,6 +45,13 @@ def _lgb(**extra):
              subsample_freq=1, colsample_bytree=0.8, random_state=SEED, verbose=-1)
     p.update(extra)
     return p
+
+
+def package_kwp(note: str) -> float:
+    """kWp from a package note like "the installer's standard 10.8 kWp package"."""
+    import re
+    m = re.search(r"([\d.]+) kWp package", note)
+    return float(m.group(1)) if m else -1.0
 
 
 def snap_pv(kwp: float) -> float:
@@ -122,6 +131,12 @@ class DesignModel:
         self.wallbox_ = LGBMClassifier(**_lgb(num_leaves=7, min_child_samples=30)).fit(
             X[self.wallbox_features_], tt.has_wallbox.astype(int))
 
+        # the installer's standard PV packages (exact kWp sold >= PACKAGE_MIN_SOLD times in new systems)
+        newsys = t[t.has_pv & (t.offer_group == "pv")]
+        self.packages_ = {i: sorted(float(k) for k, n in g.pv_kwp.round(2).value_counts().items() if n >= PACKAGE_MIN_SOLD)
+                          for i, g in newsys.groupby("installer")}
+        self.battery_threshold_ = self._learn_battery_threshold(t)
+
         keep = ["project_id", "installer", "annual_kwh", "has_ev", "pv_kwp", "battery_kwh", "has_pv", "has_battery",
                 "has_wallbox", "heatpump_kw"]
         X_orig = X.iloc[len(answered):]
@@ -154,6 +169,38 @@ class DesignModel:
                 for c in candidates]
         best = min(cost)
         return float(min(c for c, k in zip(candidates, cost) if k <= best + 1e-9))
+
+    def _learn_battery_threshold(self, t: pd.DataFrame) -> float:
+        """
+        Cut-off for "battery yes" in NEW PV systems, chosen by accuracy on out-of-fold training predictions.
+        ~96 % of new systems get a battery, so the best cut-off is usually low ("battery unless clearly not").
+        """
+        rows = t[t.offer_group == "pv"].reset_index(drop=True)
+        y = rows.has_battery.astype(int).to_numpy()
+        groups = (rows.customer_contact_id if "customer_contact_id" in rows else rows.project_id).fillna(rows.project_id)
+        if len(rows) < 100 or y.min() == y.max() or groups.nunique() < 5:
+            return 0.5
+        X = build_features(rows, rows.heatpump_kw, self.installers_, self.offer_month_cap_)
+        Xb = X.assign(pv_kwp_planned=rows.pv_kwp.fillna(0).to_numpy())
+        oof = np.zeros(len(rows))
+        for tr, te in GroupKFold(5).split(Xb, groups=groups):
+            if len(set(y[tr])) < 2:
+                return 0.5
+            oof[te] = LGBMClassifier(**_lgb()).fit(Xb.iloc[tr], y[tr]).predict_proba(Xb.iloc[te])[:, 1]
+        candidates = np.round(np.arange(0.05, 0.56, 0.05), 2)
+        acc = [((oof >= c) == y).mean() for c in candidates]
+        return float(candidates[int(np.argmax(acc))])
+
+    def snap_pv_to_catalogue(self, kwp: float, installer: str) -> tuple[float, str | None]:
+        """Standard package of this installer if within 1 kWp, else whole 450 W modules. Returns (kWp, package note)."""
+        if kwp <= 0:
+            return 0.0, None
+        pkgs = getattr(self, "packages_", {}).get(installer, [])
+        if pkgs:
+            best = min(pkgs, key=lambda k: abs(k - kwp))
+            if abs(best - kwp) <= PACKAGE_MAX_MOVE_KWP:
+                return best, f"the installer's standard {best:g} kWp package"
+        return snap_pv(kwp), None
 
     # ------------------------------------------------------------------ the chain
     def _heatpump(self, row) -> tuple[float, list[str], float]:
@@ -201,7 +248,8 @@ class DesignModel:
             out["pv_kwp"] = float(locks["pv_kwp"])
         else:
             out["has_pv"] = out.p_has_pv >= getattr(self, "pv_threshold_", 0.5)
-            out["pv_kwp"] = np.where(out.has_pv, [snap_pv(v) for v in out.pv_raw], 0.0)
+            snapped = [self.snap_pv_to_catalogue(v, i)[0] for v, i in zip(out.pv_raw, homes.get("installer", [""] * len(homes)))]
+            out["pv_kwp"] = np.where(out.has_pv, snapped, 0.0)
         # no new PV -> which kind of offer? (respecting locks: a locked battery means retrofit, etc.)
         if self.nonpv_type_ is not None:
             p_type = pd.DataFrame(self.nonpv_type_.predict_proba(X), columns=self.nonpv_type_.classes_, index=homes.index)
@@ -235,7 +283,8 @@ class DesignModel:
             out["has_battery"] = float(locks["battery_kwh"]) > 0
             out["battery_kwh"] = float(locks["battery_kwh"])
         else:
-            out["has_battery"] = out.p_has_battery >= 0.5
+            # new systems: learned cut-off (most get a battery); retrofit = 1, other = 0 (set above)
+            out["has_battery"] = out.p_has_battery >= np.where(out.offer_type == "pv", getattr(self, "battery_threshold_", 0.5), 0.5)
             out["battery_kwh"] = np.where(out.has_battery, out.battery_best, 0.0)
         out["p_has_wallbox"] = self.wallbox_.predict_proba(X[self.wallbox_features_])[:, 1]
         if "wallbox" in locks:
@@ -300,12 +349,17 @@ class DesignModel:
         # PV
         lo, hi = sorted([float(r.pv_p10), float(r.pv_p90)])
         lo, hi = snap_pv(min(lo, r.pv_raw)), snap_pv(max(hi, r.pv_raw))
+        if r.has_pv:                                   # the range always contains the proposed (snapped) size
+            lo, hi = min(lo, float(r.pv_kwp)), max(hi, float(r.pv_kwp))
         if "pv_kwp" in locks:
             pv_reasons, pv_conf = [f"Fixed by the planner: {r.pv_kwp:g} kWp." if r.pv_kwp else "Fixed by the planner: no PV."], 1.0
         elif r.has_pv:
             pv_conf = float(r.p_has_pv)
+            _, package = self.snap_pv_to_catalogue(float(r.pv_raw), installer)
+            size_txt = package if package and abs(package_kwp(package) - r.pv_kwp) < 1e-6 else \
+                f"~{round(r.pv_kwp / MODULE_KWP)} modules of 450 W"
             pv_reasons = [f"{r.p_has_pv:.0%} of similar homes got PV; size {r.pv_kwp:g} kWp "
-                          f"(~{round(r.pv_kwp / MODULE_KWP)} modules of 450 W), typical range {lo:g}-{hi:g} kWp."]
+                          f"({size_txt}), typical range {lo:g}-{hi:g} kWp."]
             pv_reasons += ["Main drivers: " + "; ".join(self._drivers(self.pv_, X, "kWp")) + "."]
         else:
             pv_conf = 1 - float(r.p_has_pv)
@@ -333,7 +387,7 @@ class DesignModel:
             b_reasons = [f"Battery add-on to the existing PV: {classes[best]:g} kWh is the most likely catalogue size "
                          f"({proba[best]:.0%}), range {b_lo:g}-{b_hi:g} kWh."]
         elif r.has_battery:
-            b_conf = float(r.p_has_battery * proba[best])
+            b_conf = float(min(1.0, r.p_has_battery / max(getattr(self, "battery_threshold_", 0.5) * 2, 1e-9)) * proba[best])
             b_reasons = [f"{r.p_has_battery:.0%} of similar designs include a battery; {classes[best]:g} kWh is the most likely "
                          f"catalogue size ({proba[best]:.0%}), range {b_lo:g}-{b_hi:g} kWh.",
                          "Main drivers: " + "; ".join(self._drivers(self.battery_, Xb, f"{classes[best]:g} kWh", class_index=best)) + "."]

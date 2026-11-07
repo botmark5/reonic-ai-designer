@@ -104,7 +104,8 @@ def test_battery_snaps_to_installer_catalogue(trained):
 def test_pv_snaps_to_whole_modules(trained):
     model, _ = trained
     kwp = model.propose({"annual_kwh": 5000}, "instA")["design"]["pv"]["kwp"]
-    assert kwp is None or abs(kwp / 0.45 - round(kwp / 0.45)) < 1e-6
+    is_module = kwp is None or abs(kwp / 0.45 - round(kwp / 0.45)) < 1e-6
+    assert is_module or kwp in model.packages_.get("instA", [])
     assert snap_pv(10.0) == 9.9 and snap_pv(0) == 0
 
 
@@ -387,3 +388,14 @@ def test_rule_refine_existing_pv(no_claude):
 def test_api_accepts_existing_pv_answer(client):
     r = client.post("/design", json={"installer": "instA", "home": {"annual_kwh": 4500, "has_existing_pv": True}})
     assert r.status_code == 200 and r.json()["facts_for_explanation"]["existing_pv_known"] is True
+
+
+def test_snap_to_installer_package(trained):
+    model, _ = trained
+    model = __import__("copy").deepcopy(model)
+    model.packages_ = {"instA": [10.8, 13.5]}
+    assert model.snap_pv_to_catalogue(10.3, "instA") == (10.8, "the installer's standard 10.8 kWp package")
+    assert model.snap_pv_to_catalogue(12.0, "instA")[1] is None                  # > 1 kWp from any package
+    assert model.snap_pv_to_catalogue(12.0, "instA")[0] == 12.15                 # 26.7 -> 27 modules
+    assert model.snap_pv_to_catalogue(0, "instA") == (0.0, None)
+    assert 0.05 <= model.battery_threshold_ <= 0.55

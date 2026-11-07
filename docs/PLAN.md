@@ -54,6 +54,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
 
 ## Decisions
+- Sat 20:15 · PV snaps to the installer's standard packages (sold >= 10x, within 1 kWp) else 450 W modules; battery cut-off learned out-of-fold (CV on training only)
 - Sat 19:25 · Demo set = 5 HELD-OUT projects (locked test_ids.json) picked by fixed rules in engine/demo_set.py: typical PV+battery (closest to median), EV+wallbox, gas home with an expert heat pump (only 1 held out), battery retrofit, widest PV spread across full-design variants; output engine/artifacts/demo_projects.json (not committed, shared via data-v1)
 - Sat 19:20 · 3D house is procedural three.js (Blender not installed); session B mounts `<House3D>`; roof from home.tilt_deg/orientation_deg, overridable by Google Solar via the `roof` prop
 - Sat 19:15 · Orchestrator session coordinates the 4 Claude Code sessions via .status/ (local); merges green PRs, keeps this file honest
