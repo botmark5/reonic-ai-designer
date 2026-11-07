@@ -4,7 +4,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 
 ## Phase 0 — Setup
 - [ ] Mark: private repo + invite Cala; push starter kit
-- [ ] Cala: clone, copy data into data/raw, Python env, CSVs load
+- [x] Cala: clone, copy data into data/raw, Python env, CSVs load
 - [ ] Mark: web/ Next.js + Tailwind + shadcn + Framer Motion on Vercel
 - [ ] Both: confirm docs/api.md v0
 
@@ -18,12 +18,13 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 
 ## Phase 2 — Engine and evaluation (Cala)
 - [ ] docs/engine-spec.md in plain English
-- [ ] Baselines (kWp ≈ kWh/1000; median by consumption band)
+- [x] Baselines (kWp ≈ kWh/1000; median by consumption band)
 - [ ] Chained model PV → battery → wallbox, installer-aware, snapped to catalogue
 - [ ] Similar-homes lookup → ranges + 5 nearest real projects
 - [ ] Locks: recompute around fixed components
-- [ ] Physics check + heat pump rules
+- [x] Physics check + heat pump rules
 - [ ] Evaluation: held-out + installer A→B; variant-range hit rate; vs baselines
+  - harness ready (engine/evaluate.py, engine/physics branch); waiting for engine/artifacts/expert_designs.parquet + the model
 - [ ] Error analysis by segment/installer
 - [ ] /validate
 - [ ] FastAPI deployed, matches docs/api.md
@@ -46,6 +47,9 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
 
 ## Decisions
+- Sat 18:00 · Physics = hourly synthetic year with seeded sunny/cloudy days, calibrated to HTW-Berlin rule-of-thumb ranges (not official BDEW tables)
+- Sat 18:00 · Variant-range hit = inside [min, max] of the project's options ± tolerance (PV ± 1 kWp, battery ± 1 catalogue step); strict number reported too
+- Sat 18:00 · Label contract proposed in docs/data-notes.md (one row per project × option, is_primary flag); evaluate.py joins inputs from data/raw
 - Sat 16:00 · Data questions answered by our own assumptions (docs/data-notes.md); only business questions to Reonic
 - Sat 15:45 · Build in Claude Code (Next.js), not Lovable · design system + mockups in Claude chat first
 - Sat 15:15 · Keep all raw fields; expert-design table is derived on top
