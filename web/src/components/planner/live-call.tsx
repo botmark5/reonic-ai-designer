@@ -41,6 +41,11 @@ const pretty = (s: string) => s.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpp
 function checklist(f: Facts): Item[] {
   return [
     {
+      done: f.has_existing_pv != null || f.existing_pv_kwp != null,
+      text:
+        f.has_existing_pv === false || f.existing_pv_kwp === 0 ? <><b>No solar</b> on the roof yet</> : f.existing_pv_kwp ? <><b>{f.existing_pv_kwp} kWp</b> solar already installed</> : f.has_existing_pv ? <><b>Solar</b> already on the roof</> : "Existing solar or battery",
+    },
+    {
       done: f.annual_kwh != null || f.monthly_bill_eur != null,
       text:
         f.annual_kwh != null ? (
@@ -69,11 +74,6 @@ function checklist(f: Facts): Item[] {
       done: f.roof_type != null || f.roof_direction != null,
       text: f.roof_type || f.roof_direction ? <><b>{f.roof_type ? pretty(f.roof_type) : "Roof"}</b>{f.roof_direction ? `, facing ${pretty(f.roof_direction).toLowerCase()}` : ""}</> : "Roof type and direction",
     },
-    {
-      done: f.has_existing_pv != null || f.existing_pv_kwp != null,
-      text:
-        f.has_existing_pv === false || f.existing_pv_kwp === 0 ? <><b>No solar</b> on the roof yet</> : f.existing_pv_kwp ? <><b>{f.existing_pv_kwp} kWp</b> solar already installed</> : f.has_existing_pv ? <><b>Solar</b> already on the roof</> : "Existing solar or battery",
-    },
   ];
 }
 
@@ -85,6 +85,7 @@ function factsToHome(f: Facts): Home {
     heating: f.heating ? pretty(f.heating) : null, heating_demand_kwh: null,
     roof_type: f.roof_type ? pretty(f.roof_type) : null, house_sqm: null, inhabitants: f.household ?? null,
     has_existing_pv: f.has_existing_pv ?? (f.existing_pv_kwp != null ? f.existing_pv_kwp > 0 : null),
+    demand_is_default: f.annual_kwh != null ? false : null,
   };
 }
 
@@ -92,14 +93,14 @@ function factsToHome(f: Facts): Home {
 const SCRIPT: { role: "agent" | "customer"; text: string; facts?: Facts }[] = [
   { role: "agent", text: "Hello, I'm the planning assistant for your installer. Who am I speaking with, and where is the house?" },
   { role: "customer", text: "Weber, in Augsburg.", facts: { customer_name: "Weber, Augsburg" } },
-  { role: "agent", text: "Thanks. Roughly how much electricity do you use in a year?" },
+  { role: "agent", text: "Thanks. First: is there already solar or a battery on the house?" },
+  { role: "customer", text: "No, nothing yet.", facts: { has_existing_pv: false } },
+  { role: "agent", text: "Roughly how much electricity do you use in a year?" },
   { role: "customer", text: "About 4,800 kilowatt hours. We're a family of four.", facts: { annual_kwh: 4800, household: 4 } },
   { role: "agent", text: "Is there an electric car, now or planned?" },
   { role: "customer", text: "We're getting one in spring, maybe 15,000 kilometres a year.", facts: { has_ev: true, ev_km_year: 15000 } },
-  { role: "agent", text: "Got it, family of four with an EV from spring. What heats the house today?" },
+  { role: "agent", text: "Got it, family of four with an EV from spring. Last one: what heats the house today?" },
   { role: "customer", text: "Gas boiler, about 15 years old. The roof is concrete tile, facing south.", facts: { heating: "gas", heating_age_years: 15, roof_type: "concrete_tile", roof_direction: "south" } },
-  { role: "agent", text: "Thanks. Last one: do you already have solar or a battery?" },
-  { role: "customer", text: "No, nothing yet.", facts: { has_existing_pv: false } },
   { role: "agent", text: "Perfect. I've drafted a design; your installer will check it and get back to you." },
 ];
 

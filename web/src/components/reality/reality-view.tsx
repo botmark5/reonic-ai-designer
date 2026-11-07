@@ -8,7 +8,7 @@ import { StatusBadge, type Tone } from "@/components/ui/status-badge";
 import { COMPONENTS, sizeOf } from "@/lib/diff";
 import { fmtInt, fmtKwp, fmtSize, LABEL } from "@/lib/format";
 import type { DemoProject } from "@/lib/heldout";
-import { verdicts, type VerdictKind } from "@/lib/reality";
+import { headlines, verdicts, type VerdictKind } from "@/lib/reality";
 import type { ComponentKey, EvalResponse, ExpertVariant, MetricSet, ProjectResponse } from "@/lib/types";
 import { PREDICTORS } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -111,8 +111,10 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
       : null;
 
   const M = evalRes.metrics[PREDICTORS.model];
-  const rule = evalRes.metrics[PREDICTORS.kwhPer1000];
-  const band = evalRes.metrics[PREDICTORS.bandMedian];
+  const offline = evalRes.served?.source === "offline";
+  const heads = headlines(evalRes.metrics as Parameters<typeof headlines>[0]);
+  const answered = (evalRes as EvalResponse & { with_existing_pv_answer?: { metrics?: Record<string, MetricSet> } }).with_existing_pv_answer?.metrics?.[PREDICTORS.model];
+  const fmt = (x: number | null, unit: "kWp" | "%") => (x == null ? "–" : unit === "kWp" ? x.toFixed(2) : `${Math.round(x)}`);
   const nTest = n(M, "n_projects") ?? (evalRes.protocol?.n_test as number | undefined) ?? null;
   const transfer = Object.entries(evalRes.transfer ?? {});
 
@@ -128,7 +130,7 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
       </header>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-        <section aria-labelledby="one-home" className="flex flex-col gap-4 rounded-lg border border-border bg-surface-1 p-5 md:p-6">
+        <section aria-labelledby="one-home" className="flex flex-col gap-4 self-start rounded-lg border border-border bg-surface-1 p-5 md:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 flex-col gap-1">
               <h2 id="one-home" className="m-0 text-label uppercase text-ink-muted">One held-out home</h2>
@@ -228,23 +230,54 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
 
         <section aria-labelledby="across" className="flex flex-col gap-4">
           <h2 id="across" className="m-0 text-label uppercase text-ink-muted">Across {nTest ? fmtInt(nTest) : "all"} held-out homes</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { label: "Solar yes or no right", ours: pct(n(M, "has_pv_accuracy")), unit: "%", base: `${pct(n(rule, "has_pv_accuracy"))} %` },
-              { label: "Solar size error (average)", ours: kwp(n(M, "pv_kwp_mae_all_projects")), unit: "kWp", base: `${kwp(n(rule, "pv_kwp_mae_all_projects"))} kWp` },
-              { label: "Battery within one size step", ours: pct(n(M, "battery_within_one_step_pct")), unit: "%", base: `${pct(n(rule, "battery_within_one_step_pct"))} %` },
-              { label: "Solar inside the expert's range", ours: pct(n(M, "pv_variant_hit_tolerant_pct")), unit: "%", base: `${pct(n(rule, "pv_variant_hit_tolerant_pct"))} %` },
-            ].map((t) => (
-              <div key={t.label} className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4">
-                <span className="text-[13px] leading-[18px] text-ink-body">{t.label}</span>
-                <span className="font-mono text-metric font-medium tabular">
-                  {t.ours} <small className="text-[15px] text-ink-muted">{t.unit}</small>
-                </span>
-                <span className="text-[12px] text-ink-muted">Rule of thumb: <span className="font-mono tabular">{t.base}</span></span>
+          {offline ? (
+            <div className="rounded-lg border border-dashed border-border bg-surface-1 p-6 text-body-sm text-ink-muted">
+              Engine offline: the held-out metrics appear here as soon as it is reachable again. No numbers are shown in the meantime.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {heads.map((t, i) => (
+                <div key={t.key} className={cn("flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4", i === 0 && "sm:col-span-2")}>
+                  <div className="flex flex-wrap-reverse items-start justify-between gap-2">
+                    <span className="min-w-[12ch] flex-1 text-[13px] leading-[18px] text-ink-body">{t.label}</span>
+                    {t.wins != null && (
+                      <StatusBadge tone={t.wins ? "success" : "warning"}>{t.wins ? "Better than rules" : "Below simple rule"}</StatusBadge>
+                    )}
+                  </div>
+                  <span className="font-mono text-metric font-medium tabular">
+                    {fmt(t.ours, t.unit)} <small className="text-[15px] text-ink-muted">{t.unit}</small>
+                  </span>
+                  <span className="text-[12px] leading-4 text-ink-muted">
+                    Best simple rule: <span className="font-mono tabular">{fmt(t.base, t.unit)} {t.unit}</span>
+                    {t.baseName ? ` (${t.baseName})` : ""}
+                    {t.note ? `. ${t.note}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {!offline && answered && (
+            <div className="flex flex-col gap-2 rounded-lg border border-border bg-ai-tint/50 p-4">
+              <span className="text-[13px] font-medium text-ink">When the planner answers “Solar already on the roof?”</span>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px] sm:grid-cols-4">
+                {[
+                  ["Solar size error", "pv_kwp_mae_all_projects", "kWp"],
+                  ["Solar yes/no", "has_pv_accuracy", "%"],
+                  ["Battery yes/no", "has_battery_accuracy", "%"],
+                  ["Offer type", "offer_type_accuracy", "%"],
+                ].map(([label, key, unit]) => (
+                  <div key={key} className="flex flex-col">
+                    <span className="text-[12px] text-ink-muted">{label}</span>
+                    <span className="font-mono tabular">
+                      {fmt(n(M, key), unit as "kWp" | "%")} → <b>{fmt(n(answered, key), unit as "kWp" | "%")}</b> {unit}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          {transfer.length > 0 && (
+              <span className="text-[12px] text-ink-muted">Same held-out homes; assumes the answer is right. One question is worth more than any model tweak.</span>
+            </div>
+          )}
+          {!offline && transfer.length > 0 && (
             <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4">
               <span className="text-[13px] text-ink-body">Learned on one installer, tested on the other (solar size error where both chose PV)</span>
               {transfer.map(([name, preds]) => {
@@ -264,7 +297,7 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
               })}
             </div>
           )}
-          <details className="rounded-lg border border-border bg-surface-1 p-4">
+          {!offline && <details className="rounded-lg border border-border bg-surface-1 p-4">
             <summary className="cursor-pointer text-[13px] font-medium text-ink-body">All baselines</summary>
             <table className="mt-3 w-full border-collapse text-[12px]">
               <thead>
@@ -286,10 +319,11 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
                 ))}
               </tbody>
             </table>
-          </details>
+          </details>}
           <p className="m-0 text-[12px] leading-4 text-ink-muted">
-            Test set: {nTest ? fmtInt(nTest) : "20 %"} homes ({Math.round(((evalRes.protocol?.test_size as number) ?? 0.2) * 100)} %), split by customer, locked before training.
-            {band ? ` Band median PV error: ${kwp(n(band, "pv_kwp_mae_all_projects"))} kWp.` : ""} Labels: {evalRes.labels_source ?? "engine"}.
+            Test set: {nTest ? fmtInt(nTest) : "20 %"} homes ({Math.round(((evalRes.protocol?.test_size as number) ?? 0.2) * 100)} %), split{" "}
+            {String(evalRes.protocol?.split ?? "by customer").replace(/\s*\(.*\)/, "").replace("grouped by customer_contact_id", "by customer")}, seed{" "}
+            {String(evalRes.protocol?.seed ?? 42)}, locked before training. Labels: {evalRes.labels_source ?? "engine"}.
           </p>
         </section>
       </div>

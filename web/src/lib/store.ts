@@ -78,12 +78,12 @@ export function exampleDesigns(): DesignRow[] {
   });
   return [
     row({ customer_name: "Weber, Augsburg (example)", source: "voice", created_at: ago(4),
-      home: home({ annual_kwh: 4800, has_ev: true, ev_km_year: 15000, inhabitants: 4, roof_type: "Concrete tile" }),
+      home: home({ annual_kwh: 4800, has_ev: true, ev_km_year: 15000, inhabitants: 4, roof_type: "Concrete tile", has_existing_pv: false, demand_is_default: false }),
       locks: { ...EMPTY_LOCKS, wallbox: true } }),
     row({ customer_name: "Huber, Landsberg (example)", status: "review", created_at: ago(62),
-      home: home({ annual_kwh: 6200, heating: "Oil", inhabitants: 5 }) }),
+      home: home({ annual_kwh: 6200, heating: "Oil", inhabitants: 5, has_existing_pv: false, demand_is_default: false }) }),
     row({ customer_name: "Schmidt, Friedberg (example)", status: "sent", created_at: ago(60 * 26),
-      home: home({ annual_kwh: 3400, inhabitants: 2, heating: "Heat pump" }) }),
+      home: home({ annual_kwh: 3400, inhabitants: 2, heating: "Heat pump", has_existing_pv: false, demand_is_default: false }) }),
   ];
 }
 
@@ -153,5 +153,5 @@ export function getStore(): Store {
 }
 
 /** Starting values for a new home. Not 4,500 kWh: that is Reonic's placeholder default and reads as a retrofit to the engine. */
-export const NEW_HOME: Home = home({ annual_kwh: 4000, heating: null });
+export const NEW_HOME: Home = home({ annual_kwh: 4000, heating: null, has_existing_pv: null, demand_is_default: null });
 export const NEW_LOCKS: Locks = { ...EMPTY_LOCKS };

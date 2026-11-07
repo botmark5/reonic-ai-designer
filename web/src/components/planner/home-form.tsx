@@ -86,9 +86,7 @@ export function HomeForm({ home, onChange }: { home: Home; onChange: (patch: Par
           ]}
           className="self-start"
         />
-        {home.has_existing_pv == null && (
-          <p className="m-0 text-[12px] leading-4 text-ink-muted">Ask this first: it decides new system or battery add-on.</p>
-        )}
+        <p className="m-0 text-[12px] leading-4 text-ink-muted">Changes the design the most: new system or battery add-on.</p>
       </div>
       {home.has_existing_pv === true && (
         <NumberField
@@ -104,7 +102,7 @@ export function HomeForm({ home, onChange }: { home: Home; onChange: (patch: Par
         required
         max={100000}
         hint={home.annual_kwh === 4500 ? "4,500 is Reonic's default: confirm the real figure." : undefined}
-        onCommit={(v) => onChange({ annual_kwh: v ?? 0 })}
+        onCommit={(v) => onChange({ annual_kwh: v ?? 0, demand_is_default: false })}
       />
       <NumberField label="Electricity price (€/kWh)" value={home.price_eur_kwh} max={2} onCommit={(v) => onChange({ price_eur_kwh: v })} />
       <Field label="Household" htmlFor={`${id}-hh`}>
