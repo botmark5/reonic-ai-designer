@@ -21,6 +21,8 @@ PACKAGE_23C = re.compile(rf"^Complete Package\b.*?{_NUMBER}\s*kWp", re.I)
 _PACKAGE_2A8 = re.compile(rf"^PV Complete Package\s+{_NUMBER}\s*kW\b", re.I)
 SIZE_BAND = re.compile(rf"^(?:SL Rack )?Substructure\b.*?{_NUMBER}\s*-\s*{_NUMBER}\s*kWp", re.I)
 SUBSTRUCTURE = re.compile(r"^(?:SL Rack )?Substructure\b", re.I)
+# Panel counts skip the 23c "Substructure Flat Roof Ballast" kit line (16 lines, always qty 1); roof type still uses it.
+PANEL_SUBSTRUCTURE = re.compile(r"^(?:SL Rack )?Substructure\b(?!.*Ballast)", re.I)
 DC_INSTALL = re.compile(r"^DC Install\b", re.I)
 _ROOF_MOUNTING = re.compile(r"^Roof Mounting\b(?!.*Surcharge)", re.I)
 _ROOF_SURCHARGE = re.compile(r"^Roof Mounting\b.*Surcharge", re.I)
@@ -98,7 +100,7 @@ def extract_pv(items: pd.DataFrame, installer: str) -> dict:
     module_kwp = float((modules["quantity"].fillna(1.0) * modules["module_watt_peak"]).sum()) / 1000
     module_wp = module_kwp * 1000 / module_panels if module_panels else PANEL_WP_ASSUMED
 
-    substructure = _qty(items, names.str.match(SUBSTRUCTURE))
+    substructure = _qty(items, names.str.match(PANEL_SUBSTRUCTURE))
     dc_install = _qty(items, names.str.match(DC_INSTALL))
     roof_mounting = _qty(items, names.str.match(_ROOF_MOUNTING))
 

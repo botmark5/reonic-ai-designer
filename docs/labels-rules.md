@@ -37,8 +37,10 @@ Rulings made during implementation (2026-11-07):
 - Rule 1(a) applies only when module qty ≤ 3 (`MAX_EXTRA_MODULE_LINES`). Example 12 (16 modules vs an 18 kWp = 40-panel
   package, Roof Mounting 16) is a downsize, not an extra; the literal "less than half" text is replaced by this.
 - Rule 1(b): named extras get the module lines' wattage (example 14 → 27 × 475 W); in rule 2 the wattage in the extra's name, else 450 W.
-- `pv_sources_disagree` ignores one-unit kits only for 23c108b7. 54 options are flagged (48 in 23c: unnamed 2–3 extra panels
+- `pv_sources_disagree` ignores one-unit kits only for 23c108b7. 41 options are flagged (35 in 23c: unnamed 2–3 extra panels
   next to a package, 480 W modules vs the package's 450 W math, planner downsizes). Informational only.
+- Panel counts skip "Substructure Flat Roof Ballast" (a ×1 kit line, 16 lines, all 23c); roof type still reads it as Flat.
+  This removed 13 false disagree flags; no size changed.
 - A lone "Substructure up to X kWp" ×1 gives no size (0 real cases).
 
 | # | option | line items (short) | result | why |
