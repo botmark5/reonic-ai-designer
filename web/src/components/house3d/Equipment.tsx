@@ -2,16 +2,12 @@
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import type { EquipmentKey } from "./equipmentGeometry";
+import { BATTERY_MODULE, MAX_BATTERY_MODULES, buildBatteryParts } from "./equipmentGeometry";
 import { slotToWorld, type Mount, type PlaneFrame } from "./houseGeometry";
 import { PANEL, type PanelSlot } from "./layout";
 import type { Palette } from "./palette";
 import type { CompKey } from "./sceneSpec";
-
-const SPEED = 9; // damping λ: ~300 ms to settle
-const PANEL_LIFT = 0.14;
-const PANEL_STAGGER = 0.025;
-const PANEL_STAGGER_MAX = 0.5;
+import { LAND, ROLL, SETTLE, stepSpring, type SpringState } from "./spring";
 
 export interface Pointer {
   onOver: (key: CompKey) => void;
@@ -27,17 +23,36 @@ function handlers(key: CompKey, p: Pointer) {
   };
 }
 
+function materialsOf(object: THREE.Object3D): THREE.Material[] {
+  const list: THREE.Material[] = [];
+  object.traverse((o) => {
+    const m = (o as THREE.Mesh).material;
+    if (m) list.push(...(Array.isArray(m) ? m : [m]));
+  });
+  return list;
+}
+
+function setOpacity(list: THREE.Material[], v: number) {
+  for (const m of list) {
+    m.opacity = v;
+    // opaque when settled: correct sorting and no transparency cost at rest
+    const t = v < 0.999;
+    if (m.transparent !== t) { m.transparent = t; m.needsUpdate = true; }
+  }
+}
+
 /**
- * Fades, rises and scales its object in when `visible` turns true, and back out when false.
- * The object stays mounted; it is hidden once fully out. Reduced motion: instant.
+ * Settles its object in (rises a little, scales from 0.92, fades) when `visible` turns true, and back out when false.
+ * Critically damped spring, interruptible. Hidden once fully out; not hit-testable while hidden.
  */
-export function Appear({ object, mount, visible, reduced, delay = 0, hitKey, pointer }: {
-  object: THREE.Object3D; mount: Mount; visible: boolean; reduced: boolean; delay?: number;
+export function Appear({ object, mount, visible, reduced, intro = true, delay = 0, hitKey, pointer }: {
+  object: THREE.Object3D; mount: Mount; visible: boolean; reduced: boolean; intro?: boolean; delay?: number;
   hitKey: CompKey; pointer: Pointer;
 }) {
   const ref = useRef<THREE.Group>(null);
-  const p = useRef(0);
+  const s = useRef<SpringState>({ x: 0, v: 0 });
   const wait = useRef(delay);
+  const first = useRef(true);
   const mats = useRef<{ of: THREE.Object3D; list: THREE.Material[] } | null>(null);
 
   useEffect(() => { wait.current = visible ? delay : 0; }, [visible, delay]);
@@ -45,25 +60,18 @@ export function Appear({ object, mount, visible, reduced, delay = 0, hitKey, poi
   useFrame((_, dt) => {
     const g = ref.current;
     if (!g) return;
-    if (mats.current?.of !== object) {
-      const list: THREE.Material[] = [];
-      object.traverse((o) => {
-        const m = (o as THREE.Mesh).material;
-        if (m) list.push(...(Array.isArray(m) ? m : [m]));
-      });
-      for (const m of list) m.transparent = true;
-      mats.current = { of: object, list };
-    }
+    if (mats.current?.of !== object) mats.current = { of: object, list: materialsOf(object) };
     const target = visible ? 1 : 0;
-    if (reduced) p.current = target;
+    const snap = reduced || (first.current && !intro);
+    first.current = false;
+    if (snap) { s.current.x = target; s.current.v = 0; }
     else if (wait.current > 0) wait.current -= dt;
-    else p.current = THREE.MathUtils.damp(p.current, target, SPEED, Math.min(dt, 0.05));
-    if (Math.abs(p.current - target) < 0.002) p.current = target;
-    const v = p.current;
+    else stepSpring(s.current, target, dt, SETTLE);
+    const v = Math.min(1, Math.max(0, s.current.x));
     g.visible = v > 0.01;
-    g.scale.setScalar(0.8 + 0.2 * v);
-    g.position.set(mount.position.x, mount.position.y - (1 - v) * 0.25, mount.position.z);
-    for (const m of mats.current.list) m.opacity = v;
+    g.scale.setScalar(0.92 + 0.08 * v);
+    g.position.set(mount.position.x, mount.position.y - (1 - v) * 0.15, mount.position.z);
+    setOpacity(mats.current.list, v);
   });
 
   return (
@@ -73,97 +81,120 @@ export function Appear({ object, mount, visible, reduced, delay = 0, hitKey, poi
   );
 }
 
-function panelTexture(p: Palette): THREE.CanvasTexture {
+// ---------- panels ----------
+
+function panelTexture(): THREE.CanvasTexture {
   const c = document.createElement("canvas");
-  c.width = 64;
-  c.height = 100;
+  c.width = 128;
+  c.height = 200;
   const x = c.getContext("2d")!;
-  x.fillStyle = p.panel;
-  x.fillRect(0, 0, 64, 100);
-  x.strokeStyle = "rgba(170,190,215,0.28)";
-  x.lineWidth = 1;
-  for (let i = 1; i < 6; i++) { x.beginPath(); x.moveTo((i * 64) / 6, 0); x.lineTo((i * 64) / 6, 100); x.stroke(); }
-  for (let j = 1; j < 10; j++) { x.beginPath(); x.moveTo(0, j * 10); x.lineTo(64, j * 10); x.stroke(); }
+  x.fillStyle = "#ffffff";
+  x.fillRect(0, 0, 128, 200);
+  x.strokeStyle = "rgba(120,140,170,0.22)";
+  x.lineWidth = 1.5;
+  for (let i = 1; i < 6; i++) { x.beginPath(); x.moveTo((i * 128) / 6, 0); x.lineTo((i * 128) / 6, 200); x.stroke(); }
+  for (let j = 1; j < 10; j++) { x.beginPath(); x.moveTo(0, j * 20); x.lineTo(128, j * 20); x.stroke(); }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
+  t.anisotropy = 8;
   return t;
 }
 
-interface PanelState { slot: PanelSlot; p: number; target: 0 | 1; wait: number }
+interface PanelState { slot: PanelSlot; drop: SpringState; target: 0 | 1; wait: number; row: number }
+
+const ROW_STAGGER = 0.11;
+const COL_STAGGER = 0.016;
+const DROP = 1.3; // metres above the roof a new panel starts from
+const PANEL_LIFT = 0.13;
+
+const rowOf = (s: PanelSlot) => Number(/-r(\d+)u/.exec(s.id)?.[1] ?? 0) + (s.plane === "garage" ? 4 : 0);
+
+/** New panels drop in row by row from the gutter up and land with a slight bounce; removed ones lift away, top row first. */
+function syncSlots(map: Map<string, PanelState>, slots: PanelSlot[], reduced: boolean) {
+  const ids = new Set(slots.map((s) => s.id));
+  const fresh = slots.filter((s) => !map.has(s.id) || map.get(s.id)!.target === 0);
+  const colInRow = new Map<number, number>();
+  for (const s of fresh) {
+    const row = rowOf(s);
+    const col = colInRow.get(row) ?? 0;
+    colInRow.set(row, col + 1);
+    const wait = reduced ? 0 : row * ROW_STAGGER + col * COL_STAGGER;
+    const st = map.get(s.id);
+    if (st) { st.target = 1; st.wait = wait; st.slot = s; }
+    else map.set(s.id, { slot: s, drop: { x: reduced ? 0 : 1, v: 0 }, target: 1, wait, row });
+  }
+  for (const s of slots) { const st = map.get(s.id); if (st) st.slot = s; }
+  const leaving = [...map.values()].filter((st) => !ids.has(st.slot.id) && st.target === 1);
+  const maxRow = Math.max(0, ...leaving.map((st) => st.row));
+  for (const st of leaving) { st.target = 0; st.wait = reduced ? 0 : (maxRow - st.row) * 0.06; }
+}
 
 const SCRATCH = {
   m4: new THREE.Matrix4(), basis: new THREE.Matrix4(), scale: new THREE.Vector3(),
   pos: new THREE.Vector3(), q: new THREE.Quaternion(), back: new THREE.Vector3(),
 };
 
-/** New slots drop in with a stagger; slots that left fade out; kept slots don't move. */
-function syncSlots(map: Map<string, PanelState>, slots: PanelSlot[]) {
-  const ids = new Set(slots.map((s) => s.id));
-  let fresh = 0;
-  for (const s of slots) {
-    const st = map.get(s.id);
-    if (st) { st.slot = s; if (st.target === 0) { st.target = 1; st.wait = 0; } }
-    else map.set(s.id, { slot: s, p: 0, target: 1, wait: Math.min(fresh++ * PANEL_STAGGER, PANEL_STAGGER_MAX) });
-  }
-  let gone = 0;
-  for (const [id, st] of map) if (!ids.has(id) && st.target === 1) { st.target = 0; st.wait = Math.min(gone++ * 0.012, 0.25); }
-}
-
-/** All panels as one InstancedMesh (+ one for frames). Only panels that are new or removed animate. */
-export function Panels({ slots, frames, palette, reduced, pointer, maxCount = 96 }: {
+/** All panels as one InstancedMesh (glass) + one for frames. Dark glass with clearcoat catches the sun. */
+export function Panels({ slots, frames, palette, reduced, intro = true, pointer, maxCount = 96 }: {
   slots: PanelSlot[]; frames: Record<PanelSlot["plane"], PlaneFrame>; palette: Palette; reduced: boolean;
-  pointer: Pointer; maxCount?: number;
+  intro?: boolean; pointer: Pointer; maxCount?: number;
 }) {
   const glass = useRef<THREE.InstancedMesh>(null);
   const rim = useRef<THREE.InstancedMesh>(null);
   const states = useRef(new Map<string, PanelState>());
+  const latest = useRef<PanelSlot[]>(slots);
+  const synced = useRef<PanelSlot[] | null>(null);
+  const atRest = useRef<{ frames: unknown; geo: unknown } | null>(null);
+  useEffect(() => { latest.current = slots; }, [slots]);
 
   const { glassGeo, rimGeo, glassMats, rimMat } = useMemo(() => {
-    const tex = panelTexture(palette);
-    const top = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.35, metalness: 0.15 });
-    const side = new THREE.MeshStandardMaterial({ color: palette.panel, roughness: 0.5 });
+    const top = new THREE.MeshPhysicalMaterial({
+      color: palette.panel, map: panelTexture(), roughness: 0.32, metalness: 0.05,
+      clearcoat: 0.6, clearcoatRoughness: 0.12, envMapIntensity: 0.45,
+    });
+    const side = new THREE.MeshStandardMaterial({ color: palette.panelFrame, roughness: 0.45, metalness: 0.5 });
     return {
-      glassGeo: new THREE.BoxGeometry(PANEL.w - 0.03, 0.04, PANEL.h - 0.03),
-      rimGeo: new THREE.BoxGeometry(PANEL.w, 0.035, PANEL.h),
+      glassGeo: new THREE.BoxGeometry(PANEL.w - 0.035, 0.035, PANEL.h - 0.035),
+      rimGeo: new THREE.BoxGeometry(PANEL.w, 0.03, PANEL.h),
       glassMats: [side, side, top, side, side, side],
-      rimMat: new THREE.MeshStandardMaterial({ color: palette.panelFrame, roughness: 0.4, metalness: 0.5 }),
+      rimMat: side,
     };
   }, [palette]);
 
   useEffect(() => () => {
-    glassGeo.dispose(); rimGeo.dispose(); rimMat.dispose();
+    glassGeo.dispose(); rimGeo.dispose();
     for (const m of new Set(glassMats)) { (m as THREE.MeshStandardMaterial).map?.dispose(); m.dispose(); }
   }, [glassGeo, rimGeo, glassMats, rimMat]);
-
-  const latest = useRef<PanelSlot[]>(slots);
-  const synced = useRef<PanelSlot[] | null>(null);
-  useEffect(() => { latest.current = slots; }, [slots]);
 
   useFrame((_, dt) => {
     if (!glass.current || !rim.current) return;
     if (synced.current !== latest.current) {
-      syncSlots(states.current, latest.current);
+      syncSlots(states.current, latest.current, reduced || (synced.current === null && !intro));
       synced.current = latest.current;
+      atRest.current = null;
     }
+    // nothing moving and nothing changed: the instance matrices are already right
+    if (atRest.current && atRest.current.frames === frames && atRest.current.geo === glassGeo) return;
     const { m4, basis, scale, pos, q, back } = SCRATCH;
     let i = 0;
+    let moving = false;
     for (const [id, st] of states.current) {
-      if (reduced) st.p = st.target;
-      else if (st.wait > 0) st.wait -= dt;
-      else st.p = THREE.MathUtils.damp(st.p, st.target, SPEED, Math.min(dt, 0.05));
-      if (Math.abs(st.p - st.target) < 0.002) st.p = st.target;
-      if (st.target === 0 && st.p === 0) { states.current.delete(id); continue; }
+      const target = st.target === 1 ? 0 : 1; // drop offset: 0 = on the roof, 1 = up in the air
+      if (reduced || (st.wait <= 0 && st.drop.x === target && st.drop.v === 0)) { st.drop.x = target; st.drop.v = 0; }
+      else if (st.wait > 0) { st.wait -= dt; moving = true; }
+      else { stepSpring(st.drop, target, dt, st.target === 1 ? LAND : SETTLE); moving = true; }
+      if (st.target === 0 && st.drop.x >= 0.995) { states.current.delete(id); continue; }
       if (i >= maxCount) continue;
       const f = frames[st.slot.plane];
-      const v = st.p;
-      pos.copy(slotToWorld(f, st.slot.u, st.slot.v, PANEL_LIFT + (1 - v) * 0.9));
+      const up = st.drop.x; // may dip slightly below 0 on landing: the bounce
+      const v = Math.min(1, Math.max(0, 1 - up));
+      pos.copy(slotToWorld(f, st.slot.u, st.slot.v, PANEL_LIFT + up * DROP));
       back.copy(f.vAxis).negate();
       q.setFromRotationMatrix(basis.makeBasis(f.uAxis, f.normal, back));
-      scale.setScalar(v < 0.01 ? 0 : 0.6 + 0.4 * v);
+      scale.setScalar(v < 0.02 ? 0 : 0.94 + 0.06 * v);
       m4.compose(pos, q, scale);
       glass.current.setMatrixAt(i, m4);
-      pos.addScaledVector(f.normal, -0.012);
+      pos.addScaledVector(f.normal, -0.01);
       m4.compose(pos, q, scale);
       rim.current.setMatrixAt(i, m4);
       i++;
@@ -174,6 +205,7 @@ export function Panels({ slots, frames, palette, reduced, pointer, maxCount = 96
     rim.current.instanceMatrix.needsUpdate = true;
     glass.current.computeBoundingSphere();
     rim.current.computeBoundingSphere();
+    atRest.current = moving ? null : { frames, geo: glassGeo };
   });
 
   return (
@@ -184,7 +216,130 @@ export function Panels({ slots, frames, palette, reduced, pointer, maxCount = 96
   );
 }
 
-export const EQUIPMENT_HIT: Record<EquipmentKey, CompKey> = {
-  inverter: "inverter", battery: "battery", wallbox: "wallbox", heatpump: "heatpump", car: "wallbox",
-};
+// ---------- battery ----------
 
+const MAX_MODULES = MAX_BATTERY_MODULES;
+
+/** Stacked battery modules; modules stack in/out one by one, the side gauge springs to the state of charge. */
+export function Battery({ mount, modules, soc, palette, reduced, intro = true, pointer }: {
+  mount: Mount; modules: number; soc: number; palette: Palette; reduced: boolean; intro?: boolean; pointer: Pointer;
+}) {
+  const parts = useMemo(() => buildBatteryParts(palette), [palette]);
+  useEffect(() => () => {
+    for (const v of Object.values(parts)) (v as THREE.BufferGeometry | THREE.Material).dispose();
+  }, [parts]);
+  const refs = useRef<(THREE.Group | null)[]>([]);
+  const base = useRef<THREE.Mesh>(null);
+  const gauge = useRef<THREE.Mesh>(null);
+  const track = useRef<THREE.Mesh>(null);
+  const springs = useRef(Array.from({ length: MAX_MODULES }, () => ({ s: { x: 0, v: 0 } as SpringState, wait: 0, target: 0 })));
+  const height = useRef<SpringState>({ x: 0, v: 0 });
+  const fill = useRef<SpringState>({ x: soc, v: 0 });
+  const seen = useRef(-1);
+
+  useFrame((_, dt) => {
+    // module targets: stack bottom-up when adding, top-down when removing
+    const snap = reduced || (seen.current === -1 && !intro);
+    if (seen.current !== modules) {
+      const prev = Math.max(0, seen.current);
+      for (let i = 0; i < MAX_MODULES; i++) {
+        const sp = springs.current[i];
+        const t = i < modules ? 1 : 0;
+        if (sp.target !== t) {
+          sp.target = t;
+          sp.wait = snap ? 0 : t ? (i - prev) * 0.09 : (prev - 1 - i) * 0.07;
+          if (snap) { sp.s.x = t; sp.s.v = 0; }
+        }
+      }
+      seen.current = modules;
+    }
+    const { h } = BATTERY_MODULE;
+    let stack = 0;
+    for (let i = 0; i < MAX_MODULES; i++) {
+      const sp = springs.current[i];
+      const g = refs.current[i];
+      if (reduced) { sp.s.x = sp.target; sp.s.v = 0; }
+      else if (sp.wait > 0) sp.wait -= dt;
+      else stepSpring(sp.s, sp.target, dt, sp.target ? LAND : SETTLE);
+      const v = Math.min(1, Math.max(0, sp.s.x));
+      if (g) {
+        g.visible = v > 0.01;
+        g.position.y = 0.08 + i * h + (1 - sp.s.x) * 0.35;
+        g.scale.setScalar(0.94 + 0.06 * v);
+      }
+      stack += v;
+    }
+    const totalH = Math.max(0, stack) * h;
+    if (reduced) height.current.x = totalH;
+    else stepSpring(height.current, totalH, dt, SETTLE);
+    if (snap) { height.current.x = totalH; fill.current.x = soc; }
+    else stepSpring(fill.current, soc, dt, SETTLE);
+    const H = Math.max(0.001, height.current.x - 0.06);
+    if (track.current) { track.current.scale.y = H; track.current.position.y = 0.11 + H / 2; track.current.visible = modules > 0; }
+    if (gauge.current) {
+      const f = Math.min(1, Math.max(0.001, fill.current.x)) * H;
+      gauge.current.scale.y = f;
+      gauge.current.position.y = 0.11 + f / 2;
+      gauge.current.visible = modules > 0;
+    }
+    if (base.current) base.current.visible = stack > 0.01;
+  });
+
+  const { w, d } = BATTERY_MODULE;
+  return (
+    <group position={mount.position} rotation-y={mount.yaw} {...(modules > 0 ? handlers("battery", pointer) : {})}>
+      <mesh ref={base} geometry={parts.base} material={parts.plinth} position={[0, 0.04, d / 2]} castShadow receiveShadow />
+      {Array.from({ length: MAX_MODULES }, (_, i) => (
+        <group key={i} ref={(el) => { refs.current[i] = el; }} visible={false}>
+          <mesh geometry={parts.module} material={parts.housing} position={[0, BATTERY_MODULE.h / 2, d / 2]} castShadow receiveShadow />
+          <mesh geometry={parts.seam} material={parts.accent} position={[0, 0.02, d + 0.002]} />
+        </group>
+      ))}
+      <mesh ref={track} geometry={parts.gauge} material={parts.gaugeTrack} position={[w / 2 - 0.06, 0.2, d + 0.006]} />
+      <mesh ref={gauge} geometry={parts.gauge} material={parts.accent} position={[w / 2 - 0.06, 0.2, d + 0.01]} />
+    </group>
+  );
+}
+
+// ---------- car ----------
+
+const tangent = new THREE.Vector3();
+
+/** The car drives in from the street along `path` when the wallbox is added, and back out when it's removed. */
+export function Car({ object, path, visible, reduced, intro = true, pointer }: {
+  object: THREE.Object3D; path: THREE.Curve<THREE.Vector3>; visible: boolean; reduced: boolean; intro?: boolean; pointer: Pointer;
+}) {
+  const ref = useRef<THREE.Group>(null);
+  const s = useRef<SpringState>({ x: 0, v: 0 });
+  const last = useRef(0);
+  const first = useRef(true);
+  const cache = useRef<{ of: THREE.Object3D; mats: THREE.Material[]; wheels: THREE.Object3D[] } | null>(null);
+  const length = useMemo(() => path.getLength(), [path]);
+
+  useFrame((_, dt) => {
+    const g = ref.current;
+    if (!g) return;
+    if (cache.current?.of !== object) {
+      cache.current = { of: object, mats: materialsOf(object), wheels: object.children.filter((c) => c.name === "wheel") };
+    }
+    const target = visible ? 1 : 0;
+    if (reduced || (first.current && !intro)) { s.current.x = target; s.current.v = 0; last.current = target; }
+    else stepSpring(s.current, target, dt, ROLL);
+    first.current = false;
+    const k = Math.min(1, Math.max(0, s.current.x));
+    g.visible = k > 0.002;
+    path.getPointAt(k, g.position);
+    path.getTangentAt(k, tangent);
+    g.rotation.y = Math.atan2(-tangent.x, -tangent.z); // nose (local -z) along the path
+    const rolled = (k - last.current) * length;
+    last.current = k;
+    for (const w of cache.current.wheels) w.rotation.x -= rolled / 0.32;
+    setOpacity(cache.current.mats, Math.min(1, k / 0.18)); // fades in at the edge of the board
+  });
+
+  return (
+    <group ref={ref} visible={false} {...(visible ? handlers("wallbox", pointer) : {})}>
+      <primitive object={object} />
+    </group>
+  );
+}

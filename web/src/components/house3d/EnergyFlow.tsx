@@ -3,76 +3,129 @@ import { Line } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
-import type { Palette } from "./palette";
-import type { Flow, FlowNode } from "./sceneSpec";
+import type { FlowNodeId, LiveFlow } from "./energyDay";
+import { SETTLE, stepSpring, type SpringState } from "./spring";
 
-type LineRef = { material: { dashOffset: number; opacity: number } } | null;
+/** Every flow the scene can show; each stays mounted and fades in/out as the day changes. */
+const FLOW_PATHS: Record<string, FlowNodeId[]> = {
+  "panels-house": ["panels", "inverter", "house"],
+  "panels-battery": ["panels", "inverter", "battery"],
+  "panels-car": ["panels", "inverter", "wallbox", "car"],
+  "panels-grid": ["panels", "inverter", "grid"],
+  "battery-house": ["battery", "inverter", "house"],
+  "grid-house": ["grid", "house"],
+  "house-heatpump": ["house", "heatpump"],
+};
+
+type LineHandle = { material: { dashOffset: number; opacity: number; linewidth: number }; visible: boolean } | null;
 
 /** Arc from a to b, lifted and pushed south (towards the viewer) so it clears walls. */
-function arc(a: THREE.Vector3, b: THREE.Vector3, lift: number, south: number): THREE.Vector3[] {
+function arc(a: THREE.Vector3, b: THREE.Vector3, out: THREE.Vector3[], first: boolean) {
+  const d = a.distanceTo(b);
   const mid = a.clone().lerp(b, 0.5);
-  mid.y += lift;
-  mid.z += south;
-  return new THREE.QuadraticBezierCurve3(a, mid, b).getPoints(28);
+  mid.y += Math.min(2.2, d * 0.2);
+  mid.z += Math.min(1.4, d * 0.12);
+  const pts = new THREE.QuadraticBezierCurve3(a, mid, b).getPoints(Math.max(8, Math.round(d * 2.5)));
+  out.push(...(first ? pts : pts.slice(1)));
 }
 
-function FlowLine({ points, color, reduced, speed = 0.9, width = 2.4 }: {
-  points: THREE.Vector3[]; color: string; reduced: boolean; speed?: number; width?: number;
+function gradient(n: number, stops: readonly [string, string, string]): THREE.Color[] {
+  const [a, b, c] = stops.map((s) => new THREE.Color(s));
+  return Array.from({ length: n }, (_, i) => {
+    const t = n > 1 ? i / (n - 1) : 0;
+    return t < 0.5 ? a.clone().lerp(b, t * 2) : b.clone().lerp(c, (t - 0.5) * 2);
+  });
+}
+
+// Note: drei's <Line> spreads extra props onto both the Line2 and its LineMaterial, so `visible` must not be a prop
+// (it would hide the material for good); it is driven per frame on the object instead.
+function FlowLine({ points, colors, kw, reduced, thin = false }: {
+  points: THREE.Vector3[]; colors: THREE.Color[]; kw: number; reduced: boolean; thin?: boolean;
 }) {
-  const ref = useRef<LineRef>(null);
-  const t = useRef(0);
+  const ref = useRef<LineHandle>(null);
+  const s = useRef<SpringState>({ x: 0, v: 0 });
   useFrame((_, dt) => {
     const l = ref.current;
     if (!l) return;
-    t.current = Math.min(1, t.current + dt * 3);
-    l.material.opacity = reduced ? 0.95 : 0.95 * t.current;
-    if (!reduced) l.material.dashOffset -= dt * speed;
+    const on = kw > 0 ? 1 : 0;
+    if (reduced) s.current.x = on;
+    else stepSpring(s.current, on, dt, SETTLE);
+    const o = Math.min(1, Math.max(0, s.current.x));
+    l.visible = o > 0.01;
+    l.material.opacity = 0.95 * o;
+    const width = thin ? 1.4 : 1.8 + Math.min(2.6, kw * 0.5);
+    l.material.linewidth = width;
+    if (!reduced) l.material.dashOffset -= dt * (0.5 + Math.min(1.6, kw * 0.32));
   });
   return (
     <Line
       ref={ref as never}
       points={points}
-      color={color}
-      lineWidth={width}
+      vertexColors={colors}
+      color="#ffffff"
+      lineWidth={2}
       dashed={!reduced}
-      dashSize={0.28}
-      gapSize={0.2}
+      dashSize={0.22}
+      gapSize={0.16}
       transparent
-      opacity={reduced ? 0.95 : 0}
+      opacity={0}
       depthWrite={false}
       renderOrder={2}
     />
   );
 }
 
-export function EnergyFlow({ flows, nodes, sunDir, rayTargets, palette, reduced }: {
-  flows: Flow[]; nodes: Partial<Record<FlowNode, THREE.Vector3>>; sunDir: THREE.Vector3;
-  /** Points on the panel block that sun rays land on. */
-  rayTargets: THREE.Vector3[]; palette: Palette; reduced: boolean;
+const RAY_POINTS = [new THREE.Vector3(0, 6, 0), new THREE.Vector3(0, 3, 0), new THREE.Vector3(0, 0, 0)];
+const Y = new THREE.Vector3(0, 1, 0);
+
+function SunRay({ target, sunDir, colors, kw, reduced }: {
+  target: THREE.Vector3; sunDir: THREE.Vector3; colors: THREE.Color[]; kw: number; reduced: boolean;
 }) {
-  const lines = useMemo(() => {
-    const out: { key: string; points: THREE.Vector3[]; color: string; width?: number; speed?: number }[] = [];
-    for (const f of flows) {
-      const color = palette[f.color];
-      if (f.from === "sun") {
-        rayTargets.forEach((t, i) =>
-          out.push({ key: `${f.id}-${i}`, points: [t.clone().addScaledVector(sunDir, 6), t.clone()], color, width: 1.8, speed: 1.4 }),
-        );
-        continue;
-      }
-      const a = nodes[f.from];
-      const b = nodes[f.to];
-      if (!a || !b) continue;
-      const d = a.distanceTo(b);
-      out.push({ key: f.id, points: arc(a, b, Math.min(2.5, d * 0.22), Math.min(1.6, d * 0.15)), color });
-    }
-    return out;
-  }, [flows, nodes, sunDir, rayTargets, palette]);
+  const ref = useRef<THREE.Group>(null);
+  useFrame(() => {
+    const g = ref.current;
+    if (g) g.quaternion.setFromUnitVectors(Y, sunDir);
+  });
+  return (
+    <group ref={ref} position={target}>
+      <FlowLine points={RAY_POINTS} colors={colors} kw={kw} reduced={reduced} thin />
+    </group>
+  );
+}
+
+export function EnergyFlow({ flows, nodes, sunDir, rayTargets, gradientStops, reduced }: {
+  flows: LiveFlow[];
+  nodes: Record<FlowNodeId, THREE.Vector3>;
+  /** Unit vector towards the sun, in house coordinates. */
+  sunDir: THREE.Vector3;
+  /** Points on the panel block that sun rays land on. */
+  rayTargets: THREE.Vector3[];
+  gradientStops: readonly [string, string, string];
+  reduced: boolean;
+}) {
+  const kw = useMemo(() => Object.fromEntries(flows.map((f) => [f.id, f.kw])), [flows]);
+
+  const lines = useMemo(
+    () =>
+      Object.entries(FLOW_PATHS).map(([id, path]) => {
+        const pts: THREE.Vector3[] = [];
+        for (let i = 0; i < path.length - 1; i++) arc(nodes[path[i]], nodes[path[i + 1]], pts, i === 0);
+        return { id, points: pts, colors: gradient(pts.length, gradientStops) };
+      }),
+    [nodes, gradientStops],
+  );
+
+  // sun rays: fixed geometry along +y, each turned towards the sun every frame (no line rebuilds while the day plays)
+  const rayColors = useMemo(() => gradient(3, [gradientStops[0], gradientStops[0], gradientStops[1]]), [gradientStops]);
+  const sunKw = sunDir.y > 0.02 ? (kw["sun-panels"] ?? 0) : 0;
 
   return (
     <group>
       {lines.map((l) => (
-        <FlowLine key={l.key} points={l.points} color={l.color} reduced={reduced} width={l.width} speed={l.speed} />
+        <FlowLine key={l.id} points={l.points} colors={l.colors} kw={kw[l.id] ?? 0} reduced={reduced} />
+      ))}
+      {rayTargets.map((t, i) => (
+        <SunRay key={i} target={t} sunDir={sunDir} colors={rayColors} kw={sunKw} reduced={reduced} />
       ))}
     </group>
   );
