@@ -8,7 +8,9 @@ Every variant is trained on the same training projects and scored on the same lo
     A  before #1: no offer-type step, PV snapped to 450 W modules
     B  + #1  offer type (new system / retrofit / wallbox only / other) + "Is there already PV?" input
     C  + #3  PV snapped to the installer's standard packages
-    D  + #5  conformal P10-P90 + learned retrofit weight               (= the shipped model)
+    D  + #5  conformal P10-P90 + learned retrofit weight
+    E  + battery size: mean of classifier and installer kWh/kWp rule  (= the shipped model)
+    (PV linear blend: tested, not shipped)
     #4 interim labels + raw inputs  vs  engine/labels + cleaned inputs  (both scored on engine/labels)
 Columns: all projects without the existing-PV answer; full new-system designs WITH the answer (the planner knows it
 is a new system); full designs with real consumption (answered).
@@ -73,10 +75,13 @@ def main():
     print(f"train {len(train)} / locked test {len(test)} projects")
 
     rows = {}
-    variants = {"A  before #1 (no offer type, 450 W modules)": dict(offer_type=False, packages=False, calibrated=False),
-                "B  + #1 offer type + existing-PV input": dict(offer_type=True, packages=False, calibrated=False),
-                "C  + #3 installer packages": dict(offer_type=True, packages=True, calibrated=False),
-                "D  + #5 calibration (shipped)": dict(offer_type=True, packages=True, calibrated=True)}
+    variants = {"A  before #1 (no offer type, 450 W modules)": dict(offer_type=False, packages=False, calibrated=False, battery_mix=False),
+                "B  + #1 offer type + existing-PV input": dict(offer_type=True, packages=False, calibrated=False, battery_mix=False),
+                "C  + #3 installer packages": dict(offer_type=True, packages=True, calibrated=False, battery_mix=False),
+                "D  + #5 calibration": dict(offer_type=True, packages=True, calibrated=True, battery_mix=False),
+                "E  + battery kWh/kWp mix (shipped)": dict(offer_type=True, packages=True, calibrated=True, battery_mix=True),
+                "(PV linear blend, not shipped)": dict(offer_type=True, packages=True, calibrated=True, battery_mix=True,
+                                                         blend=True)}
     for name, kw in variants.items():
         rows[name] = views(DesignModel(**kw).fit(train), test, test, cat)
         print("done:", name)

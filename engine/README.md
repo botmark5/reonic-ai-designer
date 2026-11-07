@@ -55,8 +55,8 @@ Every claim is against the BEST of three baselines for that metric: kWh/1000, me
 | PV kWp MAE, where both have PV (size only) | **2.48** | 2.64 | band median |
 | PV within ± 1.5 kWp | 40 % | **43 %** | band median |
 | PV inside the expert's variant range ± 1 kWp | **42 %** | 30 % | band median |
-| battery kWh MAE, where both have one | **2.50** | 2.71 | band median |
-| battery within one catalogue step | **51 %** | 51 % | band median |
+| battery kWh MAE, where both have one | **2.45** | 2.71 | band median |
+| battery within one catalogue step | **54 %** | 51 % | band median |
 | PV yes/no accuracy | **88 %** | 82 % | installer's most common choice (all baselines) |
 | battery yes/no accuracy | 88 % | **90 %** | installer's most common choice (all baselines) |
 | wallbox yes/no accuracy | 72 % | **73 %** | installer's most common choice (all baselines) |
@@ -68,8 +68,8 @@ Every claim is against the BEST of three baselines for that metric: kWh/1000, me
 | PV kWp MAE, where both have PV (size only) | **2.50** | 2.62 | band median |
 | PV within ± 1.5 kWp | **45 %** | 43 % | band median |
 | PV inside the expert's variant range ± 1 kWp | **38 %** | 37 % | band median |
-| battery kWh MAE, where both have one | 2.66 | **2.64** | installer's most common battery size |
-| battery within one catalogue step | **50 %** | 46 % | band median |
+| battery kWh MAE, where both have one | **2.61** | 2.64 | installer's most common battery size |
+| battery within one catalogue step | **54 %** | 46 % | band median |
 | PV yes/no accuracy | 100 % | 100 % | installer's most common choice (all baselines) |
 | battery yes/no accuracy | 95 % | 95 % | installer's most common choice (all baselines) |
 | wallbox yes/no accuracy | **73 %** | 72 % | installer's most common choice (all baselines) |
@@ -81,8 +81,8 @@ Every claim is against the BEST of three baselines for that metric: kWh/1000, me
 | PV kWp MAE, where both have PV (size only) | **2.38** | 2.49 | band median |
 | PV within ± 1.5 kWp | 44 % | 44 % | band median |
 | PV inside the expert's variant range ± 1 kWp | 37 % | **39 %** | band median |
-| battery kWh MAE, where both have one | 2.59 | **2.55** | installer's most common battery size |
-| battery within one catalogue step | **51 %** | 47 % | installer's most common battery size |
+| battery kWh MAE, where both have one | **2.55** | 2.55 | installer's most common battery size |
+| battery within one catalogue step | **54 %** | 47 % | installer's most common battery size |
 | PV yes/no accuracy | 100 % | 100 % | installer's most common choice (all baselines) |
 | battery yes/no accuracy | 96 % | 96 % | installer's most common choice (all baselines) |
 | wallbox yes/no accuracy | **74 %** | 73 % | installer's most common choice (all baselines) |

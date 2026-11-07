@@ -436,3 +436,24 @@ def test_roof_cap_and_orientation(client):
     assert any(f["code"] == "ROOF_CAPACITY_EXCEEDED" for f in locked["physics"]["flags"])
     bad = client.post("/design", json={"installer": "instA", "home": {**home, "roof_azimuth": 400}})
     assert bad.status_code == 422
+
+
+def test_linear_blend_is_monotone(trained):
+    model, _ = trained
+    assert model.pv_blend_w_ == 0.0                                   # blend is off by default
+    labels, inputs = make_synthetic(n_per_installer=120, seed=3)
+    blended = DesignModel(blend=True).fit(build_eval_table(labels, inputs))
+    assert blended.pv_blend_w_ in (0.0, 0.3, 0.5, 0.7)
+    lin = model.pv_linear_
+    for c in ("annual_kwh", "has_ev", "ev_km"):
+        if c in lin.cols_:
+            assert lin.reg_.coef_[lin.cols_.index(c)] >= 0
+    assert "total_demand_kwh" not in lin.cols_
+
+
+def test_battery_mode_and_catalogue(trained):
+    model, table = trained
+    assert model.battery_mode_ in ("classifier", "mix")
+    pred = model.predict(table)
+    for inst, g in pred.join(table.installer).groupby("installer"):
+        assert set(g.battery_kwh.round(1)) <= set(model.catalogue_[inst]["battery_kwh"]) | {0.0}
