@@ -1,13 +1,14 @@
 # Pitch facts
 
 Every number the pitch, deck or README may use, with where it comes from and how to say it.
-Checked on 2026-11-08 at 00:20 (P10–P90 coverage at 00:55) against the live engine's `GET /eval`: every metric matched the shipped model.
+Checked on 2026-11-08 at 00:20 (P10–P90 coverage at 00:55, wording updated at 01:10) against the live engine's `GET /eval`: every metric matched the shipped model.
 
 **How to read this**
 - **Safe** means say it as written.
 - **Caveat** means say it only together with the caveat in the same row.
 - **Don't** means leave it out of the pitch.
 - "Answered" means the planner answered "Solar already on the roof?". In the evaluation that answer is taken from the expert's offer type, so it assumes the planner answers correctly. That is the product flow: the voice agent and the planner form both ask it first.
+- "Same as rule" is the wording /reality uses for a tie. Use it in the pitch too.
 - Lower is better for errors (MAE = mean absolute error per home). Higher is better for percentages.
 
 Sources:
@@ -36,7 +37,7 @@ Sources:
 | Add-on sales, answered (62 homes: battery retrofits, wallbox-only, PV extensions) | **0.94 kWp** | 4.06 (kWh ÷ 1,000) | `/eval` `with_existing_pv_answer.segments.add_ons.*` | Safe, with "small group, 62 homes". 4× lower: rules of thumb always propose new PV. |
 | New systems with real consumption, answered (205 homes) | **2.38 kWp** | 2.49 (band median) | `/eval` `with_existing_pv_answer.segments.full_designs_known_consumption.*` | Caveat: same as the first row, the gap is within noise. |
 | PV size where both chose PV, all homes, not answered | 2.48 kWp | 2.64 | `/eval` `metrics.*.pv_kwp_mae_when_both_pv` | Safe |
-| PV within ±1.5 kWp, answered | 44 % | 43 % | `/eval` `with_existing_pv_answer.metrics.*.pv_kwp_within_1.5_pct` | Caveat: level. Not answered it is 40 % vs 43 %, so below the rule. |
+| PV within ±1.5 kWp, answered | 44 % | 43 % | `/eval` `with_existing_pv_answer.metrics.*.pv_kwp_within_1.5_pct` | Caveat: same as rule. Not answered it is 40 % vs 43 %, so below the rule. |
 | Exact PV package match | 9 % | 9 % | RESULTS.md, "PV exact match" | Don't |
 
 ## 3. The one question: "Solar already on the roof?"
@@ -55,17 +56,17 @@ Expert range means the smallest to largest PV across the variants the expert off
 | fact | engine | best rule | source | say it |
 |---|---|---|---|---|
 | All 315 homes, answered | **48 %** | 30 % | `/eval` `with_existing_pv_answer.metrics.*.pv_variant_hit_tolerant_pct` | Caveat: add-on sales drive most of the gap. |
-| New systems, answered | 38 % | 37 % | `…segments.full_designs.*` | Safe as "level". Say it before a judge asks. |
+| New systems, answered | 38 % | 37 % | `…segments.full_designs.*` | Safe as "same as rule". Say it before a judge asks. |
 | Add-on sales, answered | 87 % | 3 % | `…segments.add_ons.*` | Safe, with "62 homes". |
 
 ## 5. Battery, wallbox, heat pump
 | fact | engine | best rule | source | say it |
 |---|---|---|---|---|
 | Battery size, both chose a battery, all homes, answered | **2.35 kWh** | 2.71 | `/eval` `with_existing_pv_answer.metrics.*.battery_kwh_mae_when_both_battery` | Safe |
-| Battery size, new systems, answered | 2.61 kWh | 2.64 (installer's most common size) | `…segments.full_designs.*` | Caveat: level. RESULTS.md compares with the band median (2.97), but the strongest rule here is the installer's most common size. |
+| Battery size, new systems, answered | 2.61 kWh | 2.64 (installer's most common size) | `…segments.full_designs.*` | Caveat: same as rule. RESULTS.md compares with the band median (2.97), but the strongest rule here is the installer's most common size. |
 | Battery within one catalogue size, new systems, answered | **54 %** | 46 % | `…segments.full_designs.*.battery_within_one_step_pct` | Safe |
-| Battery yes/no, new systems | 95 % | 95 % | `…segments.full_designs.*.has_battery_accuracy` | Caveat: level. Not answered, over all homes, it is 88 % vs 90 %, below the rule. |
-| Wallbox yes/no, all homes, answered | 75 % | 73 % | `…metrics.*.has_wallbox_accuracy` | Caveat: close to level. Without EV information it is near a coin flip, and most wallbox buyers have no EV recorded. Not answered it is 72 % vs 73 %, below the rule. |
+| Battery yes/no, new systems | 95 % | 95 % | `…segments.full_designs.*.has_battery_accuracy` | Caveat: same as rule. Not answered, over all homes, it is 88 % vs 90 %, below the rule. |
+| Wallbox yes/no, all homes, answered | 75 % | 73 % | `…metrics.*.has_wallbox_accuracy` | Caveat: close to the rule. Without EV information it is near a coin flip, and most wallbox buyers have no EV recorded. Not answered it is 72 % vs 73 %, below the rule. |
 | Heat pump yes/no | 99 % | 99 % | `/eval` `dm.has_heatpump_accuracy` | Don't: almost no home in the data gets one. |
 | Heat pump in the product | offered as a customer option for gas and oil homes, never chosen by the engine. Size = heat demand ÷ 2,450 full-load hours, snapped to the catalogue. | `engine/README.md` §How a design is made | Safe |
 | Experts added a heat pump when it was a candidate | 11 of 24 homes | `engine/README.md` §Known limitations | Safe |
@@ -73,8 +74,7 @@ Expert range means the smallest to largest PV across the variants the expert off
 ## 6. Trust: ranges, installers, consumption
 | fact | number | source | say it |
 |---|---|---|---|
-| Expert PV falls inside the engine's P10–P90 range, all homes | **80 %** (target 80 %) | `/eval` `metrics.dm.pv_interval_coverage_pct`; RESULTS.md, "P10–P90 contains expert PV", column E | Safe |
-| Same, new systems answered | 79 % | `/eval` `with_existing_pv_answer.segments.full_designs.dm.pv_interval_coverage_pct` | Safe |
+| Expert PV falls inside the engine's P10–P90 range, new full systems (253 homes) | **79–81 %** (target 80 %): 79 % answered (shown on /reality), 81 % not answered, 80 % with real consumption | `/eval` `with_existing_pv_answer.segments.full_designs.dm.pv_interval_coverage_pct`, `segments.full_designs.dm.pv_interval_coverage_pct`, `segments.full_designs_known_consumption.dm.pv_interval_coverage_pct` | Safe as "79–81 % on new full systems (target 80 %)". Never quote a coverage for add-on sales: they get no new PV, so there is nothing to cover. |
 | Trained on installer B only, tested on installer A (PV size where both chose PV, not answered) | 2.91 vs 3.00 kWp best rule | `/eval` `transfer["23c108b7->2a8ba8e2"].*.pv_kwp_mae_when_both_pv` | Caveat: small margin, tested on all of A's projects. |
 | Trained on A only, tested on B | 2.79 vs 3.15 kWp | `/eval` `transfer["2a8ba8e2->23c108b7"].*` | Same caveat |
 | Engine beats the best rule in held-out and transfer tests per installer | 4 of 4 | `aggregates.json` `pv_mae_installer_transfer`; deck chart 2b | Safe |
@@ -105,4 +105,5 @@ Expert range means the smallest to largest PV across the variants the expert off
 - **Time saved per offer, or win-rate uplift.** Neither was measured. Every project in the data is a signed deal, so there are no lost offers to learn from. Say "a reviewed draft in seconds instead of a design from scratch" and leave the minutes to Reonic.
 - **Payback years and savings as facts.** The economics use placeholder prices (`engine/config/economics.toml`).
 - **"Beats the experts"** or **"matches the experts"** for new systems. Say "on par with the best rule of thumb, and it explains itself, takes the planner's changes and handles add-on sales".
+- **P10–P90 coverage for add-on sales**, or any coverage other than new full systems.
 - **Project ids, installer ids, customer names, or any number from a single real project.** Reonic data stays private.
