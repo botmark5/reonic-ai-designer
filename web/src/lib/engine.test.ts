@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mockDesign, mockRefine, mockValidate, snapBattery, snapPv } from "./engine";
+import { mockDesign, mockRefine, mockValidate, snapBattery, snapPv } from "./engine-mock";
 import { EMPTY_LOCKS, type Home } from "./types";
 
 const home: Home = {
