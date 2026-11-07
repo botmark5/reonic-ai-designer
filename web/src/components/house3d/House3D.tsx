@@ -197,7 +197,7 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
       ref={figure}
       className={cn("relative isolate w-full overflow-hidden rounded-lg border border-border bg-surface-0", className)}
     >
-      <div className="relative aspect-[4/3] w-full md:aspect-[16/10]">
+      <div data-h3d-stage className="relative aspect-[4/3] w-full md:aspect-[16/10]">
         {/* eslint-disable-next-line @next/next/no-img-element -- static fallback must work without the image optimiser */}
         <img
           src={FALLBACK_IMAGE[theme]}
@@ -234,7 +234,7 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
       </div>
 
       {/* Phones: controls stack under the model. From sm: they float over it (wrapper becomes display: contents). */}
-      <div className="flex flex-col gap-3 border-t border-border p-3 sm:contents">
+      <div data-h3d-ui className="flex flex-col gap-3 border-t border-border p-3 sm:contents">
         {/* live numbers + legend */}
         <section
           aria-label={show3d ? "The system right now" : "The system"}

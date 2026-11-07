@@ -117,6 +117,20 @@ function ShadowsOncePerFrame() {
   return null;
 }
 
+/** Vertical field of view in landscape. Narrower than 5:4 (portrait phones, 4:5 slides), widen it so the model keeps its width. */
+const FOV = 30;
+const FIT_ASPECT = 1.1;
+const TAN_H = Math.tan(((FOV / 2) * Math.PI) / 180) * FIT_ASPECT;
+function FitWidth() {
+  useFrame((state) => {
+    const cam = state.camera as THREE.PerspectiveCamera;
+    const aspect = state.size.width / Math.max(1, state.size.height);
+    const fov = aspect >= FIT_ASPECT ? FOV : (2 * Math.atan(TAN_H / aspect) * 180) / Math.PI;
+    if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
+  }, -1);
+  return null;
+}
+
 /** Exposure follows the theme (the renderer outlives theme switches). */
 function Exposure({ dark }: { dark: boolean }) {
   useFrame((state) => { state.gl.toneMappingExposure = dark ? 0.95 : 1.02; }, -1);
@@ -198,6 +212,7 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
         {activeSpec?.visible && <Tooltip spec={activeSpec} position={labels[activeSpec.key]} />}
       </group>
       <Daylight moment={moment} palette={palette} reduced={reduced} />
+      <FitWidth />
       <CameraRig request={preset} rotationY={rotationY} reduced={reduced} flyIn={flyIn} />
     </>
   );
@@ -232,7 +247,7 @@ export default function Scene({ onMiss, onReady, dark, inView, ...props }: Scene
       shadows
       frameloop={inView ? "always" : "never"}
       dpr={[1, tier === 2 ? 2 : tier === 1 ? 1.5 : 1]}
-      camera={{ fov: 30, near: 0.5, far: 260, position: [19, 10.5, 30] }}
+      camera={{ fov: FOV, near: 0.5, far: 260, position: [19, 10.5, 30] }}
       gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
       onPointerMissed={onMiss}
       onCreated={(state) => {
