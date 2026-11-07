@@ -27,8 +27,12 @@ _Web agent: replace this with what changed, what is next, what is blocking, and 
   time-of-day slider driving a modelled sunny May day (flows, live kW, battery %), spring animations for design changes,
   camera fly-in and Street / Roof / Garage presets. New optional props: `flyIn`, `roof.latitude` / `roof.longitude`;
   new helper `roofFromSolarResult()` turns a `/api/solar` result into the `roof` prop (undefined → defaults).
-- Engine: no change. House3D only reads `design.*.include / kwp / kwh / kw / reasons` and `home.annual_kwh`,
-  `ev_km_year`, `tilt_deg`, `orientation_deg`. The modelled day is illustrative and labelled so in the UI.
+- Changed (#54): the 3D roof follows the planner's `roof_azimuth` / `roof_pitch` (over the `roof` prop); `roof_max_kwp`
+  caps the new panels drawn; `existing_pv_kwp` panels are drawn (8 kWp assumed when `has_existing_pv` has no size, as in
+  the engine), so battery retrofits show their solar. Deck stills + day video: `web/scripts/house/export-stills.mjs`
+  (outputs on the data-v1 release as `deck_3d_*`).
+- Engine: no change. House3D reads `design.*.include / kwp / kwh / kw / reasons` and `home.annual_kwh`, `ev_km_year`,
+  `roof_*`, `existing_pv_kwp`, `has_existing_pv`, `tilt_deg`, `orientation_deg`. The modelled day is labelled in the UI.
 - Next: none planned; mount details in `web/src/components/house3d/README.md`.
 - Blocking: nothing.
 
