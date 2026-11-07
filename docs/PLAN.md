@@ -5,8 +5,8 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 ## Phase 0 — Setup
 - [x] Mark: private repo + invite Cala; push starter kit
 - [x] Cala: clone, copy data into data/raw, Python env, CSVs load
-- [ ] Mark: web/ Next.js + Tailwind + shadcn + Framer Motion on Vercel
-  - app builds and runs locally; NOT on Vercel yet (needs Mark's Vercel account + a stable engine URL)
+- [x] Mark: web/ Next.js + Tailwind + shadcn + Framer Motion on Vercel
+  - Sat 19:40: production live on Vercel (project "web", auto-deploys from main); URL in env/.status only
 - [ ] Both: confirm docs/api.md v0
 
 ## Phase 1 — Data and expert designs (Cala + Mark pair)
@@ -30,7 +30,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [x] /validate
 - [ ] FastAPI deployed, matches docs/api.md
   - engine/api.py runs locally and matches api.md (+ optional additions, see engine/README.md); not deployed yet
-  - Sat 19:15: reachable only via a cloudflared QUICK tunnel (URL changes on restart; was 502 at 19:16). Vercel needs a stable URL
+  - Sat 19:50: production reaches it via the Cloudflare tunnel (/api/engine/health ok, 1,563 homes); fixed Railway URL = issue #28
 
 ## Phase 3 — Product (Mark)
 - [x] Design system + mockups (Claude chat) → tokens into web/
@@ -38,8 +38,9 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [x] Refine box + streamed explanation (PR #13: Claude agent with tools; engine computes all sizes)
 - [x] Reality-check screen (ours vs expert + /eval charts) (PR #23: held-out demo cases + random from locked test set, verdicts with engine tolerances, /eval tiles, A→B transfer)
 - [x] Supabase: saved_designs, overrides, homeowner share link (PR #12, #21; calls private: PR #20 migration 20261107_calls_private.sql)
-- [ ] Live on the real engine, deployed
-  - live on the real engine locally (served: engine, ~0.3 s, offline fallback verified); not deployed
+- [x] Live on the real engine, deployed
+  - Sat 19:50: prod /, /live, /reality, /offer/demo 200; design served by the engine (~0.4 s). Open: passcode gate on once
+    PLANNER_PASSCODE is set + redeployed; engine bug 'typed 4,500 kWh → no PV' (Cala fixing)
 
 ## Phase 4 — Stretch
 - [x] Homeowner view (variants only, savings/payback/autarky in plain words) (PR #21: /offer/[token], allowed variants checked server-side, House3D, Listen to your offer)
