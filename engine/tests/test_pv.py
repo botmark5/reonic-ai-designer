@@ -291,3 +291,15 @@ def test_r7_scaffolding_lines(name):
 def test_r7_no_scaffolding_line():
     items = make_items([{"name": "Substructure Flat Roof"}, {"name": "Site Setup 50% Discount (Neighbor Bundle)"}])
     assert has_scaffolding(items) is False
+
+
+def test_flat_roof_ballast_is_not_a_panel_count():
+    # 23c option cbe4d8fd·3 pattern: 10 panels on roof mounting + 10 substructure + one ballast kit line.
+    rows = [
+        roof_mounting("Roof Mounting 8.8-15kWp", 10),
+        sub("Substructure Flat Roof 10-15kWp", 10),
+        sub("Substructure Flat Roof Ballast", 1),
+    ]
+    result = pv(rows, A23C)
+    assert result["pv_panels"] == 10
+    assert result["pv_sources_disagree"] is False

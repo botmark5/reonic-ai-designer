@@ -31,7 +31,7 @@ from engine.label_rules.pv import (
     PACKAGE_23C,
     PANEL_WP_ASSUMED,
     SIZE_BAND,
-    SUBSTRUCTURE,
+    PANEL_SUBSTRUCTURE,
     TOLERANCE_KWP,
     extract_pv,
     extract_roof_type,
@@ -119,7 +119,7 @@ def _per_option_facts(designs: pd.DataFrame, parts: pd.DataFrame) -> pd.DataFram
     """One row per option with the raw-line quantities the cross-checks compare (indexed like designs by installer+option_id)."""
     names, qty = parts["component_name"], parts["quantity"].fillna(1.0)
     f = parts[["installer", "option_id"]].copy()
-    f["sub"] = qty.where(names.str.match(SUBSTRUCTURE), 0.0)
+    f["sub"] = qty.where(names.str.match(PANEL_SUBSTRUCTURE), 0.0)
     f["dc"] = qty.where(names.str.match(DC_INSTALL), 0.0)
     f["pkg_kwh"] = names.map(lambda n: float(m.group(1).replace(",", ".")) if (m := PACKAGE_KWH_RE.search(n)) else float("nan"))
     f["pkg_kwp"] = names.map(lambda n: float(m.group(1)) if (m := PACKAGE_23C.match(n)) else float("nan"))

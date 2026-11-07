@@ -77,7 +77,7 @@ Status: v1.1 schema (adds n_wallboxes, roof_mixed, pv_source size_band; is_prima
 | column | type | unit | meaning |
 |---|---|---|---|
 | pv_kwp | float | kWp | new PV size; 0 when the option has no new PV |
-| pv_panels | float | panels | number of new modules. 2a8: Substructure qty (or module lines). 23c package rows (no module lines): kWp / 0.45 (+ named extras), i.e. the installer's own 450 W package math, not a count seen in the data. NaN only when no source gives a size |
+| pv_panels | float | panels | number of new modules. 2a8: Substructure qty (or module lines). 23c package rows (no module lines): kWp / 0.45 (+ named extras), i.e. the installer's own 450 W package math, not a count seen in the data. NaN when no panel count is known: no PV, or the size comes only from a 2a8 package name or a 23c size band (73 options with pv_kwp > 0) |
 | pv_source | str | | `module_lines`, `package_name`, `substructure`, `roof_mounting`, `size_band` (only a kWp band like "6-8.8kWp" is known → midpoint), `none` |
 | pv_wp_assumed | float | W | assumed W per panel when the data has no module wattage (450); NaN when wattage came from the data or a package name |
 | battery | bool | | battery_kwh > 0 |
