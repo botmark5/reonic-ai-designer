@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { House3D } from "@/components/house3d";
 import { Button } from "@/components/ui/button";
 import { ServedBadge } from "@/components/ui/served-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -145,7 +146,13 @@ function Workspace({
               />
             ))}
           </div>
-        ) : (
+        ) : null}
+        {r && (
+          <section aria-label="The system on the house" className="mt-2">
+            <House3D design={r} home={s.home} mode="planner" />
+          </section>
+        )}
+        {!r && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2" aria-busy="true" aria-label="Designing">
             {COMPONENTS.map((c) => (
               <div key={c} className="h-64 animate-pulse rounded-md border border-border bg-surface-1 motion-reduce:animate-none" />
