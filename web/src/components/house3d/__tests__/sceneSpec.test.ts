@@ -151,3 +151,29 @@ describe("existing solar (battery retrofit)", () => {
     expect(s.components.pv.visible).toBe(false);
   });
 });
+
+describe("review fixes", () => {
+  const retrofit = withDesign((x) => {
+    x.design.pv = { ...x.design.pv, include: false, kwp: null };
+    x.design.battery = { ...x.design.battery, include: true, kwh: 10 };
+  });
+
+  it("'yes, there is solar' without a size assumes 8 kWp like the engine", () => {
+    const s = buildSceneSpec(retrofit, { ...demoHome, has_existing_pv: true, existing_pv_kwp: null }, "planner", planesFor);
+    expect(s.layout.placed).toBe(18);
+    expect(s.components.pv.size).toBe("≈ 8 kWp existing (size not given)");
+    expect(s.flows.map((f) => f.id)).toContain("inverter-battery");
+  });
+
+  it("the roof cap limits only the new panels, like the engine", () => {
+    const d = withDesign((x) => { x.design.pv.kwp = 9; });
+    const s = buildSceneSpec(d, { ...demoHome, has_existing_pv: true, existing_pv_kwp: 4.5, roof_max_kwp: 5.85 }, "planner", planesFor);
+    expect(s.layout.placed).toBe(10 + 13);
+    expect(s.existingPanels).toBe(10);
+  });
+
+  it("a cap removed by the planner (null) means no cap, even when Google has one", () => {
+    const s = buildSceneSpec(demoDesign, { ...demoHome, roof_max_kwp: null }, "planner", planesFor, { maxPanels: 12 });
+    expect(s.layout.placed).toBe(16);
+  });
+});

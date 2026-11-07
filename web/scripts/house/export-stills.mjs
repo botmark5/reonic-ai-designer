@@ -15,7 +15,7 @@
  * plus deck_3d_designs.json with the engine designs used. --upload puts them on the data-v1 release.
  */
 import { spawn, execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, rmSync, writeFileSync, existsSync, mkdtempSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -190,16 +190,19 @@ function ffmpeg(a) {
 }
 
 async function startServer() {
-  const page = join(WEB, "src/app/house3d-export/page.tsx");
-  if (!existsSync(page)) {
-    mkdirSync(dirname(page), { recursive: true });
-    copyFileSync(join(WEB, "scripts/house/export-page.tsx"), page);
-    cleanup.push(() => rmSync(dirname(page), { recursive: true, force: true }));
+  const port = 3119;
+  if (await fetch(`http://localhost:${port}`).then(() => true).catch(() => false)) {
+    throw new Error(`port ${port} is busy (an earlier run still serving?); stop it or pass --base`);
   }
-  // a production build: `next dev` keeps reloading the page (Fast Refresh) and never lets the scene settle
+  const page = join(WEB, "src/app/house3d-export/page.tsx");
+  // always removed afterwards, also when a previous run was killed and left it behind
+  cleanup.push(() => rmSync(dirname(page), { recursive: true, force: true }));
+  mkdirSync(dirname(page), { recursive: true });
+  copyFileSync(join(WEB, "scripts/house/export-page.tsx"), page);
+  // a production build: `next dev` keeps reloading the page (Fast Refresh) and never lets the scene settle.
+  // It replaces web/.next, so stop a running `next dev` in web/ first.
   console.log("building (next build) …");
   execFileSync("npx", ["next", "build"], { cwd: WEB, stdio: "ignore" });
-  const port = 3119;
   const dev = spawn("npx", ["next", "start", "-p", String(port)], { cwd: WEB, stdio: "ignore", detached: true });
   cleanup.push(() => { try { process.kill(-dev.pid); } catch {} });
   const base = `http://localhost:${port}`;
@@ -208,7 +211,7 @@ async function startServer() {
     const ok = await fetch(`${base}/house3d-export`).then((r) => r.ok).catch(() => false);
     if (ok) return base;
   }
-  throw new Error("next dev did not start");
+  throw new Error("next start did not come up");
 }
 
 async function launchChrome() {
@@ -256,7 +259,16 @@ async function connect(url) {
   };
 }
 
+function runCleanup() {
+  while (cleanup.length) {
+    try { cleanup.pop()(); } catch {}
+  }
+}
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => { console.error(`\n${sig}: cleaning up`); runCleanup(); process.exit(130); });
+}
+
 main()
   .catch((e) => { console.error(e.message ?? e); process.exitCode = 1; })
-  .finally(() => { for (const c of cleanup.reverse()) c(); process.exit(); });
+  .finally(() => { runCleanup(); process.exit(); });
 

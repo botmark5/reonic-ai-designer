@@ -117,7 +117,6 @@ function ShadowsOncePerFrame() {
   return null;
 }
 
-/** Exposure follows the theme (the renderer outlives theme switches). */
 /** Vertical field of view in landscape. Narrower than 5:4 (portrait phones, 4:5 slides), widen it so the model keeps its width. */
 const FOV = 30;
 const FIT_ASPECT = 1.1;
@@ -132,6 +131,7 @@ function FitWidth() {
   return null;
 }
 
+/** Exposure follows the theme (the renderer outlives theme switches). */
 function Exposure({ dark }: { dark: boolean }) {
   useFrame((state) => { state.gl.toneMappingExposure = dark ? 0.95 : 1.02; }, -1);
   return null;

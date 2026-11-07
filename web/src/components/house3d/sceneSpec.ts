@@ -45,6 +45,8 @@ export interface SceneSpec {
 }
 
 const DEFAULT_PITCH = 35;
+/** engine/model.py TYPICAL_EXISTING_PV_KWP */
+const TYPICAL_EXISTING_PV_KWP = 8;
 const DEFAULT_AZIMUTH = 180;
 /** Pitches outside this range would not read as a gable house; the drawing clamps them. */
 const PITCH_RANGE: [number, number] = [15, 50];
@@ -79,19 +81,22 @@ export function buildSceneSpec(
 
   const designPanels = pv.include ? panelCount(pv.kwp) : 0;
   const pvOn = designPanels > 0; // < 0.225 kWp rounds to no panel at all
-  const existingKwp = home.has_existing_pv !== false && positive(home.existing_pv_kwp) ? home.existing_pv_kwp : 0;
+  // panels already on the roof; "yes, there is PV" without a size assumes 8 kWp, like the engine (TYPICAL_EXISTING_PV_KWP)
+  const sizeGiven = positive(home.existing_pv_kwp);
+  const existingKwp = home.has_existing_pv === false ? 0 : sizeGiven ? home.existing_pv_kwp! : home.has_existing_pv ? TYPICAL_EXISTING_PV_KWP : 0;
   const existingWanted = panelCount(existingKwp);
-  // the roof cap the engine used (planner field) wins over the prop; it covers old and new panels together
+  // the roof cap limits the new panels only (as in the engine). The planner's field wins; an explicit null means
+  // "no cap" (removed by the planner), undefined falls back to the Google Solar prop.
   const cap = home.roof_max_kwp;
-  const maxPanels = finite(cap) && cap >= 0 ? Math.floor(cap / PANEL.kwp + 1e-6) : roofInput?.maxPanels;
-  const layout = layoutPanels(panelCount((existingWanted + designPanels) * PANEL.kwp, maxPanels), planesFor(roof.pitchDeg));
+  const maxNew = cap === null ? undefined : finite(cap) && cap >= 0 ? Math.floor(cap / PANEL.kwp + 1e-6) : roofInput?.maxPanels;
+  const layout = layoutPanels(existingWanted + panelCount(pv.include ? pv.kwp : 0, maxNew), planesFor(roof.pitchDeg));
   const existingPanels = Math.min(existingWanted, layout.placed);
   const missing = designPanels - (layout.placed - existingPanels);
   const solarOn = pvOn || existingWanted > 0;
   const panelsOn = layout.placed > 0;
   const pvSize = (): string | null => {
     if (homeowner) return `${designPanels + existingWanted} panels`;
-    const old = `${num(existingKwp)} kWp existing`;
+    const old = sizeGiven ? `${num(existingKwp)} kWp existing` : `≈ ${num(existingKwp)} kWp existing (size not given)`;
     if (!pvOn) return old; // the engine sends kwp: null when it adds no PV
     const fresh = `${pv.kwp!.toFixed(1)} kWp${existingWanted ? " new" : ""} (${designPanels} × ${PANEL.kwp * 1000} W)`;
     return existingWanted ? `${fresh} + ${old}` : fresh;
