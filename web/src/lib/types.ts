@@ -160,6 +160,16 @@ export interface SimilarHome {
   similarity: number; // 0..1
 }
 
+/**
+ * Added by web/src/lib/engine.ts (not by the engine): who answered. "offline" = the built-in estimate was used
+ * because ENGINE_URL is unset or the engine did not answer in time. Show the "offline estimate" badge then.
+ */
+export interface Served {
+  source: "engine" | "offline";
+  reason?: string; // why offline, e.g. "timeout after 4000 ms"
+  ms: number; // round trip
+}
+
 export interface DesignResponse {
   design: Design;
   physics: Physics;
@@ -169,6 +179,7 @@ export interface DesignResponse {
   // engine extras
   economics?: Economics;
   options?: { heatpump?: HeatpumpChoice };
+  served?: Served;
 }
 
 /** The planner's chosen design, as sent to /validate. */
@@ -195,6 +206,7 @@ export interface ValidationFlag {
 
 export interface ValidateResponse {
   flags: ValidationFlag[];
+  served?: Served;
 }
 
 export interface RefineRequest {
@@ -204,14 +216,15 @@ export interface RefineRequest {
   installer?: InstallerId;
 }
 
+/** The live engine returns all fields (engine/README.md: {changes, summary, parsed_by, home, locks, design}). */
 export interface RefineResponse {
   changes: Partial<Home> & Partial<Locks>;
+  summary: string; // one line, e.g. "Added an EV with 15,000 km a year."
+  parsed_by: string; // "claude" | "keywords" (engine) | "mock-keywords" (offline)
+  home: Home; // the home after the changes
+  locks: Locks; // the locks after the changes
   design: DesignResponse;
-  // engine extras
-  summary?: string;
-  parsed_by?: string;
-  home?: Home;
-  locks?: Locks;
+  served?: Served;
 }
 
 export type Audience = "planner" | "homeowner";
@@ -222,20 +235,35 @@ export interface ExplainRequest {
   language?: "en" | "de";
 }
 
-/** Metric name -> value, e.g. { pv_mae_kwp: 2.7, pv_variant_hit: 0.4 }. Names are set by engine/evaluate.py. */
+/**
+ * Metric name -> value (engine/evaluate.py compute_metrics). Rates end in _accuracy or _pct and are PERCENT 0-100.
+ * Main names: n_projects, has_{pv,battery,wallbox,heatpump}_accuracy, pv_kwp_mae, pv_kwp_mae_when_both_pv,
+ * pv_kwp_mae_all_projects, pv_kwp_within_1.5_pct, battery_kwh_mae, battery_kwh_mae_when_both_battery,
+ * battery_within_one_step_pct, pv_variant_hit_{strict,tolerant}_pct, battery_variant_hit_{strict,tolerant}_pct,
+ * n_multi_option_projects.
+ */
 export type MetricSet = Record<string, number | null>;
+
+/** Predictor keys in EvalResponse.metrics. */
+export const PREDICTORS = {
+  model: "design_model",
+  bandMedian: "baseline_band_median",
+  kwhPer1000: "baseline_kwh_per_1000",
+} as const;
 
 export interface EvalResponse {
   /** predictor name (model + baselines) -> metrics */
   metrics: Record<string, MetricSet>;
   /** predictor name -> installer -> metrics */
   by_installer: Record<string, Record<InstallerId, MetricSet>>;
-  /** names of the baseline predictors, e.g. ["band_median", "kwh_div_1000"] */
-  baselines: string[] | Record<string, unknown>;
+  /** names of the baseline predictors: ["baseline_kwh_per_1000", "baseline_band_median"] */
+  baselines: string[];
   // engine extras
   protocol?: Record<string, unknown>;
+  /** "installerA->installerB" -> predictor -> metrics (trained on A, tested on B) */
   transfer?: Record<string, Record<string, MetricSet>>;
   labels_source?: string;
+  served?: Served;
 }
 
 /** One option of an expert offer (a project can have several variants). */
@@ -256,6 +284,16 @@ export interface ProjectResponse {
   // engine extras
   project_id?: string;
   installer?: InstallerId;
+  served?: Served;
+}
+
+/** GET /health (no key needed). */
+export interface HealthResponse {
+  status: "ok" | (string & {});
+  model_version: string;
+  labels_source: string;
+  trained_on_projects: number;
+  claude: boolean;
 }
 
 export const EMPTY_LOCKS: Locks = { pv_kwp: null, battery_kwh: null, wallbox: null, heatpump_kw: null };
