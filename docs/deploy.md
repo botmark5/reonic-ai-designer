@@ -24,6 +24,7 @@ the offline estimate and the store to an in-memory demo inbox.
 | `VOICE_TTS_ENABLED` | server | `true` to turn audio on (optional) |
 | `VOICE_INSTALLER` | server | installer id for voice drafts (optional, default `2a8ba8e2`) |
 | `GOOGLE_MAPS_API_KEY` | server | Google Solar roof lookup (optional) |
+| `HELDOUT_PROJECT_IDS` | server | comma-separated held-out project ids for /reality's "Random home" (locally read from the gitignored engine/artifacts/test_ids.json; optional) |
 
 ## Before the first production deploy
 1. Apply `supabase/schema.sql`, then `supabase/migrations/*.sql` in date order (conversation_id, calls_private).
