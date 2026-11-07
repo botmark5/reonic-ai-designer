@@ -5,7 +5,7 @@
  */
 import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
-import { getServerSupabase, type DesignRow, type Insert, type OverrideRow, type ShareRow } from "./supabase";
+import { getServerSupabase, type CallRow, type DesignRow, type Insert, type OverrideRow, type ShareRow } from "./supabase";
 import type { Home, Locks } from "./types";
 import { EMPTY_LOCKS } from "./types";
 
@@ -20,6 +20,9 @@ export interface Store {
   addOverride(row: Insert<OverrideRow>): Promise<OverrideRow>;
   createShare(designId: string, allowedVariants: unknown[]): Promise<ShareRow>;
   getShare(token: string): Promise<{ share: ShareRow; design: DesignRow } | null>;
+  /** Newest calls first (server only: calls hold names, addresses and transcripts). */
+  listCalls(limit?: number): Promise<CallRow[]>;
+  designForCall(callId: string): Promise<DesignRow | null>;
 }
 
 export const shareToken = () => randomBytes(9).toString("base64url"); // 12 url-safe chars
@@ -44,6 +47,10 @@ function supabaseStore(): Store | null {
     addOverride: async (row) => one(await db.from("overrides").insert(row).select().single())!,
     createShare: async (design_id, allowed_variants) =>
       one(await db.from("shares").insert({ token: shareToken(), design_id, allowed_variants }).select().single())!,
+    listCalls: async (limit = 10) =>
+      one(await db.from("calls").select("*").order("created_at", { ascending: false }).limit(limit)) ?? [],
+    designForCall: async (callId) =>
+      one(await db.from("designs").select("*").eq("call_id", callId).order("created_at", { ascending: false }).limit(1).maybeSingle()),
     getShare: async (token) => {
       const share = one(await db.from("shares").select("*").eq("token", token).maybeSingle()) as ShareRow | null;
       if (!share) return null;
@@ -79,11 +86,11 @@ export function exampleDesigns(): DesignRow[] {
   ];
 }
 
-type Mem = { designs: DesignRow[]; overrides: OverrideRow[]; shares: ShareRow[] };
+type Mem = { designs: DesignRow[]; overrides: OverrideRow[]; shares: ShareRow[]; calls: CallRow[] };
 const g = globalThis as unknown as { __reonicStore?: Mem };
 
 function memoryStore(): Store {
-  const m = (g.__reonicStore ??= { designs: exampleDesigns(), overrides: [], shares: [] });
+  const m = (g.__reonicStore ??= { designs: exampleDesigns(), overrides: [], shares: [], calls: [] });
   const find = (id: string) => m.designs.find((d) => d.id === id) ?? null;
   return {
     kind: "memory",
@@ -110,6 +117,8 @@ function memoryStore(): Store {
       m.shares.push(s);
       return s;
     },
+    listCalls: async (limit = 10) => [...m.calls].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit),
+    designForCall: async (callId) => m.designs.find((d) => d.call_id === callId) ?? null,
     getShare: async (token) => {
       const share = m.shares.find((s) => s.token === token);
       const design = share ? find(share.design_id) : null;
