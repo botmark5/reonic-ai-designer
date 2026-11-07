@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { verdicts } from "./reality";
+import { verdicts, coverage, headlineSource } from "./reality";
 import type { ExpertVariant } from "./types";
 
 const v = (o: Partial<ExpertVariant>): ExpertVariant => ({ option_number: 1, is_primary: true, pv_kwp: 9, battery_kwh: 10, has_wallbox: false, heatpump_kw: 0, ...o });
@@ -57,5 +57,29 @@ describe("headline metrics", () => {
     expect(pv.wins).toBe(true);
     const bat = h.find((x) => x.key === "has_battery_accuracy")!;
     expect(bat.wins).toBe(false); // shown honestly
+  });
+});
+
+describe("headlineSource / coverage (old and new /eval shapes)", () => {
+  const all = { design_model: { n_projects: 323, pv_kwp_mae_all_projects: 2.9 }, baseline_band_median: { pv_kwp_mae_all_projects: 3.9 } };
+  it("falls back to all projects on the old shape", () => {
+    const s = headlineSource({ metrics: all });
+    expect(s.fullOnly).toBe(false);
+    expect(s.metrics).toBe(all);
+    expect(s.addOns).toBeNull();
+  });
+  it("uses new full systems for the headline and keeps add-ons apart", () => {
+    const full = { design_model: { n_projects: 42 } };
+    const addOns = { design_model: { n_projects: 281 } };
+    const s = headlineSource({ metrics: all, segments: { full_designs: full, add_ons: addOns } });
+    expect(s.fullOnly).toBe(true);
+    expect(s.metrics).toBe(full);
+    expect(s.addOns).toBe(addOns);
+  });
+  it("reads P10–P90 coverage under any known key, else null", () => {
+    expect(coverage({ pv_interval_coverage_pct: 79.6 })).toBe(79.6);
+    expect(coverage({ pv_p10_p90_coverage_pct: 81 })).toBe(81);
+    expect(coverage({ pv_kwp_mae: 2 })).toBeNull();
+    expect(coverage(undefined)).toBeNull();
   });
 });

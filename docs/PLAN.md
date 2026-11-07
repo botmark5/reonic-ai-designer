@@ -55,6 +55,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
 
 ## Decisions
+- Sat 23:45 · Web: Google Solar roof (max kWp, azimuth, pitch) fills home.roof_* once per design with an address; planner can edit or remove; /reality headline = new full systems when /eval reports that slice, add-ons separate
 - Sat 20:30 · Web: engine called only from server routes (key never in the browser); offline estimate after 4 s (design) or on any engine error, 15 s cooldown, "Offline estimate" badge
 - Sat 20:30 · Web: refine agent = claude-sonnet-5-5 tool loop; a lock is accepted only at a value the planner wrote or the engine offered (alternatives, range ends, heat pump option); all sizes from run_design
 - Sat 20:30 · Web: calls are server-only (names/addresses/transcripts); /live polls GET /api/calls every 2 s; realtime only on designs

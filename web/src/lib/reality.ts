@@ -117,9 +117,34 @@ export interface Headline extends HeadlineDef {
 
 type Metrics = Record<string, Record<string, number | null | undefined>>;
 
-export function headlines(metrics: Metrics, model = "design_model"): Headline[] {
+/** Add-on sales (battery retrofits, extensions, wallbox only): a separate small block, never mixed into the headline. */
+export const ADDON_HEADLINES: HeadlineDef[] = [
+  { key: "has_pv_accuracy", label: "No new solar where none was sold", better: "higher", unit: "%" },
+  { key: "has_battery_accuracy", label: "Battery yes or no right", better: "higher", unit: "%" },
+  { key: "battery_within_one_step_pct", label: "Battery within one size step", better: "higher", unit: "%" },
+];
+
+/** Share of held-out homes whose expert PV lies inside our P10–P90 range (target 80 %). Key names tolerated. */
+export const COVERAGE_KEYS = ["pv_interval_coverage_pct", "pv_p10_p90_coverage_pct", "pv_range_coverage_pct"];
+export function coverage(m: Record<string, number | null | undefined> | undefined): number | null {
+  for (const k of COVERAGE_KEYS) if (typeof m?.[k] === "number") return m[k] as number;
+  return null;
+}
+
+/** Where the headline numbers come from: new full systems when the engine reports that slice, else all projects. */
+export function headlineSource(e: { metrics: Metrics; segments?: Record<string, Metrics> }) {
+  const full = e.segments?.full_designs;
+  const addOns = e.segments?.add_ons;
+  return {
+    metrics: full && Object.keys(full).length ? full : e.metrics,
+    fullOnly: !!(full && Object.keys(full).length),
+    addOns: addOns && Object.keys(addOns).length ? addOns : null,
+  };
+}
+
+export function headlines(metrics: Metrics, model = "design_model", defs: HeadlineDef[] = HEADLINES): Headline[] {
   const baselines = Object.keys(metrics).filter((k) => k.startsWith("baseline_"));
-  return HEADLINES.map((h) => {
+  return defs.map((h) => {
     const ours = metrics[model]?.[h.key] ?? null;
     let base: number | null = null;
     let baseName: string | null = null;

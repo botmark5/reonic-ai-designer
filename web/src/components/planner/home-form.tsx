@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { Field, Segmented, Select, TextInput } from "@/components/ui/field";
+import { compass } from "@/lib/roof";
 import type { Home } from "@/lib/types";
 
 const HEATING = ["Gas", "Oil", "Heat pump", "Electric", "District", "Wood"] as const;
@@ -65,6 +66,7 @@ function NumberField({
 }
 
 export function HomeForm({ home, onChange }: { home: Home; onChange: (patch: Partial<Home>) => void }) {
+  const roofSet = home.roof_max_kwp != null || home.roof_azimuth != null || home.roof_pitch != null;
   const id = useId();
   return (
     <section aria-labelledby={`${id}-t`} className="flex flex-col gap-3 rounded-md border border-border bg-surface-1 p-4">
@@ -162,6 +164,47 @@ export function HomeForm({ home, onChange }: { home: Home; onChange: (patch: Par
           ))}
         </Select>
       </Field>
+      <details className="group" open={roofSet || undefined}>
+        <summary className="cursor-pointer list-none text-[13px] font-medium text-ink-body hover:text-ink">
+          <span className="inline-block transition-transform duration-150 group-open:rotate-90" aria-hidden>
+            ›
+          </span>{" "}
+          Roof size and direction
+          {roofSet ? <span className="ml-1 text-ink-muted">· {home.roof_max_kwp ? `fits ${home.roof_max_kwp} kWp` : "set"}</span> : null}
+        </summary>
+        <div className="mt-3 flex flex-col gap-3">
+          <p className="m-0 text-[12px] leading-4 text-ink-muted">
+            Filled from Google Solar when the address is known. The limit caps the solar size; direction and pitch change the yield, not the size.
+          </p>
+          <NumberField
+            label="Roof fits up to (kWp)"
+            value={home.roof_max_kwp ?? null}
+            min={0.5}
+            max={200}
+            onCommit={(v) => onChange({ roof_max_kwp: v })}
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <NumberField
+              label="Faces (° from north)"
+              value={home.roof_azimuth ?? null}
+              max={360}
+              step={1}
+              hint={compass(home.roof_azimuth) ? `${compass(home.roof_azimuth)}; 180 = south` : "180 = south"}
+              onCommit={(v) => onChange({ roof_azimuth: v })}
+            />
+            <NumberField label="Pitch (°)" value={home.roof_pitch ?? null} max={90} step={1} onCommit={(v) => onChange({ roof_pitch: v })} />
+          </div>
+          {roofSet && (
+            <button
+              type="button"
+              onClick={() => onChange({ roof_max_kwp: null, roof_azimuth: null, roof_pitch: null })}
+              className="self-start cursor-pointer text-[13px] font-medium text-ink-body underline decoration-border-strong underline-offset-4 hover:text-ink"
+            >
+              Ignore roof data
+            </button>
+          )}
+        </div>
+      </details>
       <details className="group">
         <summary className="cursor-pointer list-none text-[13px] font-medium text-ink-body hover:text-ink">
           <span className="inline-block transition-transform duration-150 group-open:rotate-90" aria-hidden>

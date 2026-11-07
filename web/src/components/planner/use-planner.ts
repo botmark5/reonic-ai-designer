@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { diffDesigns, sizeOf, type DesignDiff } from "@/lib/diff";
+import { roofNotAsked, type RoofInputs } from "@/lib/roof";
 import type { DesignRow } from "@/lib/supabase";
 import type {
   ComponentKey,
@@ -163,6 +164,16 @@ export function usePlanner(initial: DesignRow) {
     [logOverride, run],
   );
 
+  /** Roof inputs from Google Solar: applied once per design (never over the planner's own values), then re-designed. */
+  const applyRoof = useCallback(
+    (roof: RoofInputs) => {
+      const st = stateRef.current;
+      if (!roofNotAsked(st.home)) return;
+      run({ ...st.home, ...roof }, st.locks, "Roof from Google Solar");
+    },
+    [run],
+  );
+
   /** Fix a component at a value (planner's choice); later steps of the chain adapt. */
   const setLock = useCallback(
     (c: ComponentKey, value: number | boolean | null, reason?: string | null) => {
@@ -224,7 +235,7 @@ export function usePlanner(initial: DesignRow) {
     }
   }, []);
 
-  return { s, run, setHomeField, setHome, setLock, applyRefine, setRefining, setStatus, share, logOverride };
+  return { s, run, setHomeField, setHome, applyRoof, setLock, applyRefine, setRefining, setStatus, share, logOverride };
 }
 
 export type Planner = ReturnType<typeof usePlanner>;
