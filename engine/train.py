@@ -20,7 +20,7 @@ import warnings
 
 import pandas as pd
 
-from engine.evaluate import ARTIFACTS, build_eval_table, load_inputs, run_evaluation, summary_table
+from engine.evaluate import ARTIFACTS, build_eval_table, load_inputs, planner_answer, run_evaluation, summary_table
 from engine.interim_labels import build_catalogue, get_labels
 from engine.model import MODEL_PATH, DesignModel
 
@@ -47,12 +47,22 @@ def main(argv=None):
                                    catalogue={k: v["battery_kwh"] for k, v in catalogue.items()},
                                    out_path=ARTIFACTS / "eval_results.json")
     results["labels_source"] = source
+
+    # same evaluation, but the planner answered "Is there already PV on the roof?" (derived from the offer type)
+    table = build_eval_table(labels, inputs)
+    answers = dict(zip(table.project_id, planner_answer(table)))
+    inputs_q = inputs.assign(existing_pv=inputs.project_id.map(answers))
+    tidy_q, res_q = run_evaluation(labels, {DesignModel.name: DesignModel}, inputs=inputs_q,
+                                   catalogue={k: v["battery_kwh"] for k, v in catalogue.items()}, out_path=None)
+    results["with_existing_pv_answer"] = {k: res_q[k] for k in ("metrics", "by_installer")}
     (ARTIFACTS / "eval_results.json").write_text(json.dumps(results, indent=2, default=float))
 
     pd.set_option("display.width", 200)
     cols = [DesignModel.name, "baseline_band_median", "baseline_kwh_per_1000"]
     print("\n=== held-out projects (never seen in training), all installers ===")
-    print(summary_table(tidy).loc[HEADLINE, cols].round(2).to_string())
+    print(summary_table(tidy).loc[HEADLINE + ["offer_type_accuracy"], cols].round(2).to_string())
+    print("\n=== same held-out projects, planner answered 'Is there already PV on the roof?' ===")
+    print(summary_table(tidy_q).loc[HEADLINE + ["offer_type_accuracy"], [DesignModel.name]].round(2).to_string())
     for inst in sorted(labels.installer.unique()):
         print(f"\n--- held-out, installer {inst} ---")
         print(summary_table(tidy, installer=inst).loc[HEADLINE, cols].round(2).to_string())

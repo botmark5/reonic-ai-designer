@@ -88,7 +88,7 @@ def trained():
 def test_predict_interface(trained):
     model, table = trained
     pred = model.predict(table.head(20))
-    assert list(pred.columns) == DESIGN_COLUMNS and len(pred) == 20
+    assert list(pred.columns) == DESIGN_COLUMNS + ["offer_type"] and len(pred) == 20
     assert ((pred.pv_kwp == 0) | pred.has_pv).all()
     assert model.predict(table.head(0)).empty
 
@@ -335,3 +335,55 @@ def test_api_key_required_when_set(client, monkeypatch):
 def test_pv_threshold_learned_out_of_fold(trained):
     model, _ = trained
     assert 0.2 <= model.pv_threshold_ <= 0.6
+
+
+# ---------------------------------------------------------------- offer type + "Is there already PV?"
+def test_tristate_existing_pv():
+    from engine.features import tristate
+    out = tristate(pd.Series([True, False, None, np.nan, 1, 0]))
+    assert out.iloc[0] == 1 and out.iloc[1] == 0 and np.isnan(out.iloc[2]) and np.isnan(out.iloc[3])
+
+
+def test_offer_type_and_planner_answer(synthetic):
+    from engine.evaluate import planner_answer
+    t = build_eval_table(*synthetic)
+    assert set(t.offer_type) <= {"new_system", "pv_extension", "battery_retrofit", "wallbox_only", "heatpump_only", "no_components"}
+    a = planner_answer(t)
+    assert (a[t.offer_type == "battery_retrofit"] == 1).all() and (a[t.offer_type == "new_system"] == 0).all()
+
+
+def test_chain_offer_types_are_consistent(trained):
+    model, table = trained
+    pred = model.predict(table)
+    assert set(pred.offer_type) <= {"pv", "battery_retrofit", "wallbox_only", "other"}
+    assert (pred[pred.offer_type == "battery_retrofit"].has_battery).all()
+    assert not (pred[pred.offer_type == "battery_retrofit"].has_pv).any()
+    assert (pred[pred.offer_type == "wallbox_only"].has_wallbox).all()
+    assert not pred[pred.offer_type == "other"][["has_pv", "has_battery"]].any().any()
+
+
+def test_existing_pv_answer_changes_the_decision(trained):
+    model, _ = trained
+    home = {"annual_kwh": 4500}
+    yes = model.propose({**home, "has_existing_pv": True}, "instA")
+    no = model.propose({**home, "has_existing_pv": False}, "instA")
+    unknown = model.propose(home, "instA")
+    assert yes["facts"]["existing_pv_known"] and not unknown["facts"]["existing_pv_known"]
+    p = lambda d: d["facts"]["probabilities"]["pv"]
+    assert p(yes) <= p(unknown) + 0.05 and p(no) >= p(unknown) - 0.05     # "already PV" makes new PV less likely
+
+
+def test_locked_battery_without_pv_is_a_retrofit(trained):
+    model, _ = trained
+    d = model.propose({"annual_kwh": 4500}, "instA", {"pv_kwp": 0, "battery_kwh": 5})
+    assert d["facts"]["offer_type"] == "battery_retrofit" and d["design"]["battery"]["kwh"] == 5
+
+
+def test_rule_refine_existing_pv(no_claude):
+    assert llm.refine("They already have solar panels on the roof")["home_changes"] == {"has_existing_pv": True}
+    assert llm.refine("No PV on the roof yet")["home_changes"] == {"has_existing_pv": False}
+
+
+def test_api_accepts_existing_pv_answer(client):
+    r = client.post("/design", json={"installer": "instA", "home": {"annual_kwh": 4500, "has_existing_pv": True}})
+    assert r.status_code == 200 and r.json()["facts_for_explanation"]["existing_pv_known"] is True

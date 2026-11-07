@@ -56,6 +56,7 @@ class HomeChanges(BaseModel):
     heating_demand_kwh: Optional[float] = Field(description="yearly heat demand in kWh, only if stated")
     load_profile: Optional[LoadProfile] = Field(description="household type / daytime presence, only if implied")
     price_eur_kwh: Optional[float] = Field(description="electricity price in EUR per kWh, only if stated")
+    has_existing_pv: Optional[bool] = Field(description="true if PV is ALREADY on the roof, false if there is none yet")
 
 
 class LockChanges(BaseModel):
@@ -86,6 +87,7 @@ Rules:
 - load_profile only when the note explicitly describes who lives there or who is home during the day
   ("works from home" -> HomeOfficeOnePerson, "a couple with two children" -> FamilyOfFour). The words
   "the family" or "the customer" alone do NOT change the load profile.
+- "they already have solar panels" -> has_existing_pv = true; "no PV on the roof yet" -> has_existing_pv = false.
 - Numbers: convert MWh to kWh; ignore currencies other than EUR."""
 
 
@@ -155,6 +157,12 @@ def rule_refine(text: str) -> dict:
         val, unit = (_f(g[0]), g[1]) if g[0] and g[0][0].isdigit() else (_f(g[1]), g[2])
         home["annual_kwh"] = val * (1000 if unit == "mwh" else 1)
         said.append(f"demand {home['annual_kwh']:,.0f} kWh")
+    if re.search(r"(no|kein|ohne|not)\s+(pv|solar|photovoltaik)[^.]*(yet|bisher|noch)|no (pv|solar panels) on the roof", t):
+        home["has_existing_pv"] = False
+        said.append("no PV on the roof yet")
+    elif re.search(r"(already|existing|bestehende|vorhandene|hat schon|haben schon)\s+(has\s+|have\s+)?(a\s+)?(pv|solar|photovoltaik)", t):
+        home["has_existing_pv"] = True
+        said.append("PV already on the roof")
     if re.search(r"home ?office|work(s|ing)? from home", t):
         home["load_profile"] = "HomeOfficeOnePerson"
         said.append("home office")

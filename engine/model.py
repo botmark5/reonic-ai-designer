@@ -8,6 +8,9 @@ Chain (decisions are coupled, like a planner thinks):
     2. PV yes/no + kWp (+ P10/P90)                        - sees total demand incl. EV + new heat pump
     3. battery yes/no + catalogue size                    - sees the PV size decided in step 2
     4. wallbox yes/no                                     - EV features only (barely predictable otherwise)
+    Before 3: when there is NO new PV, an offer-type step decides battery retrofit / wallbox only / other.
+    "Is there already PV on the roof?" (yes / no / unknown) is an input: every training project is used twice,
+    once with the planner's answer (derived from its offer type) and once unanswered, so both modes work.
 Locks: the planner can fix any component; everything AFTER it in the chain adapts.
 Sizes snap to what the installer sells: batteries to its catalogue, PV to whole 450 W modules.
 
@@ -24,7 +27,7 @@ from lightgbm import LGBMClassifier, LGBMRegressor
 from sklearn.model_selection import GroupKFold
 
 from engine import physics
-from engine.evaluate import DESIGN_COLUMNS
+from engine.evaluate import DESIGN_COLUMNS, OFFER_GROUP, derive_offer_type, planner_answer
 from engine.features import build_features, clean_inputs, feature_text, offer_month
 from engine.interim_labels import build_catalogue
 
@@ -65,15 +68,33 @@ class DesignModel:
         has_dates = "offer_date" in t and t.offer_date.notna().any()
         self.offer_month_cap_ = float(offer_month(t.offer_date).quantile(0.9)) if has_dates else None
 
+        if "offer_type" not in t.columns:
+            t["offer_type"] = derive_offer_type(t)
+        t["offer_group"] = t.offer_type.map(OFFER_GROUP).fillna("other")
+        # every project twice: answered ("Is there already PV?") and unanswered (as recorded in the data)
+        answered = t.assign(existing_pv=planner_answer(t))
+        tt = pd.concat([answered, t], ignore_index=True)
+
         # training uses the heat pump the expert actually installed ("with X kW heat pump, experts chose Y kWp")
-        X = build_features(t, t.heatpump_kw, self.installers_, self.offer_month_cap_)
+        X = build_features(tt, tt.heatpump_kw, self.installers_, self.offer_month_cap_)
         self.features_ = list(X.columns)
         self.wallbox_features_ = [c for c in X.columns if c.startswith("inst_")] + ["has_ev", "ev_km", "existing_wallbox"]
 
-        self.has_pv_ = LGBMClassifier(**_lgb()).fit(X, t.has_pv.astype(int))
-        self.pv_threshold_ = self._learn_pv_threshold(X, t)
-        pv = t.has_pv.astype(bool).to_numpy()
-        # PV size: simpler trees + Huber loss (robust to outliers like MAE) + monotonic constraints:
+        # 1. PV yes/no
+        self.has_pv_ = LGBMClassifier(**_lgb()).fit(X, tt.has_pv.astype(int))
+        self.pv_threshold_ = self._learn_pv_threshold(X, tt)
+        pv = tt.has_pv.astype(bool).to_numpy()
+
+        # 1b. no new PV -> which kind of offer? (battery retrofit / wallbox only / other)
+        nonpv = ~pv
+        groups = tt.offer_group[nonpv]
+        if groups.nunique() >= 2:
+            self.nonpv_type_ = LGBMClassifier(**_lgb(min_child_samples=10)).fit(X[nonpv], groups)
+            self.nonpv_const_ = None
+        else:
+            self.nonpv_type_, self.nonpv_const_ = None, (groups.iloc[0] if len(groups) else "battery_retrofit")
+
+        # 2. PV size: simpler trees + Huber loss (robust to outliers like MAE) + monotonic constraints:
         # more consumption / an EV / more driving never makes the PV smaller (without them, the few EV
         # projects produced "EV added -> PV shrinks" artefacts). 5-fold CV MAE 2.60 kWp (band median: 2.69).
         # LightGBM allows monotonic constraints only with L2/Huber, not with MAE or quantile losses.
@@ -81,26 +102,30 @@ class DesignModel:
         pv_params = dict(num_leaves=7, min_child_samples=40, n_estimators=500, learning_rate=0.02)
         self.pv_ = LGBMRegressor(**_lgb(objective="huber", alpha=2.0, **pv_params,
                                         monotone_constraints=[1 if c in increasing else 0 for c in X.columns],
-                                        monotone_constraints_method="advanced")).fit(X[pv], t.pv_kwp[pv])
+                                        monotone_constraints_method="advanced")).fit(X[pv], tt.pv_kwp[pv])
         # P10/P90 range (unconstrained; propose() widens the range so it always contains the point estimate)
-        self.pv_q_ = {q: LGBMRegressor(**_lgb(objective="quantile", alpha=q / 100, **pv_params)).fit(X[pv], t.pv_kwp[pv])
+        self.pv_q_ = {q: LGBMRegressor(**_lgb(objective="quantile", alpha=q / 100, **pv_params)).fit(X[pv], tt.pv_kwp[pv])
                       for q in (10, 90)}
 
-        # battery sees the EXPERT's PV during training (teacher forcing), our PV / the planner's lock at prediction
-        Xb = X.assign(pv_kwp_planned=t.pv_kwp.fillna(0).to_numpy())
-        self.has_battery_ = LGBMClassifier(**_lgb()).fit(Xb, t.has_battery.astype(int))
-        bat = t.has_battery.astype(bool).to_numpy()
-        y = [nearest(k, self.catalogue_[i]["battery_kwh"] or [k]) for k, i in zip(t.battery_kwh[bat], t.installer[bat])]
+        # 3. battery sees the EXPERT's PV during training (teacher forcing), our PV / the planner's lock at prediction
+        Xb = X.assign(pv_kwp_planned=tt.pv_kwp.fillna(0).to_numpy())
+        # battery yes/no is a decision for NEW PV systems; for a retrofit the battery is the offer itself
+        self.has_battery_ = LGBMClassifier(**_lgb()).fit(Xb[pv], tt.has_battery[pv].astype(int))
+        bat = tt.has_battery.astype(bool).to_numpy()
+        y = [nearest(k, self.catalogue_[i]["battery_kwh"] or [k]) for k, i in zip(tt.battery_kwh[bat], tt.installer[bat])]
         # classes as whole tenths of a kWh (10.2 kWh -> 102): sklearn rejects float class labels
         self.battery_ = LGBMClassifier(**_lgb(min_child_samples=8)).fit(Xb[bat], np.round(np.asarray(y) * 10).astype(int))
         self.battery_kwh_ = self.battery_.classes_ / 10.0          # class index -> kWh
 
+        # 4. wallbox yes/no (all offers; "wallbox only" / "other" offers then fix it by their type).
+        # Training it only on PV/retrofit offers was tested and was worse (70.6 vs 71.2 % held-out).
         self.wallbox_ = LGBMClassifier(**_lgb(num_leaves=7, min_child_samples=30)).fit(
-            X[self.wallbox_features_], t.has_wallbox.astype(int))
+            X[self.wallbox_features_], tt.has_wallbox.astype(int))
 
         keep = ["project_id", "installer", "annual_kwh", "has_ev", "pv_kwp", "battery_kwh", "has_pv", "has_battery",
                 "has_wallbox", "heatpump_kw"]
-        self.reference_ = t[[c for c in keep if c in t]].assign(total_demand_kwh=X.total_demand_kwh.to_numpy())
+        X_orig = X.iloc[len(answered):]
+        self.reference_ = t[[c for c in keep if c in t]].assign(total_demand_kwh=X_orig.total_demand_kwh.to_numpy())
         self.n_train_ = len(t)
         return self
 
@@ -177,8 +202,29 @@ class DesignModel:
         else:
             out["has_pv"] = out.p_has_pv >= getattr(self, "pv_threshold_", 0.5)
             out["pv_kwp"] = np.where(out.has_pv, [snap_pv(v) for v in out.pv_raw], 0.0)
+        # no new PV -> which kind of offer? (respecting locks: a locked battery means retrofit, etc.)
+        if self.nonpv_type_ is not None:
+            p_type = pd.DataFrame(self.nonpv_type_.predict_proba(X), columns=self.nonpv_type_.classes_, index=homes.index)
+        else:
+            p_type = pd.DataFrame({self.nonpv_const_: 1.0}, index=homes.index)
+        for c in ("battery_retrofit", "wallbox_only", "other"):
+            if c not in p_type:
+                p_type[c] = 0.0
+        if locks.get("battery_kwh"):
+            p_type[["wallbox_only", "other"]] = 0.0
+        elif "battery_kwh" in locks:
+            p_type["battery_retrofit"] = 0.0
+        if locks.get("wallbox") is False:
+            p_type["wallbox_only"] = 0.0
+        p_type = p_type.div(p_type.sum(axis=1).replace(0, 1), axis=0)
+        nonpv_choice = p_type[["battery_retrofit", "wallbox_only", "other"]].idxmax(axis=1)
+        out["offer_type"] = np.where(out.has_pv, "pv", nonpv_choice)
+        out["p_offer_type"] = [1.0 if hp else float(p_type.loc[i, c]) for i, hp, c in zip(homes.index, out.has_pv, nonpv_choice)]
+
         Xb = X.assign(pv_kwp_planned=out.pv_kwp.to_numpy())
-        out["p_has_battery"] = self.has_battery_.predict_proba(Xb)[:, 1]
+        p_bat_new = self.has_battery_.predict_proba(Xb)[:, 1]
+        out["p_has_battery"] = np.where(out.offer_type == "pv", p_bat_new,
+                                        np.where(out.offer_type == "battery_retrofit", 1.0, 0.0))
         sizes, probs = [], []
         for idx, (_, r) in enumerate(homes.iterrows()):
             p = self._battery_proba(Xb.iloc[[idx]], r.get("installer"))[0]
@@ -192,7 +238,11 @@ class DesignModel:
             out["has_battery"] = out.p_has_battery >= 0.5
             out["battery_kwh"] = np.where(out.has_battery, out.battery_best, 0.0)
         out["p_has_wallbox"] = self.wallbox_.predict_proba(X[self.wallbox_features_])[:, 1]
-        out["has_wallbox"] = bool(locks["wallbox"]) if "wallbox" in locks else out.p_has_wallbox >= 0.5
+        if "wallbox" in locks:
+            out["has_wallbox"] = bool(locks["wallbox"])
+        else:
+            out["has_wallbox"] = np.where(out.offer_type == "wallbox_only", True,
+                                          np.where(out.offer_type == "other", False, out.p_has_wallbox >= 0.5))
         out["has_heatpump"] = out.heatpump_kw > 0
         self._last = dict(X=X, Xb=Xb, battery_proba=probs)        # kept for explanations of a single home
         return out
@@ -201,7 +251,7 @@ class DesignModel:
         """Harness interface: predicted design per row (no locks)."""
         if len(df) == 0:
             return pd.DataFrame(columns=DESIGN_COLUMNS)
-        return self._run(df)[DESIGN_COLUMNS]
+        return self._run(df)[DESIGN_COLUMNS + ["offer_type"]]
 
     # ------------------------------------------------------------------ explanations
     def _drivers(self, model, X: pd.DataFrame, unit: str, class_index: int | None = None, top: int = 3) -> list[str]:
@@ -259,8 +309,13 @@ class DesignModel:
             pv_reasons += ["Main drivers: " + "; ".join(self._drivers(self.pv_, X, "kWp")) + "."]
         else:
             pv_conf = 1 - float(r.p_has_pv)
-            pv_reasons = [f"No new PV: only {r.p_has_pv:.0%} of similar projects got PV (typical: battery add-on to an existing system).",
+            kind = {"battery_retrofit": "a battery add-on to an existing PV system", "wallbox_only": "a wallbox-only order",
+                    "other": "an order without PV or battery"}.get(r.offer_type, "an order without new PV")
+            pv_reasons = [f"No new PV: this looks like {kind} (only {r.p_has_pv:.0%} of similar projects got new PV).",
                           "Main drivers: " + "; ".join(self._drivers(self.has_pv_, X, "PV")) + "."]
+        if "pv_kwp" not in locks and pd.isna(X.existing_pv.iloc[0]) and 0.1 < r.p_has_pv < 0.9:
+            pv_reasons.append("Is there already PV on the roof? Answering this is the strongest signal for "
+                              "'new system' vs. 'battery add-on'.")
         design["pv"] = dict(include=bool(r.has_pv), kwp=float(r.pv_kwp) if r.has_pv else None, range=[lo, hi],
                             confidence=round(pv_conf, 2), reasons=pv_reasons)
 
@@ -273,6 +328,10 @@ class DesignModel:
                         for i in np.argsort(proba)[::-1][:3] if proba[i] > 0.02]
         if "battery_kwh" in locks:
             b_reasons, b_conf = [f"Fixed by the planner: {r.battery_kwh:g} kWh." if r.battery_kwh else "Fixed by the planner: no battery."], 1.0
+        elif r.has_battery and r.offer_type == "battery_retrofit":
+            b_conf = float(r.p_offer_type * proba[best])
+            b_reasons = [f"Battery add-on to the existing PV: {classes[best]:g} kWh is the most likely catalogue size "
+                         f"({proba[best]:.0%}), range {b_lo:g}-{b_hi:g} kWh."]
         elif r.has_battery:
             b_conf = float(r.p_has_battery * proba[best])
             b_reasons = [f"{r.p_has_battery:.0%} of similar designs include a battery; {classes[best]:g} kWh is the most likely "
@@ -298,7 +357,8 @@ class DesignModel:
         design["wallbox"] = dict(include=bool(r.has_wallbox), kw=wb_kw if r.has_wallbox else None,
                                  confidence=round(wb_conf, 2), reasons=wb_reasons)
 
-        facts.update(total_demand_kwh=float(X.total_demand_kwh.iloc[0]),
+        facts.update(offer_type=str(r.offer_type), existing_pv_known=bool(not pd.isna(X.existing_pv.iloc[0])),
+                     total_demand_kwh=float(X.total_demand_kwh.iloc[0]),
                      probabilities=dict(pv=round(float(r.p_has_pv), 2), battery=round(float(r.p_has_battery), 2),
                                         wallbox=round(float(r.p_has_wallbox), 2)),
                      date_used=_fmt("offer_month", X.offer_month.iloc[0]))
@@ -363,14 +423,28 @@ def home_to_row(home: dict, installer: str) -> dict:
                 load_profile=home.get("load_profile") or "H0", has_ev=bool(home.get("has_ev")),
                 ev_km_year=home.get("ev_km_year"), heating=home.get("heating"),
                 heating_demand_kwh=home.get("heating_demand_kwh"),
-                existing_pv=bool(home.get("existing_pv_kwp")), existing_battery=bool(home.get("existing_battery_kwh")),
+                existing_pv=_existing_pv(home), existing_battery=bool(home.get("existing_battery_kwh")),
                 existing_wallbox=bool(home.get("existing_wallbox")), offer_date=home.get("offer_date"))
+
+
+TYPICAL_EXISTING_PV_KWP = 8.0     # assumed size when the planner only says "there is PV already"
+
+
+def _existing_pv(home: dict):
+    """yes / no / unknown: existing_pv_kwp (0 = no) wins over has_existing_pv; neither = unknown (None)."""
+    if home.get("existing_pv_kwp") is not None:
+        return float(home["existing_pv_kwp"]) > 0
+    if home.get("has_existing_pv") is not None:
+        return bool(home["has_existing_pv"])
+    return None
 
 
 def home_to_physics(home: dict) -> physics.Home:
     return physics.Home(annual_kwh=home.get("annual_kwh"), load_profile=home.get("load_profile") or "H0",
                         has_ev=bool(home.get("has_ev")), ev_km_year=home.get("ev_km_year"), heating=home.get("heating"),
-                        heating_demand_kwh=home.get("heating_demand_kwh"), existing_pv_kwp=home.get("existing_pv_kwp"),
+                        heating_demand_kwh=home.get("heating_demand_kwh"),
+                        existing_pv_kwp=home.get("existing_pv_kwp") or
+                        (TYPICAL_EXISTING_PV_KWP if home.get("has_existing_pv") else None),
                         price_eur_kwh=home.get("price_eur_kwh"), orientation_deg=home.get("orientation_deg"),
                         tilt_deg=home.get("tilt_deg"))
 

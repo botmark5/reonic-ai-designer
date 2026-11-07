@@ -51,7 +51,8 @@ class Home(BaseModel):
     load_profile: Optional[str] = "H0"
     has_ev: bool = False
     ev_km_year: Optional[float] = Field(None, ge=0)
-    existing_pv_kwp: Optional[float] = Field(None, ge=0)
+    existing_pv_kwp: Optional[float] = Field(None, ge=0, description="PV already on the roof; 0 = none")
+    has_existing_pv: Optional[bool] = Field(None, description="'Is there already PV on the roof?' yes/no; null = unknown")
     existing_battery_kwh: Optional[float] = Field(None, ge=0)
     heating: Optional[str] = None
     heating_demand_kwh: Optional[float] = Field(None, ge=0)

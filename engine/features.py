@@ -33,7 +33,7 @@ EXTRA_TEXT = {
     "demand_is_default": "the demand being the default 4,500 kWh", "price_eur_kwh": "the electricity price",
     "has_ev": "the electric car", "ev_km": "the yearly EV distance", "heating_is_heatpump": "the existing heat pump",
     "heating_is_fossil": "the gas/oil heating", "heating_demand_kwh": "the heating demand",
-    "existing_pv": "the existing PV system", "existing_battery": "the existing battery",
+    "existing_pv": "PV already on the roof", "existing_battery": "the existing battery",
     "existing_wallbox": "the existing wallbox", "load_profile_is_h0": "the standard household profile",
     "daytime_presence": "who is at home during the day", "offer_month": "the recent offer trend",
     "pv_kwp_planned": "the planned PV size",
@@ -42,6 +42,15 @@ EXTRA_TEXT = {
 
 def _col(df, name, default):
     return df[name] if name in df.columns else pd.Series(default, index=df.index)
+
+
+def tristate(s: pd.Series) -> pd.Series:
+    """True/1 -> 1.0, False/0 -> 0.0, None/NaN -> NaN (unknown)."""
+    def one(v):
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return np.nan
+        return 1.0 if bool(v) else 0.0
+    return s.map(one).astype(float)
 
 
 def clean_inputs(df: pd.DataFrame) -> pd.DataFrame:
@@ -83,7 +92,9 @@ def build_features(df: pd.DataFrame, heatpump_kw, installers: list[str], offer_m
     X["heating_is_heatpump"] = (heating == "Heatpump").astype(int)
     X["heating_is_fossil"] = heating.isin(FOSSIL_HEATING).astype(int)
     X["heating_demand_kwh"] = _col(df, "heating_demand_kwh", np.nan).astype(float)
-    for c in ("existing_pv", "existing_battery", "existing_wallbox"):
+    # existing PV: 1 = yes, 0 = no, NaN = unknown (the data almost never records it; the planner can answer it)
+    X["existing_pv"] = tristate(_col(df, "existing_pv", np.nan))
+    for c in ("existing_battery", "existing_wallbox"):
         X[c] = _col(df, c, False).fillna(False).astype(bool).astype(int)
     profile = _col(df, "load_profile", "H0").fillna("H0")
     X["load_profile_is_h0"] = (profile == "H0").astype(int)

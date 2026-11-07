@@ -48,6 +48,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
 
 ## Decisions
+- Sat 19:40 · Offer type is its own decision (new PV / battery retrofit / wallbox only / other); optional planner input 'Is there already PV on the roof?' (biggest single error source)
 - Sat 19:00 · Heat pump is a customer OPTION (offered for gas/oil homes, not included by default); /design returns the full design with and without it so the customer can choose by budget/needs
 - Sat 18:40 · Model trains on interim labels (engine/interim_labels.py) until engine/labels lands; swap is automatic
 - Sat 18:40 · PV size model: Huber loss + monotonic constraints (more demand / EV never shrinks PV); PV snapped to 450 W modules

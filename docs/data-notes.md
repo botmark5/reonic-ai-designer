@@ -184,3 +184,11 @@ if absent, sizes seen ≥ 5× per installer in the labels are used.
   (step 0 = no battery).
 - Baselines: kWp = annual kWh / 1000 (battery = installer's most common size, yes/no = majority), and median/mode per
   installer × consumption band (0–2.5–3.5–4.5–5.5–7–9–∞ MWh).
+
+## Offer type and the existing-PV question (engine/model.py)
+- Offer type per option (engine/labels v1.1 names): new_system, pv_extension, battery_retrofit, wallbox_only, heatpump_only,
+  no_components. Interim labels derive it from the parsed design + recorded existing PV.
+- ASSUMPTION: a battery-only offer means PV is already on the roof (a battery without PV makes no sense). The planner's
+  answer to "Is there already PV on the roof?" is therefore taken as yes for battery_retrofit / pv_extension, no for
+  new_system, unknown for wallbox_only / other. `has_solar = False` in the data means "not answered", not "no".
+- Training uses every project twice (answered + unanswered) so the model works with and without the answer.
