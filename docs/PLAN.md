@@ -36,16 +36,16 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [x] Design system + mockups (Claude chat) → tokens into web/
 - [x] Planner screen (inputs → design cards → locks/overrides) (PR #12, incl. 'Solar already on the roof?')
 - [x] Refine box + streamed explanation (PR #13: Claude agent with tools; engine computes all sizes)
-- [ ] Reality-check screen (ours vs expert + /eval charts)
-- [ ] Supabase: saved_designs, overrides, homeowner share link
-  - routes exist (api/designs, overrides, shares); BLOCKED for deploy: anon key can read calls PII → B fixing RLS
+- [x] Reality-check screen (ours vs expert + /eval charts) (PR #23: held-out demo cases + random from locked test set, verdicts with engine tolerances, /eval tiles, A→B transfer)
+- [x] Supabase: saved_designs, overrides, homeowner share link (PR #12, #21; calls private: PR #20 migration 20261107_calls_private.sql)
 - [ ] Live on the real engine, deployed
   - live on the real engine locally (served: engine, ~0.3 s, offline fallback verified); not deployed
 
 ## Phase 4 — Stretch
-- [ ] Homeowner view (variants only, savings/payback/autarky in plain words)
+- [x] Homeowner view (variants only, savings/payback/autarky in plain words) (PR #21: /offer/[token], allowed variants checked server-side, House3D, Listen to your offer)
 - [x] Interactive 3D house `<House3D>` (web/src/components/house3d): panels from kWp, battery/inverter/wallbox/heat pump, energy flows, presets, tooltips, still-image fallback
-  - mounting in the planner and /offer/[token] is session B's (snippet in web/src/components/house3d/README.md)
+  - mounted in the planner and /offer/[token] (PR #21)
+- [x] Live-call big screen /live (PR #18): server-polled calls, facts checklist, live draft; scripted "Play demo call" sends the draft to the inbox
 - [x] ElevenLabs "Explain my offer" voice + voice agent calling /design (backend: web/voice — create_design tool, post-call webhook, /api/solar, /api/voice/explain; audio off until the voice is confirmed)
 - [ ] Validation screen
 - [ ] Confidence calibration, A→B findings for the deck, fix worst 3 edge cases
@@ -54,6 +54,10 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
 
 ## Decisions
+- Sat 20:30 · Web: engine called only from server routes (key never in the browser); offline estimate after 4 s (design) or on any engine error, 15 s cooldown, "Offline estimate" badge
+- Sat 20:30 · Web: refine agent = claude-sonnet-5-5 tool loop; a lock is accepted only at a value the planner wrote or the engine offered (alternatives, range ends, heat pump option); all sizes from run_design
+- Sat 20:30 · Web: calls are server-only (names/addresses/transcripts); /live polls GET /api/calls every 2 s; realtime only on designs
+- Sat 20:30 · Web: held-out ids for /reality read server-side from the gitignored engine/artifacts (or HELDOUT_PROJECT_IDS env); never committed
 - Sat 20:15 · PV snaps to the installer's standard packages (sold >= 10x, within 1 kWp) else 450 W modules; battery cut-off learned out-of-fold (CV on training only)
 - Sat 19:25 · Demo set = 5 HELD-OUT projects (locked test_ids.json) picked by fixed rules in engine/demo_set.py: typical PV+battery (closest to median), EV+wallbox, gas home with an expert heat pump (only 1 held out), battery retrofit, widest PV spread across full-design variants; output engine/artifacts/demo_projects.json (not committed, shared via data-v1)
 - Sat 19:20 · 3D house is procedural three.js (Blender not installed); session B mounts `<House3D>`; roof from home.tilt_deg/orientation_deg, overridable by Google Solar via the `roof` prop
