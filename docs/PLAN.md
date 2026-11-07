@@ -31,7 +31,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
   - engine/api.py runs locally and matches api.md (+ optional additions, see engine/README.md); not deployed yet
 
 ## Phase 3 — Product (Mark)
-- [ ] Design system + mockups (Claude chat) → tokens into web/
+- [x] Design system + mockups (Claude chat) → tokens into web/
 - [ ] Planner screen (inputs → design cards → locks/overrides)
 - [ ] Refine box (Haiku) + streamed explanation (Sonnet)
 - [ ] Reality-check screen (ours vs expert + /eval charts)
