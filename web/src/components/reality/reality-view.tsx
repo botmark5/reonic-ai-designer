@@ -93,6 +93,10 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
   const state: "idle" | "loading" | "error" =
     projectId && errorId === projectId ? "error" : projectId && project?.project_id !== projectId ? "loading" : "idle";
   const demo = demos.find((d) => d.project_id === projectId);
+  // engine #47: /project designs without the existing-PV answer. Label the retrofit case until the engine returns
+  // a battery retrofit for it (then this disappears by itself).
+  const unanswered =
+    demo?.role === "battery_retrofit" && project?.project_id === projectId && project?.ours?.facts_for_explanation?.offer_type !== "battery_retrofit";
   const catalogue = ((evalRes.protocol?.catalogue as Record<string, number[]> | undefined) ?? {})[project?.installer ?? ""] ?? [];
   const ours = project?.ours?.design ?? null;
   const v =
@@ -120,6 +124,7 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
   const nAddOns = src.addOns ? n(src.addOns[PREDICTORS.model] as MetricSet, "n_projects") : null;
   // Shown only when /eval reports coverage (engine #43). 80 % is not an engine number: a P10–P90 range should hold 90 − 10 = 80 % by definition.
   const cov = coverage(HM) ?? coverage(M);
+  const addOnCov = src.addOns ? coverage(src.addOns[PREDICTORS.model]) : null;
   const answered = evalRes.with_existing_pv_answer?.metrics?.[PREDICTORS.model];
   const fmt = (x: number | null, unit: "kWp" | "%") => (x == null ? "–" : unit === "kWp" ? x.toFixed(2) : `${Math.round(x)}`);
   const nTest = n(HM, "n_projects") ?? (src.fullOnly ? null : ((evalRes.protocol?.n_test as number | undefined) ?? null));
@@ -211,6 +216,12 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
               </table>
             </div>
           )}
+          {unanswered && (
+            <p className="m-0 rounded-md bg-warning-tint px-3 py-2 text-[13px] leading-5 text-warning-text">
+              Unanswered mode: this design was made without the answer to “Solar already on the roof?”, so the engine cannot know
+              the expert only added a battery. The held-out numbers count add-ons like this with the answer given (engine #47 fixes this case).
+            </p>
+          )}
           <p className="m-0 text-[13px] leading-5 text-ink-muted">
             {demo ? `${demo.why}. ` : ""}
             {project && project.variants.length > 1
@@ -253,6 +264,7 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
                     {t.wins != null && (
                       <StatusBadge tone={t.wins ? "success" : "warning"}>{t.wins ? "Better than rules" : "Below simple rule"}</StatusBadge>
                     )}
+                    {t.tie && <StatusBadge tone="neutral">Same as rule</StatusBadge>}
                   </div>
                   <span className="font-mono text-metric font-medium tabular">
                     {fmt(t.ours, t.unit)} <small className="text-[15px] text-ink-muted">{t.unit}</small>
@@ -292,9 +304,16 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
                     <span className="font-mono tabular">{fmt(t.ours, t.unit)} %</span>
                     <span className="text-ink-muted">vs {fmt(t.base, t.unit)} % best rule</span>
                     {t.wins != null && <StatusBadge tone={t.wins ? "success" : "warning"}>{t.wins ? "Better" : "Below"}</StatusBadge>}
+                    {t.tie && <StatusBadge tone="neutral">Same</StatusBadge>}
                   </span>
                 </div>
               ))}
+              {addOnCov != null && (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
+                  <span className="text-ink-muted">Expert solar inside our P10–P90 range, where both chose solar</span>
+                  <span className="font-mono tabular">{Math.round(addOnCov)} %</span>
+                </div>
+              )}
             </div>
           )}
           {!offline && answered && (

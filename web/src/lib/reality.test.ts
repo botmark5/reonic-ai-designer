@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { verdicts, coverage, headlineSource } from "./reality";
+import { verdicts, coverage, headlineSource, headlines } from "./reality";
 import type { ExpertVariant } from "./types";
 
 const v = (o: Partial<ExpertVariant>): ExpertVariant => ({ option_number: 1, is_primary: true, pv_kwp: 9, battery_kwh: 10, has_wallbox: false, heatpump_kw: 0, ...o });
@@ -81,5 +81,15 @@ describe("headlineSource / coverage (old and new /eval shapes)", () => {
     expect(coverage({ pv_p10_p90_coverage_pct: 81 })).toBe(81);
     expect(coverage({ pv_kwp_mae: 2 })).toBeNull();
     expect(coverage(undefined)).toBeNull();
+  });
+});
+
+describe("headlines ties", () => {
+  it("a tie at the shown precision is neither a win nor a loss", () => {
+    const [h] = headlines({ design_model: { has_battery_accuracy: 69.2 }, baseline_band_median: { has_battery_accuracy: 68.9 } }, "design_model", [
+      { key: "has_battery_accuracy", label: "x", better: "higher", unit: "%" },
+    ]);
+    expect(h.tie).toBe(true);
+    expect(h.wins).toBeNull();
   });
 });

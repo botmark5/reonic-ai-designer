@@ -112,7 +112,9 @@ export interface Headline extends HeadlineDef {
   ours: number | null;
   base: number | null;
   baseName: string | null;
+  /** null = no comparison possible or a tie at the shown precision */
   wins: boolean | null;
+  tie: boolean;
 }
 
 type Metrics = Record<string, Record<string, number | null | undefined>>;
@@ -156,7 +158,10 @@ export function headlines(metrics: Metrics, model = "design_model", defs: Headli
         baseName = BASELINE_NAME[b] ?? b.replace("baseline_", "").replace(/_/g, " ");
       }
     }
-    const wins = ours == null || base == null ? null : h.better === "lower" ? ours < base : ours > base;
-    return { ...h, ours: typeof ours === "number" ? ours : null, base, baseName, wins };
+    // compare at the precision shown (kWp 2 decimals, % whole numbers): a tie on screen is a tie, not a loss
+    const shown = (x: number) => (h.unit === "kWp" ? Math.round(x * 100) : Math.round(x));
+    const tie = typeof ours === "number" && base != null && shown(ours) === shown(base);
+    const wins = ours == null || base == null || tie ? null : h.better === "lower" ? ours < base : ours > base;
+    return { ...h, ours: typeof ours === "number" ? ours : null, base, baseName, wins, tie };
   });
 }

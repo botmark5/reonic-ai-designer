@@ -8,14 +8,17 @@ _Web agent: replace this with what changed, what is next, what is blocking, and 
   the planner sees, edits or removes them ("Roof size and direction"); omitted when Google has nothing. The same
   roof drives `<House3D roof>`. The offline estimate also respects the roof cap.
 - Changed: /reality reads both /eval shapes: headline from `segments.full_designs` when present (else all projects),
-  `segments.add_ons` as a separate block; P10–P90 tile only once /eval reports `pv_interval_coverage_pct` (#43).
+  `segments.add_ons` as a separate block; P10–P90 coverage tile (new full systems) + add-on row from
+  `pv_interval_coverage_pct` (#43/#46). Ties at the shown precision read "Same as rule", not "Below".
+- Changed: /reality "Battery retrofit" example is labelled "Unanswered mode" while /project designs without the
+  existing-PV answer (#47); the label disappears by itself once the engine returns a battery retrofit for it.
 - Changed: with no new PV (pv.include=false) the PV range is hidden from the planner card and from the refine agent
   (no lock to a range end of a retrofit design).
 - Smoke (Sun 00:20, live engine): EV refine on 4,500 kWh / no existing PV: PV 9.45 → 10.8 kWp, battery 9.2 → 10,
   wallbox on. Roof cap 6 → PV 5.85 kWp, battery 5 kWh. No GOOGLE_MAPS_API_KEY locally or on prod → /api/solar
   says no_key and the planner silently keeps the default roof. Gate on prod: / 307, APIs 401, /offer + health public.
 - Engine calls: unchanged (server routes only, X-Engine-Key, 4 s fallback). Optional request fields: the three roof fields.
-- Next: Google key (Mark) to see a real roof end to end; coverage tile once #43 lands.
+- Next: Google key (Mark) to see a real roof end to end; drop the #47 label check once the engine fix lands.
 - Blocking: nothing.
 
 ## c-3d (3D house, web/src/components/house3d)
