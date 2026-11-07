@@ -133,15 +133,34 @@ export function coverage(m: Record<string, number | null | undefined> | undefine
   return null;
 }
 
-/** Where the headline numbers come from: new full systems when the engine reports that slice, else all projects. */
-export function headlineSource(e: { metrics: Metrics; segments?: Record<string, Metrics> }) {
-  const full = e.segments?.full_designs;
-  const addOns = e.segments?.add_ons;
-  return {
-    metrics: full && Object.keys(full).length ? full : e.metrics,
-    fullOnly: !!(full && Object.keys(full).length),
-    addOns: addOns && Object.keys(addOns).length ? addOns : null,
-  };
+/** Minimum homes behind a coverage number before we show it (pv_n = homes where both chose solar). */
+export const MIN_COVERAGE_N = 20;
+
+type EvalLike = {
+  metrics: Metrics;
+  segments?: Record<string, Metrics>;
+  with_existing_pv_answer?: { metrics?: Metrics; segments?: Record<string, Metrics> };
+};
+const nonEmpty = (m: Metrics | undefined) => (m && Object.keys(m).length ? m : null);
+
+/**
+ * Where the headline numbers come from. Answered mode (the planner answered "Solar already on the roof?", as in the
+ * planner and the pitch) when /eval reports it, else the unanswered numbers. Within a mode: new full systems when
+ * that slice exists, else all projects; add-on sales separately.
+ */
+export function headlineSource(e: EvalLike) {
+  const a = e.with_existing_pv_answer;
+  const answered = !!(nonEmpty(a?.segments?.full_designs) || nonEmpty(a?.metrics));
+  const mode = answered ? { metrics: a?.metrics ?? e.metrics, segments: a?.segments } : { metrics: e.metrics, segments: e.segments };
+  const full = nonEmpty(mode.segments?.full_designs);
+  return { metrics: full ?? mode.metrics, overall: mode.metrics, fullOnly: !!full, addOns: nonEmpty(mode.segments?.add_ons), answered };
+}
+
+/** Coverage only when enough homes stand behind it (pv_n >= MIN_COVERAGE_N; older /eval without pv_n: n_projects). */
+export function trustedCoverage(m: Record<string, number | null | undefined> | undefined): number | null {
+  const c = coverage(m);
+  const nBoth = typeof m?.pv_n === "number" ? m.pv_n : typeof m?.n_projects === "number" ? m.n_projects : null;
+  return c != null && nBoth != null && nBoth >= MIN_COVERAGE_N ? c : null;
 }
 
 export function headlines(metrics: Metrics, model = "design_model", defs: HeadlineDef[] = HEADLINES): Headline[] {

@@ -8,7 +8,7 @@ import { StatusBadge, type Tone } from "@/components/ui/status-badge";
 import { COMPONENTS, sizeOf } from "@/lib/diff";
 import { fmtInt, fmtKwp, fmtSize, LABEL } from "@/lib/format";
 import type { DemoProject } from "@/lib/heldout";
-import { ADDON_HEADLINES, coverage, headlines, headlineSource, verdicts, type VerdictKind } from "@/lib/reality";
+import { ADDON_HEADLINES, headlines, headlineSource, trustedCoverage, verdicts, type VerdictKind } from "@/lib/reality";
 import type { ComponentKey, EvalResponse, ExpertVariant, MetricSet, ProjectResponse } from "@/lib/types";
 import { PREDICTORS } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -123,8 +123,8 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
   const addOns = src.addOns ? headlines(src.addOns, PREDICTORS.model, ADDON_HEADLINES) : [];
   const nAddOns = src.addOns ? n(src.addOns[PREDICTORS.model] as MetricSet, "n_projects") : null;
   // Shown only when /eval reports coverage (engine #43). 80 % is not an engine number: a P10–P90 range should hold 90 − 10 = 80 % by definition.
-  const cov = coverage(HM) ?? coverage(M);
-  const addOnCov = src.addOns ? coverage(src.addOns[PREDICTORS.model]) : null;
+  const cov = trustedCoverage(HM) ?? trustedCoverage(src.overall[PREDICTORS.model]);
+  const addOnCov = src.addOns ? trustedCoverage(src.addOns[PREDICTORS.model]) : null; // null or < 20 homes: no row
   const answered = evalRes.with_existing_pv_answer?.metrics?.[PREDICTORS.model];
   const fmt = (x: number | null, unit: "kWp" | "%") => (x == null ? "–" : unit === "kWp" ? x.toFixed(2) : `${Math.round(x)}`);
   const nTest = n(HM, "n_projects") ?? (src.fullOnly ? null : ((evalRes.protocol?.n_test as number | undefined) ?? null));
@@ -251,6 +251,9 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
           <h2 id="across" className="m-0 text-label uppercase text-ink-muted">
             Across {nTest ? fmtInt(nTest) : "all"} held-out {src.fullOnly ? "new systems" : "homes"}
           </h2>
+          {src.answered && !offline && (
+            <p className="m-0 -mt-2 text-[12px] leading-4 text-ink-muted">With “Solar already on the roof?” answered, as the planner does. The card below shows what the answer adds.</p>
+          )}
           {offline ? (
             <div className="rounded-lg border border-dashed border-border bg-surface-1 p-6 text-body-sm text-ink-muted">
               Engine offline: the held-out metrics appear here as soon as it is reachable again. No numbers are shown in the meantime.
