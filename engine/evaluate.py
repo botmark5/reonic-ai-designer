@@ -308,6 +308,10 @@ def compute_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) ->
     both = pv & (pred.pv_kwp.astype(float).fillna(0) > 0).to_numpy()
     e2 = (pred.pv_kwp.astype(float) - truth.pv_kwp)[both]
     m["pv_kwp_mae_when_both_pv"] = float(e2.abs().mean()) if len(e2) else None
+    # fair end-to-end: ALL projects, "no PV" = 0 kWp on both sides, so an unwanted system also counts
+    # (pv_kwp_mae above only scores projects WITH expert PV and never penalises PV proposed for a retrofit)
+    e3 = (pred.pv_kwp.astype(float).fillna(0) - truth.pv_kwp.fillna(0)).abs()
+    m["pv_kwp_mae_all_projects"] = float(e3.mean()) if len(e3) else None
 
     # battery size (projects where the expert installed a battery)
     bat = truth.has_battery.to_numpy()

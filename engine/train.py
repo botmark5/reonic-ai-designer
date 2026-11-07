@@ -26,7 +26,7 @@ from engine.model import MODEL_PATH, DesignModel
 
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
 
-HEADLINE = ["pv_kwp_mae", "pv_kwp_mae_when_both_pv", "pv_kwp_within_1.5_pct", "pv_variant_hit_tolerant_pct", "battery_kwh_mae",
+HEADLINE = ["pv_kwp_mae", "pv_kwp_mae_when_both_pv", "pv_kwp_mae_all_projects", "pv_kwp_within_1.5_pct", "pv_variant_hit_tolerant_pct", "battery_kwh_mae",
             "battery_kwh_mae_when_both_battery", "battery_within_one_step_pct", "battery_variant_hit_tolerant_pct", "has_pv_accuracy",
             "has_battery_accuracy", "has_wallbox_accuracy", "has_heatpump_accuracy", "n_projects"]
 
