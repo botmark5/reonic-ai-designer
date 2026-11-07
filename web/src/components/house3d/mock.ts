@@ -1,4 +1,4 @@
-import { mockDesign } from "../../lib/engine";
+import { mockDesign } from "../../lib/engine-mock";
 import { EMPTY_LOCKS, type DesignResponse, type Home } from "../../lib/types";
 
 /** Demo home for previews and tests: 4,500 kWh, EV with 15,000 km a year, gas heating. */
