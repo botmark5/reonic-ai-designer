@@ -19,15 +19,16 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 ## Phase 2 — Engine and evaluation (Cala)
 - [ ] docs/engine-spec.md in plain English
 - [x] Baselines (kWp ≈ kWh/1000; median by consumption band)
-- [ ] Chained model PV → battery → wallbox, installer-aware, snapped to catalogue
-- [ ] Similar-homes lookup → ranges + 5 nearest real projects
-- [ ] Locks: recompute around fixed components
+- [x] Chained model PV → battery → wallbox, installer-aware, snapped to catalogue
+- [x] Similar-homes lookup → ranges + 5 nearest real projects
+- [x] Locks: recompute around fixed components
 - [x] Physics check + heat pump rules
-- [ ] Evaluation: held-out + installer A→B; variant-range hit rate; vs baselines
-  - harness ready (engine/evaluate.py, engine/physics branch); waiting for engine/artifacts/expert_designs.parquet + the model
+- [x] Evaluation: held-out + installer A→B; variant-range hit rate; vs baselines
+  - done on INTERIM labels (engine/interim_labels.py); rerun `python -m engine.train` once expert_designs.parquet lands
 - [ ] Error analysis by segment/installer
-- [ ] /validate
+- [x] /validate
 - [ ] FastAPI deployed, matches docs/api.md
+  - engine/api.py runs locally and matches api.md (+ optional additions, see engine/README.md); not deployed yet
 
 ## Phase 3 — Product (Mark)
 - [ ] Design system + mockups (Claude chat) → tokens into web/
@@ -47,6 +48,10 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
 
 ## Decisions
+- Sat 18:40 · Model trains on interim labels (engine/interim_labels.py) until engine/labels lands; swap is automatic
+- Sat 18:40 · PV size model: Huber loss + monotonic constraints (more demand / EV never shrinks PV); PV snapped to 450 W modules
+- Sat 18:40 · New projects use an offer date capped at the 90th percentile of training dates (last month is an unusual retrofit batch)
+- Sat 18:40 · Claude: Haiku 5.5 for /refine (structured output), Sonnet 5.5 for /explain (streamed, server-side refusal fallback); keyword/template fallback without key
 - Sat 18:00 · Physics = hourly synthetic year with seeded sunny/cloudy days, calibrated to HTW-Berlin rule-of-thumb ranges (not official BDEW tables)
 - Sat 18:00 · Variant-range hit = inside [min, max] of the project's options ± tolerance (PV ± 1 kWp, battery ± 1 catalogue step); strict number reported too
 - Sat 18:00 · Label contract proposed in docs/data-notes.md (one row per project × option, is_primary flag); evaluate.py joins inputs from data/raw

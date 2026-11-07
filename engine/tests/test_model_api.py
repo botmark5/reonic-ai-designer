@@ -1,0 +1,258 @@
+"""Tests for interim_labels, features, model, llm fallbacks and the API (synthetic data, no API key needed)."""
+import numpy as np
+import pandas as pd
+import pytest
+from fastapi.testclient import TestClient
+
+from engine import api, llm
+from engine.evaluate import DESIGN_COLUMNS, build_eval_table
+from engine.features import build_features, clean_inputs
+from engine.interim_labels import build_catalogue, parse_option
+from engine.model import DesignModel, snap_pv
+from engine.tests.conftest import make_synthetic
+
+
+# ---------------------------------------------------------------- interim label parser
+def parts(*rows):
+    cols = ["technology", "component_type", "component_name", "quantity", "module_watt_peak", "inverter_power_kw",
+            "battery_capacity_kwh", "wb_charging_speed_kw", "heatpump_nominal_power_kw"]
+    return pd.DataFrame([dict(zip(cols, r)) for r in rows])
+
+
+N = np.nan
+
+
+def test_parse_package_name():
+    d = parse_option(parts(("solar", "Other", "Complete Package 2 Sigenergy 10.8kWp + 9kWh B", 1, N, N, N, N, N),
+                           ("solar", "ModuleFrameConstruction", "Substructure 8.8-15kWp", 24, N, N, N, N, N)))
+    assert d["pv_kwp"] == 10.8 and d["battery_kwh"] == 9.0      # the "15kWp" of the substructure name is ignored
+
+
+def test_parse_module_rows():
+    d = parse_option(parts(("solar", "Module", "PV Module 463W TOPCon", 24, 463, N, N, N, N)))
+    assert d["pv_kwp"] == pytest.approx(24 * 0.463)
+
+
+def test_parse_panel_count_and_battery_extensions():
+    d = parse_option(parts(("solar", "ModuleFrameConstruction", "Substructure Concrete Roof", 20, N, N, N, N, N),
+                           ("ses", "BatteryStorage", "Battery LFP 10kWh", 1, N, 10000, N, N, N),
+                           ("ses", "BatteryStorage", "Battery 5kWh Extension B", 1, N, 5000, N, N, N)))
+    assert d["pv_kwp"] == pytest.approx(9.0) and d["pv_source"].startswith("panel_count")
+    assert d["battery_kwh"] == 15.0
+
+
+def test_parse_battery_only_wallbox_heatpump():
+    d = parse_option(parts(("ses", "BatteryStorage", "Battery 7kWh", 1, N, 7000, N, N, N),
+                           ("wallbox", "Wallbox", "Wallbox 11kW", 1, N, N, N, 11000, N),
+                           ("heatpump", "Heatpump", "Heat Pump 10.5kW 400V", 1, N, N, N, N, 10000)))
+    assert not d["has_pv"] and d["battery_kwh"] == 7 and d["has_wallbox"] and d["wallbox_kw"] == 11
+    assert d["has_heatpump"] and d["heatpump_kw"] == 10           # nominal power column (W) wins over the name
+
+
+def test_parse_single_scaffolding_item_is_not_pv():
+    d = parse_option(parts(("solar", "ServiceFee", "Travel & Logistics", 1, N, N, N, N, N),
+                           ("solar", "ModuleFrameConstruction", "Substructure Flat Roof Ballast", 1, N, N, N, N, N)))
+    assert d["pv_kwp"] == 0 and not d["has_pv"]
+
+
+def test_catalogue_from_labels(synthetic):
+    cat = build_catalogue(synthetic[0], min_count=1)
+    assert cat["instA"]["battery_kwh"] == [5.0, 10.0, 15.0] and cat["instA"]["sells_heatpumps"] is False
+
+
+# ---------------------------------------------------------------- features
+def test_features_clean_and_physics_layer():
+    df = pd.DataFrame([dict(installer="instA", annual_kwh=4000, has_ev=True, ev_km_year=10000, price_eur_kwh=322),
+                       dict(installer="other", annual_kwh=0, has_ev=False)])
+    X = build_features(df, [0, 0], ["instA", "instB"])
+    assert X.total_demand_kwh.iloc[0] == pytest.approx(4000 + 1800)
+    assert np.isnan(X.price_eur_kwh.iloc[0])                        # 322 EUR/kWh is a typo -> unknown
+    assert np.isnan(X.annual_kwh.iloc[1])                           # 0 kWh -> unknown
+    assert X[["inst_instA", "inst_instB"]].iloc[1].sum() == 0       # unseen installer -> all zeros
+    assert clean_inputs(df).annual_kwh.isna().sum() == 1
+
+
+def test_heat_pump_adds_demand():
+    df = pd.DataFrame([dict(installer="instA", annual_kwh=4000, heating="Gas", heating_demand_kwh=17500)])
+    assert build_features(df, [7.0], ["instA"]).total_demand_kwh.iloc[0] == pytest.approx(4000 + 5000)
+
+
+# ---------------------------------------------------------------- model
+@pytest.fixture(scope="module")
+def trained():
+    labels, inputs = make_synthetic(n_per_installer=120, seed=3)
+    table = build_eval_table(labels, inputs)
+    return DesignModel().fit(table), table
+
+
+def test_predict_interface(trained):
+    model, table = trained
+    pred = model.predict(table.head(20))
+    assert list(pred.columns) == DESIGN_COLUMNS and len(pred) == 20
+    assert ((pred.pv_kwp == 0) | pred.has_pv).all()
+    assert model.predict(table.head(0)).empty
+
+
+def test_battery_snaps_to_installer_catalogue(trained):
+    model, table = trained
+    pred = model.predict(table)
+    for inst, g in pred.join(table.installer).groupby("installer"):
+        sizes = set(model.catalogue_[inst]["battery_kwh"]) | {0.0}
+        assert set(g.battery_kwh.round(1)) <= sizes
+
+
+def test_pv_snaps_to_whole_modules(trained):
+    model, _ = trained
+    kwp = model.propose({"annual_kwh": 5000}, "instA")["design"]["pv"]["kwp"]
+    assert kwp is None or abs(kwp / 0.45 - round(kwp / 0.45)) < 1e-6
+    assert snap_pv(10.0) == 9.9 and snap_pv(0) == 0
+
+
+def test_propose_shape_and_reasons(trained):
+    model, _ = trained
+    out = model.propose({"annual_kwh": 5000, "has_ev": True, "ev_km_year": 15000}, "instA")
+    d = out["design"]
+    assert set(d) == {"pv", "battery", "wallbox", "heatpump"}
+    for c in d.values():
+        assert {"include", "confidence", "reasons"} <= set(c) and c["reasons"]
+        assert 0 <= c["confidence"] <= 1
+    if d["pv"]["include"]:
+        lo, hi = d["pv"]["range"]
+        assert lo <= d["pv"]["kwp"] <= hi
+    assert out["facts"]["total_demand_kwh"] == pytest.approx(5000 + 2700)
+
+
+def test_locks_are_respected_and_battery_adapts(trained):
+    model, _ = trained
+    home = {"annual_kwh": 6000}
+    d = model.propose(home, "instA", {"pv_kwp": 0, "battery_kwh": 10, "wallbox": True, "heatpump_kw": 0})["design"]
+    assert d["pv"]["include"] is False and d["battery"]["kwh"] == 10 and d["wallbox"]["include"] is True
+    assert d["heatpump"]["include"] is False and "Fixed by the planner" in d["battery"]["reasons"][0]
+    small = model.propose(home, "instA", {"pv_kwp": 3})["design"]["battery"]
+    big = model.propose(home, "instA", {"pv_kwp": 20})["design"]["battery"]
+    assert (small["kwh"] or 0) <= (big["kwh"] or 0) + 5           # bigger PV never needs a much smaller battery
+
+
+def test_more_demand_or_ev_never_shrinks_pv(trained):
+    model, _ = trained
+    base = model.propose({"annual_kwh": 4000}, "instA", {})["design"]["pv"]["kwp"] or 0
+    ev = model.propose({"annual_kwh": 4000, "has_ev": True, "ev_km_year": 20000}, "instA", {})["design"]["pv"]["kwp"] or 0
+    assert ev >= base
+
+
+def test_unknown_installer_and_missing_fields(trained):
+    model, _ = trained
+    out = model.propose({"annual_kwh": 4500}, "brand_new_installer")
+    assert out["design"]["pv"]["confidence"] >= 0
+    assert model.propose({"annual_kwh": 4500, "load_profile": None, "heating": None}, "instA")["design"]
+
+
+def test_similar_homes_and_validate(trained):
+    model, _ = trained
+    sim = model.similar_homes({"annual_kwh": 4500}, "instA", k=5)
+    assert len(sim) == 5 and (sim.installer == "instA").all() and sim.similarity.between(0, 1).all()
+    flags = model.validate({"annual_kwh": 2500}, "instA", {"pv_kwp": 6, "battery_kwh": 60})
+    codes = {f["code"] for f in flags}
+    assert "BATTERY_UNUSUAL" in codes and "BATTERY_TOO_BIG_FOR_PV" in codes
+    assert all({"component", "level", "message", "percentile"} <= set(f) for f in flags)
+
+
+def test_save_load_roundtrip(trained, tmp_path):
+    model, table = trained
+    model.save(tmp_path / "m.joblib")
+    again = DesignModel.load(tmp_path / "m.joblib")
+    pd.testing.assert_frame_equal(model.predict(table.head(10)), again.predict(table.head(10)))
+
+
+# ---------------------------------------------------------------- llm fallbacks (no API calls)
+@pytest.fixture
+def no_claude(monkeypatch):
+    monkeypatch.setattr(llm, "claude_available", lambda: False)
+
+
+@pytest.mark.parametrize("text,home,locks", [
+    ("The family is buying an electric car next year, about 15,000 km", {"has_ev": True, "ev_km_year": 15000}, {}),
+    ("Customer works from home, no battery please", {"load_profile": "HomeOfficeOnePerson"}, {"battery_kwh": 0}),
+    ("Make it 12 kWp with a 10 kWh battery", {}, {"pv_kwp": 12, "battery_kwh": 10}),
+    ("Verbrauch 6 MWh im Jahr, ohne Wärmepumpe", {"annual_kwh": 6000}, {"heatpump_kw": 0}),
+    ("new EV, 20k km", {"has_ev": True, "ev_km_year": 20000}, {}),
+])
+def test_rule_refine(no_claude, text, home, locks):
+    r = llm.refine(text)
+    assert r["source"] == "rules" and r["home_changes"] == home and r["lock_changes"] == locks
+
+
+def test_rule_refine_nothing_recognised(no_claude):
+    r = llm.refine("hello there")
+    assert r["home_changes"] == {} and r["lock_changes"] == {} and "rephrase" in r["summary"]
+
+
+def test_template_explanation(no_claude):
+    resp = {"design": {"pv": {"include": True, "kwp": 9.9, "reasons": ["typical"]},
+                       "battery": {"include": False, "kwh": None, "reasons": ["none"]}},
+            "physics": {"yield_kwh": 9405, "autarky": 0.6, "self_consumption": 0.35, "warnings": ["check roof"]},
+            "economics": {"payback_years": 11.2, "savings_first_year_eur": 1500}}
+    text = "".join(llm.explain_stream(resp, "homeowner"))
+    assert "9.9 kWp" in text and "60%" in text and "check roof" in text
+
+
+# ---------------------------------------------------------------- API
+@pytest.fixture
+def client(trained, monkeypatch, no_claude):
+    monkeypatch.setattr(api, "get_model", lambda: trained[0])
+    return TestClient(api.app)
+
+
+def test_api_health_and_installers(client):
+    assert client.get("/health").json()["status"] == "ok"
+    assert set(client.get("/installers").json()) == {"instA", "instB"}
+
+
+def test_api_design_contract(client):
+    r = client.post("/design", json={"installer": "instA", "home": {"annual_kwh": 5000, "has_ev": True},
+                                     "locks": {"battery_kwh": 10}})
+    assert r.status_code == 200
+    body = r.json()
+    assert {"design", "physics", "similar_homes", "facts_for_explanation", "model_version", "economics"} <= set(body)
+    assert body["design"]["battery"]["kwh"] == 10
+    assert {"yield_kwh", "self_consumption", "autarky", "warnings"} <= set(body["physics"])
+    assert len(body["similar_homes"]) == 5
+
+
+@pytest.mark.parametrize("payload,status", [
+    ({"installer": "nope", "home": {"annual_kwh": 4500}}, 422),
+    ({"installer": "instA", "home": {}}, 422),
+    ({"installer": "instA", "home": {"annual_kwh": -5}}, 422),
+    ({"installer": "instA", "home": {"annual_kwh": 0}}, 200),          # zero demand: answered, with an error flag
+    ({"installer": "instA", "home": {"annual_kwh": 200000}, "locks": {"pv_kwp": 100, "battery_kwh": 100}}, 200),
+])
+def test_api_design_edge_cases(client, payload, status):
+    r = client.post("/design", json=payload)
+    assert r.status_code == status
+    if payload["home"].get("annual_kwh") == 0:
+        assert any(f["code"] == "DEMAND_ZERO" for f in r.json()["physics"]["flags"])
+
+
+def test_api_validate(client):
+    r = client.post("/validate", json={"installer": "instA", "home": {"annual_kwh": 2500},
+                                       "design": {"pv_kwp": 6, "battery_kwh": 60, "wallbox": True}})
+    codes = {f["code"] for f in r.json()["flags"]}
+    assert {"BATTERY_UNUSUAL", "WALLBOX_WITHOUT_EV"} <= codes
+
+
+def test_api_refine_updates_home_and_design(client):
+    r = client.post("/refine", json={"text": "buying an electric car, 15,000 km", "installer": "instA",
+                                     "home": {"annual_kwh": 5000}}).json()
+    assert r["home"]["has_ev"] is True and r["changes"]["ev_km_year"] == 15000 and r["parsed_by"] == "rules"
+    assert r["design"]["facts_for_explanation"]["total_demand_kwh"] == pytest.approx(5000 + 2700)
+
+
+def test_api_explain_streams_text(client):
+    d = client.post("/design", json={"installer": "instA", "home": {"annual_kwh": 5000}}).json()
+    r = client.post("/explain", json={"design_response": d, "audience": "planner"})
+    assert r.status_code == 200 and "PV" in r.text
+
+
+def test_api_eval_missing(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(api, "ARTIFACTS", tmp_path)
+    assert client.get("/eval").status_code == 404
