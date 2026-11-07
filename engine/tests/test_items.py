@@ -43,3 +43,16 @@ def test_load_raw_counts():
     parts, sq = load_raw(RAW_DIR)
     assert parts.groupby("installer").size().to_dict() == {"23c108b7": 2395, "2a8ba8e2": 19257}
     assert sq.groupby("installer").size().to_dict() == {"23c108b7": 342, "2a8ba8e2": 1277}
+
+
+def test_blank_numeric_string_becomes_nan_not_zero():
+    items = make_items([{"name": "Battery", "type": "BatteryStorage", "inverter_power_kw": "", "module_watt_peak": " "}])
+    assert math.isnan(items.iloc[0].inverter_power_kw)
+    assert math.isnan(items.iloc[0].module_watt_peak)
+
+
+@needs_data
+def test_real_blank_wattage_is_nan_not_zero():
+    parts, _ = load_raw(RAW_DIR)
+    assert parts.module_watt_peak.isna().any()
+    assert not (parts.module_watt_peak == 0).any()
