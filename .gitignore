@@ -9,3 +9,5 @@ node_modules/
 .DS_Store
 engine/artifacts/*.pkl
 engine/artifacts/*.parquet
+.claude/worktrees/
+engine/artifacts/spotcheck.md
