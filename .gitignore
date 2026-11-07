@@ -1,0 +1,10 @@
+data/
+*.pdf
+.env
+.env.*
+__pycache__/
+.venv/
+node_modules/
+.next/
+.DS_Store
+engine/artifacts/*.pkl
