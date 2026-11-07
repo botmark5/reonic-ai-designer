@@ -270,6 +270,10 @@ def compute_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) ->
     m["pv_kwp_mae"] = float(err.abs().mean()) if err.notna().any() else None
     m["pv_kwp_within_1.5_pct"] = _rate((err.abs() <= 1.5).to_numpy())
     m["pv_n"], m["pv_n_missing_pred"] = int(pv.sum()), int(err.isna().sum())
+    # size error alone: projects where expert AND prediction include PV (separates "yes/no" from "how big")
+    both = pv & (pred.pv_kwp.astype(float).fillna(0) > 0).to_numpy()
+    e2 = (pred.pv_kwp.astype(float) - truth.pv_kwp)[both]
+    m["pv_kwp_mae_when_both_pv"] = float(e2.abs().mean()) if len(e2) else None
 
     # battery size (projects where the expert installed a battery)
     bat = truth.has_battery.to_numpy()
@@ -286,6 +290,9 @@ def compute_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) ->
         within.append(d <= 1)
     m["battery_within_one_step_pct"] = _rate(within)
     m["battery_n"], m["battery_n_missing_pred"] = int(bat.sum()), int(err.isna().sum())
+    both = bat & (p_kwh.fillna(0) > 0).to_numpy()
+    e2 = (p_kwh - truth.battery_kwh)[both]
+    m["battery_kwh_mae_when_both_battery"] = float(e2.abs().mean()) if len(e2) else None
 
     # variant-range hit rate (all projects; a single-option project's range is one point)
     pk = pred.pv_kwp.astype(float)

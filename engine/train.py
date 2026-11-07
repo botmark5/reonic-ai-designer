@@ -1,0 +1,71 @@
+"""
+engine/train.py - evaluate the design model honestly, then train the shipped model on all projects.
+
+    python -m engine.train            # uses Mark's expert_designs.parquet if present, else interim labels
+    python -m engine.train --rebuild  # re-parse the interim labels from data/raw
+
+Steps
+    1. labels (engine/labels or interim) + home inputs (data/raw) -> one row per project
+    2. engine/evaluate.run_evaluation: held-out 20 % (by project) + installer transfer, vs. baselines
+       -> engine/artifacts/eval_results.json   (served by GET /eval)
+    3. fit DesignModel on ALL projects -> engine/artifacts/design_model.joblib (served by the API)
+       The metrics in step 2 come from a model that never saw the test projects.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import time
+import warnings
+
+import pandas as pd
+
+from engine.evaluate import ARTIFACTS, build_eval_table, load_inputs, run_evaluation, summary_table
+from engine.interim_labels import build_catalogue, get_labels
+from engine.model import MODEL_PATH, DesignModel
+
+warnings.filterwarnings("ignore", message="X does not have valid feature names")
+
+HEADLINE = ["pv_kwp_mae", "pv_kwp_mae_when_both_pv", "pv_kwp_within_1.5_pct", "pv_variant_hit_tolerant_pct", "battery_kwh_mae",
+            "battery_kwh_mae_when_both_battery", "battery_within_one_step_pct", "battery_variant_hit_tolerant_pct", "has_pv_accuracy",
+            "has_battery_accuracy", "has_wallbox_accuracy", "has_heatpump_accuracy", "n_projects"]
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Evaluate and train the design model.")
+    ap.add_argument("--rebuild", action="store_true", help="re-parse interim labels from data/raw")
+    args = ap.parse_args(argv)
+    t0 = time.time()
+
+    labels, source = get_labels(rebuild=args.rebuild)
+    inputs = load_inputs()
+    catalogue = build_catalogue(labels)
+    (ARTIFACTS / "catalogue_used.json").write_text(json.dumps(catalogue, indent=2))
+    print(f"[labels] {source}: {len(labels)} options, {labels.project_id.nunique()} projects")
+
+    tidy, results = run_evaluation(labels, {DesignModel.name: DesignModel}, inputs=inputs,
+                                   catalogue={k: v["battery_kwh"] for k, v in catalogue.items()},
+                                   out_path=ARTIFACTS / "eval_results.json")
+    results["labels_source"] = source
+    (ARTIFACTS / "eval_results.json").write_text(json.dumps(results, indent=2, default=float))
+
+    pd.set_option("display.width", 200)
+    cols = [DesignModel.name, "baseline_band_median", "baseline_kwh_per_1000"]
+    print("\n=== held-out projects (never seen in training), all installers ===")
+    print(summary_table(tidy).loc[HEADLINE, cols].round(2).to_string())
+    for inst in sorted(labels.installer.unique()):
+        print(f"\n--- held-out, installer {inst} ---")
+        print(summary_table(tidy, installer=inst).loc[HEADLINE, cols].round(2).to_string())
+    for name in sorted(results["transfer"]):
+        print(f"\n=== transfer {name} (train on one installer, test on the other) ===")
+        tr = pd.DataFrame(results["transfer"][name]).loc[HEADLINE, cols]
+        print(tr.round(2).to_string())
+
+    model = DesignModel().fit(build_eval_table(labels, inputs))
+    model.labels_source_ = source
+    model.save(MODEL_PATH)
+    print(f"\n[saved] {MODEL_PATH} (trained on {model.n_train_} projects), eval_results.json  ({time.time() - t0:.0f}s)")
+
+
+if __name__ == "__main__":
+    main()
