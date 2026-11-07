@@ -43,8 +43,8 @@ The table shows mean PV error per home in kWp (lower is better). "Answered" mean
 
 Other results:
 - Asking about existing solar cuts PV error by 25 %, and the offer type is right for 95 % of homes instead of 83 %.
-- The expert's PV falls inside the engine's P10–P90 range for 80 % of homes, which is the target.
-- On battery and wallbox yes/no, the engine is only level with the best rule for new systems. It is better once the planner answers the existing-solar question, and slightly below without the answer.
+- The expert's PV falls inside the engine's P10–P90 range for 79–81 % of new full systems, against a target of 80 %.
+- On battery and wallbox yes/no, the engine is the same as the best rule for new systems. It is better once the planner answers the existing-solar question, and slightly below without the answer.
 
 Every number, its source and how to phrase it: [docs/pitch-facts.md](docs/pitch-facts.md).
 Before/after per improvement, everything we tried that did not help, and the error analysis: [engine/RESULTS.md](engine/RESULTS.md).
