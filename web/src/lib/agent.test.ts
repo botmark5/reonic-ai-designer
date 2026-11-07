@@ -42,3 +42,10 @@ describe("agent guards", () => {
     expect(allowedLockValues("battery", r, [], true).has(0)).toBe(true);
   });
 });
+
+describe("no new PV: the engine's PV range is ignored", () => {
+  it("offers no PV range ends as lock values when pv.include is false", () => {
+    const r = { design: { pv: { include: false, kwp: 0, range: [7.2, 11.25] } } } as unknown as Parameters<typeof allowedLockValues>[1];
+    expect([...allowedLockValues("pv", r, [], false)]).toEqual([]);
+  });
+});
