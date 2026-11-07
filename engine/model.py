@@ -2,7 +2,9 @@
 engine/model.py - the design model: decides like an installer's planner.
 
 Chain (decisions are coupled, like a planner thinks):
-    1. heat pump  RULE (physics.heatpump_recommendation)  - too few examples to learn
+    1. heat pump  OPTION, not a default: the rule (physics.heatpump_recommendation) decides whether a heat pump
+                  is OFFERED and which size; it is only included when the customer/planner chooses it (lock
+                  heatpump_kw). Experts added one in only 11 of 24 gas/oil homes, so it is a budget/needs choice.
     2. PV yes/no + kWp (+ P10/P90)                        - sees total demand incl. EV + new heat pump
     3. battery yes/no + catalogue size                    - sees the PV size decided in step 2
     4. wallbox yes/no                                     - EV features only (barely predictable otherwise)
@@ -111,9 +113,14 @@ class DesignModel:
         if rec["include"] and rec["kw"] is None:          # candidate, but heat demand unknown
             rec["kw"] = 10.0 if 10.0 in sizes else nearest(10, sizes)
             rec["reasons"].append(f"Using the most common size ({rec['kw']:g} kW) until the heat demand is known.")
-        # rule confidence: gas/oil homes got a heat pump in ~11 of 24 cases at installer 2a8ba8e2
+        # gas/oil homes got a heat pump in ~11 of 24 cases at installer 2a8ba8e2 -> a real choice, not a default
         conf = 0.5 if rec["include"] else 0.95
         return (rec["kw"] or 0.0) if rec["include"] else 0.0, rec["reasons"], conf
+
+    def heatpump_option(self, home: dict, installer: str) -> dict:
+        """Is a heat pump OFFERED for this home, and which size? (included only when chosen via the lock)"""
+        kw, reasons, _ = self._heatpump(pd.Series(home_to_row(home, installer)))
+        return dict(available=kw > 0, kw=kw or None, reasons=reasons)
 
     def _battery_proba(self, Xb: pd.DataFrame, installer: str) -> np.ndarray:
         """Battery size probabilities restricted to what THIS installer sells (snap to catalogue)."""
@@ -130,10 +137,8 @@ class DesignModel:
         """Full chain for a table of homes. locks apply to every row (used by propose for one home)."""
         locks = {k: v for k, v in (locks or {}).items() if v is not None}
         out = pd.DataFrame(index=homes.index)
-        hp = []
-        for _, r in homes.iterrows():
-            hp.append(float(locks["heatpump_kw"]) if "heatpump_kw" in locks else self._heatpump(r)[0])
-        out["heatpump_kw"] = hp
+        # heat pump only when chosen (lock); otherwise it is offered as an option by propose()/the API
+        out["heatpump_kw"] = float(locks.get("heatpump_kw", 0.0))
         X = build_features(homes, out.heatpump_kw.to_numpy(), self.installers_, self.offer_month_cap_)
         out["p_has_pv"] = self.has_pv_.predict_proba(X)[:, 1]
         out["pv_raw"] = self.pv_.predict(X)
@@ -198,13 +203,21 @@ class DesignModel:
         classes = self.battery_kwh_
         design, facts = {}, {"locks": locks, "installer": installer}
 
-        # heat pump
-        hp_kw, hp_reasons, hp_conf = self._heatpump(row.iloc[0])
-        if "heatpump_kw" in locks:
-            hp_reasons, hp_conf = [f"Fixed by the planner: {locks['heatpump_kw']:g} kW." if locks["heatpump_kw"]
-                                   else "Fixed by the planner: no heat pump."], 1.0
+        # heat pump: an option the customer chooses (budget / needs); included only when locked
+        option = self.heatpump_option(home, installer)
+        if locks.get("heatpump_kw"):
+            hp_reasons = [f"Chosen by the customer/planner: {locks['heatpump_kw']:g} kW."] + option["reasons"][1:]
+        elif "heatpump_kw" in locks:
+            hp_reasons = ["Not chosen: no heat pump in this design."]
+        elif option["available"]:
+            hp_reasons = [f"Optional: a {option['kw']:g} kW heat pump can replace the {home.get('heating')} heating. "
+                          "Not included by default; the customer decides based on budget and needs "
+                          "(experts added one in about half of similar homes)."] + option["reasons"][1:]
+        else:
+            hp_reasons = option["reasons"]
         design["heatpump"] = dict(include=bool(r.heatpump_kw > 0), kw=float(r.heatpump_kw) or None,
-                                  confidence=hp_conf, reasons=hp_reasons)
+                                  confidence=1.0 if "heatpump_kw" in locks else (0.5 if option["available"] else 0.95),
+                                  reasons=hp_reasons, option=option)
 
         # PV
         lo, hi = sorted([float(r.pv_p10), float(r.pv_p90)])
@@ -263,13 +276,12 @@ class DesignModel:
                      date_used=_fmt("offer_month", X.offer_month.iloc[0]))
         return dict(design=design, facts=facts)
 
-    def similar_homes(self, home: dict, installer: str, k: int = 5) -> pd.DataFrame:
+    def similar_homes(self, home: dict, installer: str, k: int = 5, heatpump_kw: float = 0.0) -> pd.DataFrame:
         """Closest past projects of the same installer: total demand (log) and EV status."""
         ref = self.reference_[self.reference_.installer == installer]
         if ref.empty:
             ref = self.reference_
-        hp_kw = self._heatpump(pd.Series(home_to_row(home, installer)))[0]
-        total = build_features(pd.DataFrame([home_to_row(home, installer)]), [hp_kw], self.installers_).total_demand_kwh.iloc[0]
+        total = build_features(pd.DataFrame([home_to_row(home, installer)]), [heatpump_kw], self.installers_).total_demand_kwh.iloc[0]
         total = total if total and total > 0 else 4500.0
         dist = np.abs(np.log(ref.total_demand_kwh.clip(lower=1) / total)) + 0.3 * (ref.has_ev.astype(bool) != bool(home.get("has_ev")))
         out = ref.assign(similarity=(1 / (1 + 3 * dist)).round(2)).loc[dist.nsmallest(k).index]
@@ -277,7 +289,7 @@ class DesignModel:
 
     def validate(self, home: dict, installer: str, design: dict, k: int = 40) -> list[dict]:
         """Where does a planner's design sit among the k most similar past projects? + physics checks."""
-        sim = self.similar_homes(home, installer, k=k)
+        sim = self.similar_homes(home, installer, k=k, heatpump_kw=float(design.get("heatpump_kw") or 0))
         flags = []
         for comp, key, unit, mask in [("pv", "pv_kwp", "kWp", sim.has_pv.astype(bool)),
                                       ("battery", "battery_kwh", "kWh", sim.has_battery.astype(bool))]:

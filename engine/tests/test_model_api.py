@@ -256,3 +256,65 @@ def test_api_explain_streams_text(client):
 def test_api_eval_missing(client, monkeypatch, tmp_path):
     monkeypatch.setattr(api, "ARTIFACTS", tmp_path)
     assert client.get("/eval").status_code == 404
+
+
+# ---------------------------------------------------------------- heat pump as a customer option
+@pytest.fixture
+def hp_model(trained):
+    """The synthetic installers sell no heat pumps; pretend instA does."""
+    import copy
+    model = copy.deepcopy(trained[0])
+    model.catalogue_["instA"] = {**model.catalogue_["instA"], "sells_heatpumps": True, "heatpump_kw": [5.0, 7.0, 10.0, 12.0]}
+    return model
+
+
+GAS_HOME = {"annual_kwh": 5000, "heating": "Gas", "heating_demand_kwh": 20000}
+
+
+def test_heatpump_is_offered_not_included(hp_model):
+    hp = hp_model.propose(GAS_HOME, "instA")["design"]["heatpump"]
+    assert hp["include"] is False and hp["kw"] is None
+    assert hp["option"]["available"] and hp["option"]["kw"] == 7.0
+    assert "Optional" in hp["reasons"][0]
+    assert hp_model.predict(pd.DataFrame([{"installer": "instA", **GAS_HOME}])).has_heatpump.iloc[0] == False  # noqa: E712
+
+
+def test_heatpump_chosen_raises_demand(hp_model):
+    base = hp_model.propose(GAS_HOME, "instA")
+    chosen = hp_model.propose(GAS_HOME, "instA", {"heatpump_kw": 7})
+    assert chosen["design"]["heatpump"]["include"] and chosen["design"]["heatpump"]["kw"] == 7
+    assert chosen["facts"]["total_demand_kwh"] == pytest.approx(base["facts"]["total_demand_kwh"] + 20000 / 3.5)
+
+
+def test_no_option_for_existing_heatpump_or_non_seller(hp_model):
+    assert not hp_model.propose({**GAS_HOME, "heating": "Heatpump"}, "instA")["design"]["heatpump"]["option"]["available"]
+    assert not hp_model.propose(GAS_HOME, "instB")["design"]["heatpump"]["option"]["available"]
+
+
+@pytest.fixture
+def hp_client(hp_model, monkeypatch, no_claude):
+    monkeypatch.setattr(api, "get_model", lambda: hp_model)
+    return TestClient(api.app)
+
+
+def test_api_heatpump_with_and_without(hp_client):
+    body = hp_client.post("/design", json={"installer": "instA", "home": GAS_HOME}).json()
+    opt = body["options"]["heatpump"]
+    assert opt["available"] and opt["included"] is False and opt["kw"] == 7
+    assert opt["with_heatpump"]["heatpump_kw"] == 7 and opt["without_heatpump"]["heatpump_kw"] is None
+    assert opt["difference"]["extra_investment_eur"] > 0
+    assert opt["with_heatpump"]["load_kwh"] > opt["without_heatpump"]["load_kwh"]
+    chosen = hp_client.post("/design", json={"installer": "instA", "home": GAS_HOME, "locks": {"heatpump_kw": 7}}).json()
+    assert chosen["design"]["heatpump"]["include"] and chosen["options"]["heatpump"]["included"]
+
+
+def test_api_refine_customer_wants_heatpump(hp_client):
+    r = hp_client.post("/refine", json={"text": "The customer wants a heat pump", "installer": "instA", "home": GAS_HOME}).json()
+    assert r["locks"]["heatpump_kw"] == 7 and r["design"]["design"]["heatpump"]["include"]
+    r = hp_client.post("/refine", json={"text": "no heat pump", "installer": "instA", "home": GAS_HOME,
+                                        "locks": {"heatpump_kw": 7}}).json()
+    assert r["locks"]["heatpump_kw"] == 0 and not r["design"]["design"]["heatpump"]["include"]
+
+
+def test_api_no_option_for_non_seller(client):
+    assert client.post("/design", json={"installer": "instA", "home": GAS_HOME}).json()["options"]["heatpump"]["available"] is False

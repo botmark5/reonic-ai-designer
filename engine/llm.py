@@ -63,7 +63,9 @@ class LockChanges(BaseModel):
     pv_kwp: Optional[float] = Field(description="PV size in kWp the planner fixes; 0 = no PV")
     battery_kwh: Optional[float] = Field(description="battery size in kWh the planner fixes; 0 = no battery")
     wallbox: Optional[bool] = Field(description="true/false if the planner explicitly wants / does not want a wallbox")
-    heatpump_kw: Optional[float] = Field(description="heat pump size in kW the planner fixes; 0 = no heat pump")
+    heatpump_kw: Optional[float] = Field(description="heat pump size in kW, ONLY if the note states a size; 0 = no heat pump")
+    want_heatpump: Optional[bool] = Field(description="true if the customer wants a heat pump (size chosen by the engine), "
+                                                      "false if they do not want one")
 
 
 class RefineResult(BaseModel):
@@ -77,6 +79,8 @@ Rules:
 - Only fill fields the note states or clearly implies. Everything else is null.
 - home_changes are facts about the household (consumption, electric car, heating, household type).
 - lock_changes are ONLY for components the planner explicitly fixes or removes ("make it 10 kWp", "no battery").
+- A heat pump is an option the customer chooses: "they want a heat pump" -> want_heatpump = true;
+  "no heat pump" -> want_heatpump = false. Only set heatpump_kw if a size in kW is stated.
   Never invent a component size yourself; the engine sizes everything that is not locked.
 - "buying an electric car" / "getting an EV next year" -> has_ev = true (leave ev_km_year null unless a distance is given).
 - load_profile only when the note explicitly describes who lives there or who is home during the day
@@ -165,6 +169,10 @@ def rule_refine(text: str) -> dict:
         v = m.group(1) or m.group(4)
         locks["battery_kwh"] = _f(v)
         said.append(f"battery fixed at {v} kWh")
+    no_hp = re.search(r"(no|without|kein|ohne|don't want|doesn't want|not)\s+(a\s+)?(heat ?pump|wärmepumpe)", t)
+    if not no_hp and re.search(r"\b(add|with|wants?|include|mit|plus)\b[^.]*(heat ?pump|wärmepumpe)", t):
+        locks["want_heatpump"] = True
+        said.append("heat pump wanted")
     if re.search(r"(no|without|kein|ohne)\s+(heat ?pump|wärmepumpe)", t):
         locks["heatpump_kw"] = 0.0
         said.append("no heat pump")
@@ -187,12 +195,13 @@ def rule_refine(text: str) -> dict:
 EXPLAIN_SYSTEM = {
     "planner": """You explain a home energy design proposed by an engine to an installer's planner.
 Use ONLY the facts in the JSON. Never change, add or recommend component sizes that are not in it
-(alternatives listed in the JSON may be mentioned as alternatives). Be concise: at most 6 short bullet points,
-one per component plus physics/economics. Mention confidence and anything flagged as unusual. No preamble.""",
+(alternatives listed in the JSON may be mentioned as alternatives). Be concise: at most 7 short bullet points,
+one per component plus physics/economics, plus the heat pump option (options.heatpump) if one is offered. Mention confidence and anything flagged as unusual. No preamble.""",
     "homeowner": """You explain an energy system offer to a homeowner with no technical background.
 Use ONLY the facts in the JSON. Never change, add or recommend component sizes that are not in it.
 Plain words, no jargon (say "share of your electricity from your own roof" instead of "autarky").
-At most 150 words: what they get, why it fits their home, what it saves, and one honest caveat. No preamble.""",
+At most 150 words: what they get, why it fits their home, what it saves, and one honest caveat. If a heat pump
+is offered as an option (options.heatpump), explain the choice neutrally with its extra cost and savings. No preamble.""",
 }
 
 
@@ -235,7 +244,7 @@ def explain_stream(design_response: dict, audience: str = "planner", language: s
 
 def _facts(resp: dict) -> dict:
     """Only what the explanation needs (keeps the prompt small and free of internals)."""
-    keys = ("design", "physics", "economics", "facts_for_explanation", "warnings")
+    keys = ("design", "physics", "economics", "options", "facts_for_explanation", "warnings")
     return {k: resp[k] for k in keys if k in resp}
 
 
@@ -259,6 +268,12 @@ def template_explanation(resp: dict, audience: str = "planner") -> str:
     if eco.get("payback_years"):
         lines.append(f"- Economics (placeholder prices): about {eco['savings_first_year_eur']:,.0f} EUR saved in the first year, "
                      f"payback after about {eco['payback_years']:.0f} years.")
+    hp = resp.get("options", {}).get("heatpump", {})
+    if hp.get("available") and not hp.get("included"):
+        diff = hp["difference"]
+        lines.append(f"- Option: a {hp['kw']:g} kW heat pump instead of the current heating would cost about "
+                     f"{diff['extra_investment_eur']:,.0f} EUR more and change yearly savings by "
+                     f"{diff['extra_savings_per_year_eur']:+,.0f} EUR (placeholder prices).")
     for w in ph.get("warnings", []):
         lines.append(f"- Check: {w}")
     if audience == "homeowner":

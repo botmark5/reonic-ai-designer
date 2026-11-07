@@ -4,7 +4,7 @@ engine/api.py - the HTTP API the website talks to (contract: docs/api.md).
     .venv\\Scripts\\uvicorn engine.api:app --reload --port 8000      ->  http://localhost:8000/docs
 
 Endpoints
-    POST /design    complete design + physics + economics + similar homes + facts for the explanation
+    POST /design    complete design + physics + economics + heat pump option (with/without) + similar homes
     POST /validate  where a planner's design sits among similar homes + physics sanity flags
     POST /refine    planner text -> input changes (Claude Haiku or keyword fallback) -> new /design
     POST /explain   streamed plain-language explanation (Claude Sonnet or template fallback)
@@ -166,19 +166,55 @@ def installers():
     return {i: model.catalogue_.get(i, {}) for i in model.installers_}
 
 
+def _evaluate_design(home: dict, d: dict):
+    """Physics + economics for a proposed design."""
+    system = physics.System(pv_kwp=d["pv"]["kwp"] or 0.0, battery_kwh=d["battery"]["kwh"] or 0.0,
+                            heatpump_kw=d["heatpump"]["kw"] or 0.0, wallbox=d["wallbox"]["include"])
+    ph_home = home_to_physics(home)
+    sim = physics.simulate(ph_home, system)
+    return sim, physics.sanity_flags(ph_home, system, sim), physics.economics(ph_home, system, sim)
+
+
+def _variant_summary(d: dict, sim, eco) -> dict:
+    return dict(pv_kwp=d["pv"]["kwp"], battery_kwh=d["battery"]["kwh"], heatpump_kw=d["heatpump"]["kw"],
+                capex_total_eur=round(eco["capex_total_eur"]), savings_first_year_eur=round(eco["savings_first_year_eur"]),
+                heating_savings_eur=round(eco["savings_breakdown_eur"]["heating"]),
+                payback_years=None if eco["payback_years"] is None else round(eco["payback_years"], 1),
+                net_benefit_lifetime_eur=round(eco["net_benefit_lifetime_eur"]),
+                autarky=round(sim.autarky, 3), load_kwh=round(sim.load_kwh))
+
+
+def heatpump_choice(installer: str, home: dict, locks: dict, base_design: dict, base_sim, base_eco) -> dict:
+    """The heat pump as a customer choice: the full design WITH and WITHOUT it, side by side."""
+    model = get_model()
+    option = base_design["heatpump"]["option"]
+    if not option["available"]:
+        return dict(available=False, reasons=option["reasons"])
+    included = bool(base_design["heatpump"]["include"])
+    other_locks = {**locks, "heatpump_kw": 0.0 if included else option["kw"]}
+    other = model.propose(home, installer, other_locks)["design"]
+    o_sim, _, o_eco = _evaluate_design(home, other)
+    if included:
+        with_, without = (base_design, base_sim, base_eco), (other, o_sim, o_eco)
+    else:
+        with_, without = (other, o_sim, o_eco), (base_design, base_sim, base_eco)
+    w, wo = _variant_summary(*with_), _variant_summary(*without)
+    return dict(available=True, included=included, kw=option["kw"], reasons=option["reasons"],
+                with_heatpump=w, without_heatpump=wo,
+                difference=dict(extra_investment_eur=w["capex_total_eur"] - wo["capex_total_eur"],
+                                extra_savings_per_year_eur=w["savings_first_year_eur"] - wo["savings_first_year_eur"],
+                                extra_net_benefit_lifetime_eur=w["net_benefit_lifetime_eur"] - wo["net_benefit_lifetime_eur"]),
+                how_to_choose="Send locks.heatpump_kw = kw to include it, 0 to exclude it.")
+
+
 def design_response(installer: str, home: dict, locks: dict) -> dict:
     """The /design logic, reused by /refine and /project."""
     model = get_model()
     _check_installer(model, installer)
     proposal = model.propose(home, installer, locks)
     d = proposal["design"]
-    system = physics.System(pv_kwp=d["pv"]["kwp"] or 0.0, battery_kwh=d["battery"]["kwh"] or 0.0,
-                            heatpump_kw=d["heatpump"]["kw"] or 0.0, wallbox=d["wallbox"]["include"])
-    ph_home = home_to_physics(home)
-    sim = physics.simulate(ph_home, system)
-    flags = physics.sanity_flags(ph_home, system, sim)
-    eco = physics.economics(ph_home, system, sim)
-    similar = model.similar_homes(home, installer, k=5)
+    sim, flags, eco = _evaluate_design(home, d)
+    similar = model.similar_homes(home, installer, k=5, heatpump_kw=d["heatpump"]["kw"] or 0.0)
     return _py(dict(
         design=d,
         physics=dict(yield_kwh=round(sim.yield_kwh), self_consumption=round(sim.self_consumption, 3),
@@ -189,6 +225,7 @@ def design_response(installer: str, home: dict, locks: dict) -> dict:
         economics=dict(capex_total_eur=round(eco["capex_total_eur"]), savings_first_year_eur=round(eco["savings_first_year_eur"]),
                        payback_years=None if eco["payback_years"] is None else round(eco["payback_years"], 1),
                        savings_lifetime_eur=round(eco["savings_lifetime_eur"]), assumptions=eco["assumptions"]),
+        options=dict(heatpump=heatpump_choice(installer, home, locks, d, sim, eco)),
         similar_homes=[dict(project_id=r.project_id, annual_kwh=r.annual_kwh, pv_kwp=round(r.pv_kwp, 2),
                             battery_kwh=r.battery_kwh, similarity=r.similarity) for r in similar.itertuples()],
         facts_for_explanation={**proposal["facts"], "home": home,
@@ -216,7 +253,13 @@ def refine(req: RefineRequest):
     home, locks = req.home.model_dump(), req.locks.model_dump()
     parsed = llm.refine(req.text, home)
     home.update(parsed["home_changes"])
-    locks.update(parsed["lock_changes"])
+    lock_changes = dict(parsed["lock_changes"])
+    want_hp = lock_changes.pop("want_heatpump", None)          # "add a heat pump" -> the offered size
+    if want_hp is not None and "heatpump_kw" not in lock_changes:
+        option = model.heatpump_option(home, installer)
+        lock_changes["heatpump_kw"] = (option["kw"] or 0.0) if want_hp else 0.0
+    locks.update(lock_changes)
+    parsed["lock_changes"] = lock_changes
     return dict(changes={**parsed["home_changes"], **parsed["lock_changes"]}, summary=parsed["summary"],
                 parsed_by=parsed["source"], home=home, locks=locks, design=design_response(installer, home, locks))
 

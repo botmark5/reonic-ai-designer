@@ -31,7 +31,11 @@ If `engine/artifacts/design_model.joblib` is missing, the API trains a model on 
 | `config/economics.toml` | price assumptions (all placeholders) |
 
 ## How a design is made
-1. **Heat pump (rule):** gas/oil heating and the installer sells heat pumps → heat demand / 2,450 h, snapped to a catalogue size. Never if a heat pump exists.
+1. **Heat pump = customer option:** if the home heats with gas/oil and the installer sells heat pumps, a heat pump is
+   OFFERED (heat demand / 2,450 h, snapped to a catalogue size) but not included by default; the customer chooses based
+   on budget and needs. `/design` returns `options.heatpump` with the full design **with and without** it (PV/battery
+   re-sized, extra investment, extra yearly savings, lifetime benefit, autarky). Choose it with `locks.heatpump_kw = kw`
+   (or `/refine` "the customer wants a heat pump"). Never offered if a heat pump already exists.
 2. **Total demand (physics):** household + EV (km/100 × 18 kWh) + new heat pump (heat / SCOP 3.5).
 3. **PV:** yes/no classifier; size from a Huber regressor with monotonic constraints (more demand or an EV never shrinks the PV); P10–P90 range; snapped to whole 450 W modules.
 4. **Battery:** yes/no + size class, both seeing the planned PV; probabilities restricted to the installer's catalogue.
@@ -42,8 +46,8 @@ If `engine/artifacts/design_model.joblib` is missing, the API trains a model on 
 ## Results (held-out 20 %, 319 projects never seen in training; interim labels)
 | metric | model | band median | kWp = kWh/1000 |
 |---|---|---|---|
-| PV kWp MAE, end to end | 2.92 | **2.67** | 4.80 |
-| PV kWp MAE, where both have PV | **2.56** | 2.67 | 4.74 |
+| PV kWp MAE, end to end | 2.90 | **2.67** | 4.80 |
+| PV kWp MAE, where both have PV | **2.53** | 2.67 | 4.74 |
 | PV inside the variant range ± 1 kWp | **40 %** | 30 % | 11 % |
 | battery kWh MAE, where both have one | **2.43** | 2.66 | 3.04 |
 | battery within one catalogue step | **62 %** | 58 % | 43 % |
@@ -51,7 +55,7 @@ If `engine/artifacts/design_model.joblib` is missing, the API trains a model on 
 | PV yes/no accuracy | **89 %** | 81 % | 81 % |
 | battery yes/no accuracy | 87 % | **88 %** | 88 % |
 | wallbox yes/no accuracy | 78 % | 78 % | 78 % |
-| heat pump yes/no accuracy | 98 % | **99 %** | 99 % |
+| heat pump yes/no accuracy | 99 % | 99 % | 99 % |
 
 Installer transfer (train on one, test on the other), PV MAE where both have PV: 2.99 vs 3.06 (A→B) and
 2.88 vs 3.53 (B→A) for model vs band median.
@@ -60,11 +64,11 @@ Installer transfer (train on one, test on the other), PV MAE where both have PV:
 - **Labels are interim** (my parser) until engine/labels lands; PV for installer 2a8ba8e2 is panel count × an assumed 450 W.
 - **PV size is barely predictable beyond consumption bands** (CV: 2.60 vs 2.69 kWp). The data has no roof size/orientation, which probably drives the expert choice.
 - **End-to-end PV MAE loses to the baseline**: about 17 of 257 test projects are wrongly predicted "no PV" (battery-only retrofits are hard to tell apart).
-- **Wallbox ≈ coin flip** without EV information. **Heat pump rule** proposes one for every gas/oil home; experts did so in 11 of 24 cases.
+- **Wallbox ≈ coin flip** without EV information. **Heat pump** is offered (not chosen) for gas/oil homes; experts added one in 11 of 24 cases.
 - **Time trend:** new projects use a date capped at the 90th percentile of training dates (~Mar 2026), because the last month is an unusual batch of battery-only retrofits.
 - **Economics use placeholder prices.**
 
 ## API additions vs docs/api.md v0 (all optional, nothing removed)
-`economics` block; `physics.flags/assumptions/load_kwh/...`; `battery.alternatives`; `installer` and
+`economics` block; `options.heatpump` (with/without comparison); `heatpump.option`; `physics.flags/assumptions/load_kwh/...`; `battery.alternatives`; `installer` and
 `offer_date`/`orientation_deg`/`tilt_deg`/`existing_wallbox` as optional request fields; `/installers`, `/health`.
 `/refine` returns `{changes, summary, parsed_by, home, locks, design}`.
