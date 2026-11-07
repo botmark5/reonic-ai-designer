@@ -81,3 +81,8 @@ So a host that builds straight from the GitHub repo will not work out of the box
 2. **Demo from this laptop through a tunnel** (`cloudflared tunnel --url http://localhost:8000`): no data leaves the
    machine, but the laptop must stay on.
 Then set `NEXT_PUBLIC_ENGINE_URL` in the web app (Vercel) to the engine URL.
+
+**Access key:** when the engine is reachable from outside, start it with `ENGINE_API_KEY=<random>`; every request
+(except `/health`) must then send `X-Engine-Key: <key>`. In the web app, call the engine from a Next.js server route
+(`app/api/.../route.ts`) and keep the key in a server-side env var (`ENGINE_API_KEY`, no `NEXT_PUBLIC_` prefix),
+so the browser never sees it.

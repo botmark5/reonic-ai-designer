@@ -318,3 +318,15 @@ def test_api_refine_customer_wants_heatpump(hp_client):
 
 def test_api_no_option_for_non_seller(client):
     assert client.post("/design", json={"installer": "instA", "home": GAS_HOME}).json()["options"]["heatpump"]["available"] is False
+
+
+# ---------------------------------------------------------------- access key
+def test_api_key_required_when_set(client, monkeypatch):
+    payload = {"installer": "instA", "home": {"annual_kwh": 4500}}
+    assert client.post("/design", json=payload).status_code == 200          # no key configured: open
+    monkeypatch.setenv("ENGINE_API_KEY", "s3cret")
+    assert client.post("/design", json=payload).status_code == 401
+    assert client.post("/design", json=payload, headers={"X-Engine-Key": "wrong"}).status_code == 401
+    assert client.post("/design", json=payload, headers={"X-Engine-Key": "s3cret"}).status_code == 200
+    assert client.get("/health").status_code == 200                          # health stays open
+    assert client.get("/installers").status_code == 401
