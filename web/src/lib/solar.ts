@@ -33,11 +33,35 @@ export interface SolarOptions {
 }
 
 const DAY_MS = 24 * 3600 * 1000;
-const FAIL_MS = 10 * 60 * 1000;
-const cache = new Map<string, { at: number; ttl: number; value: SolarResult }>();
+const MAX_CACHE = 500;
+const cache = new Map<string, { at: number; value: SolarResult }>();
 
 export function clearSolarCache() {
   cache.clear();
+  buckets.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Tiny in-memory rate limit (per server instance) for public endpoints that spend API credit.
+// ---------------------------------------------------------------------------
+const buckets = new Map<string, { start: number; n: number }>();
+
+/** Client identity for rate limiting: first X-Forwarded-For / CF-Connecting-IP entry. */
+export function clientKey(req: Request): string {
+  return (req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0] ?? "local").trim();
+}
+
+/** Fixed window: at most `limit` requests per `windowMs` per bucket+key. */
+export function allowRequest(bucket: string, key: string, limit: number, windowMs: number, now = Date.now()): boolean {
+  const k = `${bucket}:${key}`;
+  const b = buckets.get(k);
+  if (!b || now - b.start >= windowMs) {
+    if (buckets.size > 5000) buckets.clear();
+    buckets.set(k, { start: now, n: 1 });
+    return true;
+  }
+  b.n += 1;
+  return b.n <= limit;
 }
 
 const cacheKey = (address: string) => address.trim().toLowerCase().replace(/\s+/g, " ").replace(/\s*,\s*/g, ",");
@@ -47,7 +71,7 @@ export async function lookupSolar(address: string, opts: SolarOptions = {}): Pro
   if (!key) return { status: "no_key", reason: "GOOGLE_MAPS_API_KEY is not set." };
   const k = cacheKey(address);
   const hit = cache.get(k);
-  if (hit && Date.now() - hit.at < hit.ttl) return hit.value;
+  if (hit && Date.now() - hit.at < DAY_MS) return hit.value;
 
   let value: SolarResult;
   try {
@@ -56,7 +80,11 @@ export async function lookupSolar(address: string, opts: SolarOptions = {}): Pro
     if (opts.signal?.aborted) return { status: "error", reason: "Timed out." };
     value = { status: "error", reason: e instanceof Error ? e.message : "Solar lookup failed." };
   }
-  cache.set(k, { at: Date.now(), ttl: value.status === "ok" ? DAY_MS : FAIL_MS, value });
+  // Cache answers about the building, never transient errors (a blip must not hide the roof for long).
+  if (value.status === "ok" || value.status === "not_covered" || value.status === "not_found") {
+    if (cache.size >= MAX_CACHE) cache.delete(cache.keys().next().value as string);
+    cache.set(k, { at: Date.now(), value });
+  }
   return value;
 }
 
@@ -100,16 +128,24 @@ async function fetchSolar(address: string, key: string, f: typeof fetch, signal?
   };
 }
 
-/** Orientation and tilt of the largest roof face (whole degrees), or null. */
+const offSouth = (az: number) => Math.abs((((az - 180) % 360) + 540) % 360 - 180);
+
+/** The face an installer would use: among faces with ≥ 70 % of the largest area, the one closest to south
+ *  (on a symmetric gable roof the north face must not win). Whole degrees, or null. */
 export function roofFromSolar(s: SolarResult): { orientation_deg: number; tilt_deg: number } | null {
   if (s.status !== "ok" || !s.segments.length) return null;
-  const big = s.segments.reduce((a, b) => (b.area_m2 > a.area_m2 ? b : a));
-  return { orientation_deg: Math.round(big.azimuth_deg) % 360, tilt_deg: Math.round(big.pitch_deg) };
+  const maxArea = Math.max(...s.segments.map((x) => x.area_m2));
+  const best = s.segments
+    .filter((x) => x.area_m2 >= 0.7 * maxArea)
+    .reduce((a, b) => (offSouth(b.azimuth_deg) < offSouth(a.azimuth_deg) ? b : a));
+  return { orientation_deg: Math.round(best.azimuth_deg) % 360, tilt_deg: Math.round(best.pitch_deg) };
 }
 
 /** GET /api/solar?address=… — always 200 with a SolarResult, 400 only without an address. */
 export async function handleSolarRequest(req: Request, opts: SolarOptions = {}): Promise<Response> {
   const address = new URL(req.url).searchParams.get("address")?.trim();
   if (!address) return Response.json({ error: "address is required" }, { status: 400 });
+  if (address.length > 300) return Response.json({ error: "address too long" }, { status: 400 });
+  if (!allowRequest("solar", clientKey(req), 20, 60_000)) return Response.json({ error: "too many requests" }, { status: 429 });
   return Response.json(await lookupSolar(address, opts));
 }

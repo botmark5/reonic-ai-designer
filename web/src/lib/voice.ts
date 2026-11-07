@@ -12,7 +12,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { DEFAULT_INSTALLER, engine, engineUrl } from "./engine";
-import { lookupSolar, roofFromSolar, type SolarResult } from "./solar";
+import { allowRequest, clientKey, lookupSolar, roofFromSolar, type SolarResult } from "./solar";
 import { getServerSupabase, type TranscriptTurn } from "./supabase";
 import { EMPTY_LOCKS, type DesignRequest, type DesignResponse, type Home, type Locks } from "./types";
 
@@ -26,8 +26,10 @@ const HOUSEHOLD_KWH_5PLUS = 5000;
 const DEFAULT_KWH = 4000;
 const CREATE_BUDGET_MS = 2500; // the agent must be able to speak within ~3 s
 const SOLAR_BUDGET_MS = 900;
-const RETRY_ENGINE_MS = 20000;
-const RETRY_GAP_MS = 8000; // B's engine client cools down for 15 s after an outage
+const POSTCALL_BUDGET_MS = 8000;
+/** After create-design answered "pending": wait for the slow engine call, then retry once after the engine client's
+ *  15 s outage cool-down (engine.ts COOLDOWN_MS). Routes set maxDuration = 60. */
+export const LATE_TIMING = { lateMs: 10000, retryAfterMs: 16000, retryMs: 8000 };
 const SIGNATURE_TOLERANCE_S = 30 * 60;
 const EXPLAIN_MODEL = "claude-sonnet-5-5";
 
@@ -241,7 +243,8 @@ export interface CallPatch {
 export interface VoiceStore {
   /** Insert, or update the row with the same conversation_id. Returns the call id, or null if not stored. */
   saveCall(p: CallPatch): Promise<string | null>;
-  insertDesign(row: { call_id: string | null; home: Home; locks: Locks; design: DesignResponse }): Promise<string | null>;
+  /** One voice draft per call: updates the call's existing draft (still status 'draft'), else inserts. Returns its id. */
+  saveDesign(row: { call_id: string | null; home: Home; locks: Locks; design: DesignResponse }): Promise<string | null>;
   callHasDesign(callId: string): Promise<boolean>;
   getDesign(id: string): Promise<DesignResponse | null>;
 }
@@ -255,7 +258,7 @@ export const nullStore: VoiceStore = {
     warnedNoDb = true;
     return null;
   },
-  insertDesign: async () => null,
+  saveDesign: async () => null,
   callHasDesign: async () => false,
   getDesign: async () => null,
 };
@@ -298,14 +301,36 @@ export function supabaseStore(db: SupabaseClient): VoiceStore {
 
   return {
     saveCall: (p) => saveCall(p),
-    async insertDesign(row) {
-      const { data, error } = await db
-        .from("designs")
-        .insert({ ...row, source: "voice", status: "draft", explanation: null })
-        .select("id")
-        .single();
-      if (error) log(`designs insert failed: ${error.message}`);
-      return (data?.id as string | undefined) ?? null;
+    async saveDesign(row) {
+      const save = async (retried: boolean): Promise<string | null> => {
+        if (row.call_id) {
+          const { data: existing } = await db
+            .from("designs").select("id, status").eq("call_id", row.call_id).eq("source", "voice").limit(1).maybeSingle();
+          if (existing) {
+            if (existing.status !== "draft") {
+              log("voice draft already picked up by a planner: not overwritten");
+              return existing.id as string;
+            }
+            const { error } = await db.from("designs").update({ home: row.home, locks: row.locks, design: row.design }).eq("id", existing.id);
+            if (error) log(`designs update failed: ${error.message}`);
+            return existing.id as string;
+          }
+        }
+        const { data, error } = await db
+          .from("designs")
+          .insert({ ...row, source: "voice", status: "draft", explanation: null })
+          .select("id")
+          .single();
+        if (error?.code === "23505" && !retried) return save(true); // another path inserted it first: update that one
+        if (error) log(`designs insert failed: ${error.message}`);
+        return (data?.id as string | undefined) ?? null;
+      };
+      try {
+        return await save(false);
+      } catch (e) {
+        log(`designs write failed: ${e instanceof Error ? e.message : "unknown error"}`);
+        return null;
+      }
     },
     async callHasDesign(callId) {
       const { data } = await db.from("designs").select("id").eq("call_id", callId).limit(1);
@@ -334,8 +359,11 @@ export interface VoiceDeps {
   elevenLabsKey?: string;
   voiceId?: string;
   ttsEnabled: boolean;
+  /** Accept a client-sent design_response in /explain (dev only: in production only stored designs are explained). */
+  allowInlineDesign: boolean;
   fetch: typeof fetch;
   now: () => number; // ms
+  timing?: typeof LATE_TIMING;
 }
 
 export function voiceDeps(defer: VoiceDeps["defer"]): VoiceDeps {
@@ -359,6 +387,7 @@ export function voiceDeps(defer: VoiceDeps["defer"]): VoiceDeps {
     elevenLabsKey: env.ELEVENLABS_API_KEY,
     voiceId: env.ELEVENLABS_VOICE_ID,
     ttsEnabled: env.VOICE_TTS_ENABLED === "true",
+    allowInlineDesign: env.NODE_ENV !== "production",
     fetch: (...args) => fetch(...args),
     now: () => Date.now(),
   };
@@ -414,31 +443,34 @@ export async function createDraftFromFacts(
 
   const req: DesignRequest = { installer: deps.installer, home, locks: EMPTY_LOCKS };
   const left = Math.max(250, opts.budgetMs - (deps.now() - t0));
-  const design = await withTimeout(deps.design(req), left, "engine");
-
-  const callId = await deps.store.saveCall({
-    conversation_id: facts.conversation_id,
-    status: opts.callStatus,
-    customer_name: facts.customer_name ?? undefined,
-    address: facts.address ?? undefined,
-    facts: { ...home, voice: facts, assumptions, solar },
-  });
+  const engineCall = deps.design(req);
+  engineCall.catch(() => {}); // a late rejection is handled below; never unhandled
+  // Store the call while the engine works (keeps the answer inside the ~3 s budget).
+  const [design, callId] = await Promise.all([
+    withTimeout(engineCall, left, "engine"),
+    deps.store.saveCall({
+      conversation_id: facts.conversation_id,
+      status: opts.callStatus,
+      customer_name: facts.customer_name ?? undefined,
+      address: facts.address ?? undefined,
+      facts: { ...home, voice: facts, assumptions, solar },
+    }),
+  ]);
 
   if (design) {
-    const designId = await deps.store.insertDesign({ call_id: callId, home, locks: EMPTY_LOCKS, design });
+    const designId = await deps.store.saveDesign({ call_id: callId, home, locks: EMPTY_LOCKS, design });
     return { ...toolInstruction(design), call_id: callId, design_id: designId, pending: false };
   }
 
+  const timing = deps.timing ?? LATE_TIMING;
   deps.defer(async () => {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt) await new Promise((r) => setTimeout(r, RETRY_GAP_MS));
-      const late = await withTimeout(deps.design(req), RETRY_GAP_MS, `engine retry ${attempt + 1}`);
-      if (late) {
-        await deps.store.insertDesign({ call_id: callId, home, locks: EMPTY_LOCKS, design: late });
-        return;
-      }
+    let late = await withTimeout(engineCall, timing.lateMs, "engine (late answer)");
+    if (!late) {
+      await new Promise((r) => setTimeout(r, timing.retryAfterMs));
+      late = await withTimeout(deps.design(req), timing.retryMs, "engine retry");
     }
-    log("engine still unavailable: call stored without a design");
+    if (late) await deps.store.saveDesign({ call_id: callId, home, locks: EMPTY_LOCKS, design: late });
+    else log("engine still unavailable: call stored without a design");
   });
   return { ...toolInstruction(null), call_id: callId, design_id: null, pending: true };
 }
@@ -533,7 +565,7 @@ export async function handlePostCall(req: Request, deps: VoiceDeps): Promise<Res
   if (callId && hasUsageFacts(collected)) {
     deps.defer(async () => {
       if (await deps.store.callHasDesign(callId)) return;
-      await createDraftFromFacts({ ...collected, conversation_id: conversationId }, deps, { budgetMs: RETRY_ENGINE_MS, callStatus: status });
+      await createDraftFromFacts({ ...collected, conversation_id: conversationId }, deps, { budgetMs: POSTCALL_BUDGET_MS, callStatus: status });
     });
   }
   log(`post-call stored (${status})`);
@@ -644,6 +676,8 @@ export async function speak(text: string, deps: VoiceDeps): Promise<ArrayBuffer>
 }
 
 export async function handleExplain(req: Request, deps: VoiceDeps): Promise<Response> {
+  // Public endpoint that spends Anthropic (and later ElevenLabs) credit: limit per client.
+  if (!allowRequest("explain", clientKey(req), 10, 60_000)) return Response.json({ error: "too many requests" }, { status: 429 });
   let body: { design_id?: unknown; design_response?: DesignResponse; language?: unknown; audio?: unknown };
   try {
     body = await req.json();
@@ -651,9 +685,11 @@ export async function handleExplain(req: Request, deps: VoiceDeps): Promise<Resp
     return Response.json({ error: "invalid json" }, { status: 400 });
   }
   const designId = parseText(body?.design_id);
-  const d = body?.design_response ?? (designId ? await deps.store.getDesign(designId) : null);
+  // Only stored (engine-made) designs in production, so nobody can make the offer voice read arbitrary text.
+  const inline = deps.allowInlineDesign ? body?.design_response : undefined;
+  const d = inline ?? (designId ? await deps.store.getDesign(designId) : null);
   if (!d && designId) return Response.json({ error: "design not found" }, { status: 404 });
-  if (!d?.design?.pv) return Response.json({ error: "design_id or design_response is required" }, { status: 400 });
+  if (!d?.design?.pv) return Response.json({ error: "design_id is required" }, { status: 400 });
 
   const lang: Lang = body.language === "de" ? "de" : "en";
   const { text, by } = await offerScript(d, lang, deps);

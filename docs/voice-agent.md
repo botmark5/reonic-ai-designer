@@ -26,13 +26,18 @@ See docs/rosi-notes.md for the pitfalls (raw-body HMAC, null → '', defaults fo
 ## Endpoints (session D, `web/src/app/api/{voice,solar}`, logic in `web/src/lib/{voice,solar}.ts`)
 | Endpoint | Auth | What it does |
 |---|---|---|
-| `POST /api/voice/create-design` | `x-agent-token` (or `Authorization: Bearer`) = `ELEVENLABS_TOOL_SECRET` | Normalises the facts (bill → kWh at 0.35 €/kWh, household-size estimate, heating/roof vocab), fills a missing roof orientation/tilt from Google Solar (≤ 0.9 s), calls the engine (budget 2.5 s), writes `calls` (status `live`) + `designs` (source `voice`, status `draft`), returns `{ instruction, call_id, design_id, pending }`. Engine slow or down → `pending: true`, "in the inbox in a minute", the design is finished after the response (3 tries, 8 s apart). Never stores the engine client's offline estimate as a voice draft. |
+| `POST /api/voice/create-design` | `x-agent-token` (or `Authorization: Bearer`) = `ELEVENLABS_TOOL_SECRET` | Normalises the facts (bill → kWh at 0.35 €/kWh, household-size estimate, heating/roof vocab), fills a missing roof orientation/tilt from Google Solar (≤ 0.9 s), calls the engine (budget 2.5 s), writes `calls` (status `live`, in parallel with the engine) + ONE `designs` row per call (source `voice`, status `draft`; a second tool call updates it while it is still a draft), returns `{ instruction, call_id, design_id, pending }`. Engine slow or down → `pending: true`, "in the inbox in a minute"; after the response it waits up to 10 s for the slow answer, else retries once after the engine client's 15 s cool-down. Never stores the engine client's offline estimate as a voice draft. |
 | `POST /api/voice/post-call` | `ElevenLabs-Signature` HMAC on the raw body, `ELEVENLABS_WEBHOOK_SECRET`, ±30 min | `post_call_transcription` → transcript, summary, data-collection values and evaluation results onto the same `calls` row (by `conversation_id`), status `ended`/`failed`. If the agent never called the tool and use/bill/household is known, drafts the design then. Other webhook types → `{ ignored: true }`. |
-| `GET /api/solar?address=…` | none (server key) | `{ status: ok, lat, lng, segments[{pitch_deg, azimuth_deg, area_m2}], max_panels, panel_watts, sunshine_hours_year, imagery_quality }` or `{ status: not_covered | not_found | no_key | error, reason }`. Cached 24 h. |
-| `POST /api/voice/explain` | none | `{ design_id }` or `{ design_response }`, optional `language: "de"`, `audio: true` → `{ text, by: claude|template, audio_base64, audio_reason }`. ≤ 110 words. Audio only when `VOICE_TTS_ENABLED=true` (off until Mark confirms the voice). |
+| `GET /api/solar?address=…` | none (server key); 20/min per client | `{ status: ok, lat, lng, segments[{pitch_deg, azimuth_deg, area_m2}], max_panels, panel_watts, sunshine_hours_year, imagery_quality }` or `{ status: not_covered | not_found | no_key | error, reason }`. Roof = the most south-facing face with ≥ 70 % of the largest face's area. Cached 24 h (errors are not cached). |
+| `POST /api/voice/explain` | none; 10/min per client | `{ design_id }` (stored designs only in production; `{ design_response }` accepted in dev), optional `language: "de"`, `audio: true` → `{ text, by: claude|template, audio_base64, audio_reason }`. ≤ 110 words. Audio only when `VOICE_TTS_ENABLED=true` (off until Mark confirms the voice). |
 
 The tool needs `conversation_id` as a parameter filled from the system dynamic variable `system__conversation_id`, so the
-tool call and the post-call webhook land on the same `calls` row. Requires `supabase/migrations/20261107_calls_conversation_id.sql`.
+tool call and the post-call webhook land on the same `calls` row. Requires `supabase/migrations/20261107_calls_conversation_id.sql`
+(adds `calls.conversation_id` + unique index, and a unique index for one voice draft per call).
+
+**Privacy (open, owner: schema / session B):** `schema.sql` lets the anon key read every `calls` row, and voice calls now
+hold names, addresses and full transcripts. Before real customers: drop anon read on `calls` (serve the inbox via a
+server route) or expose a view without transcript/address.
 
 ## Env vars (web/.env.local locally, Vercel → Project → Settings → Environment Variables; names only, never values in git)
 | Name | Where it comes from | Needed for |

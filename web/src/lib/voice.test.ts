@@ -1,9 +1,9 @@
 import { createHmac } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { engine } from "./engine";
 import { mockDesign } from "./engine-mock";
 import { EMPTY_LOCKS, type DesignRequest, type DesignResponse } from "./types";
-import type { SolarResult } from "./solar";
+import { clearSolarCache, type SolarResult } from "./solar";
 import {
   checkAgentToken,
   handleCreateDesign,
@@ -54,7 +54,12 @@ function fakeStore() {
       calls.set(id, { id, patch: p });
       return id;
     },
-    async insertDesign(row) {
+    async saveDesign(row) {
+      const existing = row.call_id ? designs.find((d) => d.call_id === row.call_id) : undefined;
+      if (existing) {
+        existing.design = row.design;
+        return existing.id;
+      }
       const id = `design-${++n}`;
       designs.push({ id, call_id: row.call_id, design: row.design });
       return id;
@@ -83,8 +88,10 @@ function deps(over: Partial<VoiceDeps> = {}): VoiceDeps & { deferred: (() => Pro
     elevenLabsKey: "",
     voiceId: "",
     ttsEnabled: false,
+    allowInlineDesign: true,
     fetch: vi.fn() as unknown as typeof fetch,
     now: () => Date.now(),
+    timing: { lateMs: 20, retryAfterMs: 10, retryMs: 50 },
     ...over,
     deferred,
   };
@@ -96,6 +103,8 @@ const post = (path: string, body: unknown, headers: Record<string, string> = {})
     headers: { "content-type": "application/json", ...headers },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
+
+beforeEach(() => clearSolarCache()); // also resets the rate-limit windows
 
 // ---------------------------------------------------------------------------
 // normaliseFacts
@@ -276,11 +285,38 @@ describe("handleCreateDesign", () => {
 
   it("still answers when nothing can be stored", async () => {
     const d = deps({
-      store: { ...fakeStore().store, saveCall: async () => null, insertDesign: async () => null },
+      store: { ...fakeStore().store, saveCall: async () => null, saveDesign: async () => null },
     });
     const res = await handleCreateDesign(post("/api/voice/create-design", FACTS, { "x-agent-token": "tool-secret" }), d);
     expect(res.status).toBe(200);
     expect((await res.json()).instruction).toContain("kWp solar");
+  });
+
+  it("keeps one voice draft per call when the agent calls the tool twice", async () => {
+    const s = fakeStore();
+    const d = deps({ store: s.store });
+    const h = { "x-agent-token": "tool-secret" };
+    await handleCreateDesign(post("/api/voice/create-design", FACTS, h), d);
+    const res = await handleCreateDesign(post("/api/voice/create-design", { ...FACTS, monthly_bill_eur: 250 }, h), d);
+    expect(s.designs).toHaveLength(1);
+    expect((await res.json()).design_id).toBe(s.designs[0].id);
+    expect(s.designs[0].design.design.pv.kwp).toBeGreaterThan(8); // the corrected (larger) use won
+  });
+
+  it("uses the slow engine's late answer without a second engine call", async () => {
+    const LATE_MS = 500;
+    const s = fakeStore();
+    let calls = 0;
+    const d = deps({
+      store: s.store,
+      design: (req) => (++calls, new Promise((r) => setTimeout(() => r(mockDesign(req)), 400))),
+      timing: { lateMs: LATE_MS, retryAfterMs: 10, retryMs: 500 },
+    });
+    await handleCreateDesign(post("/api/voice/create-design", FACTS, { "x-agent-token": "tool-secret" }), d, { budgetMs: 50 });
+    expect(s.designs).toHaveLength(0);
+    await Promise.all(d.deferred.map((fn) => fn()));
+    expect(calls).toBe(1);
+    expect(s.designs).toHaveLength(1);
   });
 
   it("400 with an instruction on a broken body", async () => {
@@ -424,6 +460,26 @@ describe("handleExplain", () => {
     const body = await res.json();
     expect(body.audio_base64).toBe("AQID");
     expect(String((f.mock.calls[0] as unknown as [string])[0])).toContain("/v1/text-to-speech/voice1");
+  });
+
+  it("in production only explains stored designs (no client-sent design)", async () => {
+    const res = await handleExplain(post("/api/voice/explain", { design_response: d0 }), deps({ allowInlineDesign: false }));
+    expect(res.status).toBe(400);
+  });
+
+  it("explains a stored design by id", async () => {
+    const s = fakeStore();
+    const id = await s.store.saveDesign({ call_id: "c", home: normaliseFacts({}).home, locks: EMPTY_LOCKS, design: d0 });
+    const res = await handleExplain(post("/api/voice/explain", { design_id: id }), deps({ store: s.store, allowInlineDesign: false }));
+    expect((await res.json()).text).toContain("10.8 kWp");
+  });
+
+  it("rate-limits per client", async () => {
+    const d = deps();
+    const codes: number[] = [];
+    for (let i = 0; i < 12; i++) codes.push((await handleExplain(post("/api/voice/explain", { design_response: d0 }), d)).status);
+    expect(codes.slice(0, 10).every((c) => c === 200)).toBe(true);
+    expect(codes[11]).toBe(429);
   });
 
   it("404 for an unknown design id, 400 without a design", async () => {

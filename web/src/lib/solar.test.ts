@@ -76,11 +76,13 @@ describe("lookupSolar", () => {
     expect(f).toHaveBeenCalledTimes(2); // 1 geocode + 1 solar, second lookup from cache
   });
 
-  it("returns error (no throw) when Google fails", async () => {
+  it("returns error (no throw) when Google fails, and does not cache the failure", async () => {
     const f = vi.fn(async () => {
       throw new Error("network down");
     });
     expect((await lookupSolar("x street", { key: "k", fetch: f })).status).toBe("error");
+    await lookupSolar("x street", { key: "k", fetch: f });
+    expect(f).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -90,6 +92,18 @@ describe("roofFromSolar", () => {
     const r = await lookupSolar("a", { key: "k", fetch: f });
     expect(roofFromSolar(r)).toEqual({ orientation_deg: 179, tilt_deg: 34 });
   });
+  it("prefers the south face of a gable roof even when the north face is a bit larger", () => {
+    const r: SolarResult = {
+      status: "ok", address: "a", lat: 0, lng: 0, max_panels: 0, panel_watts: 0, sunshine_hours_year: 0, imagery_quality: "HIGH",
+      imagery_date: null,
+      segments: [
+        { pitch_deg: 40, azimuth_deg: 2, area_m2: 64 },
+        { pitch_deg: 38, azimuth_deg: 182, area_m2: 60 },
+        { pitch_deg: 10, azimuth_deg: 175, area_m2: 8 }, // small dormer: ignored
+      ],
+    };
+    expect(roofFromSolar(r)).toEqual({ orientation_deg: 182, tilt_deg: 38 });
+  });
   it("is null when not covered", () => {
     const miss: SolarResult = { status: "not_covered", reason: "x" };
     expect(roofFromSolar(miss)).toBeNull();
@@ -97,6 +111,13 @@ describe("roofFromSolar", () => {
 });
 
 describe("GET /api/solar", () => {
+  it("429 after 20 requests a minute from one client", async () => {
+    const codes: number[] = [];
+    for (let i = 0; i < 21; i++)
+      codes.push((await handleSolarRequest(new Request("http://x/api/solar?address=a", { headers: { "x-forwarded-for": "1.2.3.4" } }), { key: "" })).status);
+    expect(codes[19]).toBe(200);
+    expect(codes[20]).toBe(429);
+  });
   it("400 without address", async () => {
     const res = await handleSolarRequest(new Request("http://x/api/solar"));
     expect(res.status).toBe(400);
