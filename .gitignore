@@ -12,3 +12,6 @@ engine/artifacts/*.parquet
 .claude/worktrees/
 engine/artifacts/spotcheck.md
 engine/artifacts/catalogue.json
+
+# deck chart output (aggregates of Reonic data; shared via data-v1)
+docs/deck/out/
