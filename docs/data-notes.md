@@ -34,7 +34,7 @@ Data: `data/raw/<installer>/projects_status_quo.csv` (one row per project = the 
 File: `engine/artifacts/expert_designs.parquet` (built by `engine/labels.py`, never committed: derived from Reonic data).
 One row per project × offer option. Projects without any parts (20 + 6) are not in the file.
 Units are fixed: power kW, PV kWp, energy kWh, price €/kWh. Missing numbers are NaN, never 0, unless stated.
-Status: v1 schema, agreed before implementation. Columns may be added; existing ones will not change meaning.
+Status: v1.1 schema (adds n_wallboxes, roof_mixed, pv_source size_band; is_primary prefers full designs), agreed 2026-11-07. Columns may be added; existing ones will not change meaning.
 
 ### Identity and variants
 | column | type | unit | meaning |
@@ -44,7 +44,7 @@ Status: v1 schema, agreed before implementation. Columns may be added; existing 
 | customer_contact_id | str | | customer; 41 customers have 2 projects, so also group splits by this |
 | option_id | str | | offer option id (1:1 with option_number) |
 | option_number | int | | variant number as entered by the planner (1–19, gaps common) |
-| is_primary | bool | | the training label row: lowest option_number present in the project (option 1 is missing in ~1/3 of projects) |
+| is_primary | bool | | the training label row: lowest option_number among the project's full designs (is_full_design); lowest overall when the project has none. Exactly one per project (option 1 is missing in ~1/3 of projects) |
 | n_options | int | | number of options in the project |
 | is_duplicate_option | bool | | same line items and quantities as a lower-numbered option of the same project |
 | offer_type | str | | `new_system` (new PV modules, with or without battery/wallbox/heat pump), `pv_extension` (PV added to an existing PV), `battery_retrofit` (battery without new PV, may include wallbox), `wallbox_only`, `heatpump_only`, `no_components` |
@@ -57,17 +57,19 @@ Status: v1 schema, agreed before implementation. Columns may be added; existing 
 |---|---|---|---|
 | pv_kwp | float | kWp | new PV size; 0 when the option has no new PV |
 | pv_panels | float | panels | number of new modules; NaN when only a package name gives the size |
-| pv_source | str | | `module_lines`, `package_name`, `substructure`, `roof_mounting`, `none` |
+| pv_source | str | | `module_lines`, `package_name`, `substructure`, `roof_mounting`, `size_band` (only a kWp band like "6-8.8kWp" is known → midpoint), `none` |
 | pv_wp_assumed | float | W | assumed W per panel when the data has no module wattage (450); NaN when wattage came from the data or a package name |
 | battery | bool | | battery_kwh > 0 |
 | battery_kwh | float | kWh | total new storage (main unit + extensions); 0 = no battery |
 | battery_source | str | | `numeric_column`, `name`, `package_name`, `none` |
 | wallbox | bool | | option contains a wallbox |
-| wallbox_kw | float | kW | charging power (11 or 22); NaN when no wallbox |
+| wallbox_kw | float | kW | charging power (11 or 22); NaN when no wallbox or when a wallbox is installed without a wallbox product line |
+| n_wallboxes | float | count | number of wallboxes; 0 when none |
 | heatpump | bool | | option contains a heat pump |
 | heatpump_kw | float | kW | nominal heat pump power from the product name; NaN when none |
 | inverter_kw | float | kW | sum of inverter power when inverter lines exist; NaN otherwise (2a8ba8e2 almost never lists inverters) |
-| roof_type | str | | from substructure/DC-install names (`Concrete Tile`, `Clay Tile`, `Concrete`, `Clay`, `Flat`, `Metal`, `Bitumen`, `Slate`, `Standing Seam`, `Beaver Tail`, `Trapezoidal`, …); `Mixed` when several; `Unknown` when none |
+| roof_type | str | | from substructure/DC-install names (`Concrete Tile`, `Clay Tile`, `Concrete`, `Clay`, `Flat`, `Metal`, `Bitumen`, `Slate`, `Standing Seam`, `Beaver Tail`, `Trapezoidal`, …); type with the most panels when several; `Unknown` when none |
+| roof_mixed | bool | | panels on more than one roof type |
 | has_scaffolding | bool | | scaffolding / site-safety line present |
 | has_backup | bool | | emergency-power / backup box line present |
 | brand | str | | main system brand (battery/inverter/wallbox brand, e.g. Huawei, EcoFlow, Sigenergy); `Unknown` when none |
@@ -90,7 +92,7 @@ Status: v1 schema, agreed before implementation. Columns may be added; existing 
 | ev_km_year | float | km | yearly EV distance; NaN when unknown |
 | existing_pv_kwp | float | kWp | PV already on the roof; NaN when none |
 | existing_battery_kwh | float | kWh | battery already installed; NaN when none or when the entry is the planned battery (see flag) |
-| existing_battery_is_planned | bool | | has_storage was set but built year ≥ offer year, i.e. the planner entered the battery being sold |
+| existing_battery_is_planned | bool | | has_storage was set but built year ≥ offer year or an option sells exactly that kWh, i.e. the planner entered the battery being sold (9 of 11 cases) |
 | has_existing_wallbox | bool | | wallbox already installed |
 | heating_type | str | | existing heating: Heatpump, Gas, Oil, OtherNonRenewable, OtherRenewable, `Unknown` (88% empty) |
 | heating_demand_kwh | float | kWh | yearly heating demand; mostly NaN |
