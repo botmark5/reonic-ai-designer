@@ -76,11 +76,13 @@ export function HomeForm({ home, onChange }: { home: Home; onChange: (patch: Par
         <Segmented
           label="Solar already on the roof?"
           value={home.has_existing_pv == null ? "unknown" : home.has_existing_pv ? "yes" : "no"}
-          onChange={(v) => onChange({ has_existing_pv: v === "unknown" ? null : v === "yes" })}
+          onChange={(v) =>
+            onChange(v === "yes" ? { has_existing_pv: true } : { has_existing_pv: v === "unknown" ? null : false, existing_pv_kwp: null })
+          }
           options={[
             { value: "no", label: "No" },
             { value: "yes", label: "Yes" },
-            { value: "unknown", label: "Not asked" },
+            { value: "unknown", label: "Don't know" },
           ]}
           className="self-start"
         />
@@ -88,6 +90,14 @@ export function HomeForm({ home, onChange }: { home: Home; onChange: (patch: Par
           <p className="m-0 text-[12px] leading-4 text-ink-muted">Ask this first: it decides new system or battery add-on.</p>
         )}
       </div>
+      {home.has_existing_pv === true && (
+        <NumberField
+          label="Existing solar (kWp, optional)"
+          value={home.existing_pv_kwp}
+          max={100}
+          onCommit={(v) => onChange({ existing_pv_kwp: v })}
+        />
+      )}
       <NumberField
         label="Annual consumption (kWh)"
         value={home.annual_kwh}
@@ -159,11 +169,10 @@ export function HomeForm({ home, onChange }: { home: Home; onChange: (patch: Par
           <span className="inline-block transition-transform duration-150 group-open:rotate-90" aria-hidden>
             ›
           </span>{" "}
-          Already installed
-          {(home.existing_pv_kwp || home.existing_battery_kwh) && <span className="ml-1 text-ink-muted">· set</span>}
+          Battery already installed
+          {home.existing_battery_kwh ? <span className="ml-1 text-ink-muted">· set</span> : null}
         </summary>
         <div className="mt-3 flex flex-col gap-3">
-          <NumberField label="Existing solar (kWp)" value={home.existing_pv_kwp} max={100} onCommit={(v) => onChange({ existing_pv_kwp: v })} />
           <NumberField label="Existing battery (kWh)" value={home.existing_battery_kwh} max={100} onCommit={(v) => onChange({ existing_battery_kwh: v })} />
         </div>
       </details>

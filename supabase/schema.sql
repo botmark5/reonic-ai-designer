@@ -1,6 +1,6 @@
 -- Reonic AI Designer: Supabase schema (owner: session B / web).
 -- Apply in the Supabase SQL editor or with `supabase db push`. Idempotent where practical.
--- Access model: the browser (anon key) may only READ designs, calls and shares.
+-- Access model: the browser (anon key) may only READ designs and shares (calls are server-only).
 -- Every write goes through server routes that use the service-role key (which bypasses RLS).
 
 create extension if not exists pgcrypto;
@@ -59,16 +59,17 @@ create table if not exists public.shares (
 );
 create index if not exists shares_design_id_idx on public.shares (design_id);
 
--- Row level security: anon may SELECT designs, calls, shares. No anon writes. overrides: service role only.
+-- Row level security: anon may SELECT designs and shares. No anon writes. calls + overrides: service role only.
 alter table public.calls     enable row level security;
 alter table public.designs   enable row level security;
 alter table public.overrides enable row level security;
 alter table public.shares    enable row level security;
 
+-- calls hold names, addresses and full transcripts: NO anon read. The live-call screen reads them through
+-- GET /api/calls (service role). (Earlier versions allowed anon read; the drop below removes it.)
 drop policy if exists "anon read calls"   on public.calls;
 drop policy if exists "anon read designs" on public.designs;
 drop policy if exists "anon read shares"  on public.shares;
-create policy "anon read calls"   on public.calls   for select to anon, authenticated using (true);
 create policy "anon read designs" on public.designs for select to anon, authenticated using (true);
 create policy "anon read shares"  on public.shares  for select to anon, authenticated using (true);
 
