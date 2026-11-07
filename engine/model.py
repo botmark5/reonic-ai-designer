@@ -565,7 +565,11 @@ class DesignModel:
         """Harness interface: predicted design per row (no locks)."""
         if len(df) == 0:
             return pd.DataFrame(columns=DESIGN_COLUMNS)
-        return self._run(df)[DESIGN_COLUMNS + ["offer_type"]]
+        out = self._run(df)
+        # calibrated P10-P90 PV range (always contains the proposed size), for the coverage metric
+        out["pv_lo"] = np.minimum(out.get("pv_lo", out.pv_kwp), out.pv_kwp)
+        out["pv_hi"] = np.maximum(out.get("pv_hi", out.pv_kwp), out.pv_kwp)
+        return out[DESIGN_COLUMNS + ["offer_type", "pv_lo", "pv_hi"]]
 
     # ------------------------------------------------------------------ explanations
     def _drivers(self, model, X: pd.DataFrame, unit: str, class_index: int | None = None, top: int = 3) -> list[str]:

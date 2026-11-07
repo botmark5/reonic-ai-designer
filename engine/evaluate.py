@@ -435,6 +435,10 @@ def compute_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) ->
     # (pv_kwp_mae above only scores projects WITH expert PV and never penalises PV proposed for a retrofit)
     e3 = (pred.pv_kwp.astype(float).fillna(0) - truth.pv_kwp.fillna(0)).abs()
     m["pv_kwp_mae_all_projects"] = float(e3.mean()) if len(e3) else None
+    # P10-P90 coverage: share of projects (expert and model both PV) whose expert kWp lies inside the model's range
+    if {"pv_lo", "pv_hi"} <= set(pred.columns):
+        inside = ((truth.pv_kwp >= pred.pv_lo.astype(float) - 1e-9) & (truth.pv_kwp <= pred.pv_hi.astype(float) + 1e-9))
+        m["pv_interval_coverage_pct"] = _rate(inside.to_numpy()[both]) if both.any() else None
 
     # battery size (projects where the expert installed a battery)
     bat = truth.has_battery.to_numpy()

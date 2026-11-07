@@ -298,3 +298,11 @@ def test_segments_and_catalogue_counts(synthetic, tmp_path):
     p = tmp_path / "catalogue.json"
     p.write_text(json.dumps({"instA": {"battery_kwh": {"5": 10, "10": 4, "12.4": 1}}}))
     assert E.load_catalogue(synthetic[0], p) == {"instA": [5.0, 10.0]}              # sold < 3 times: not a step
+
+
+def test_interval_coverage_metric(tiny):
+    truth, pred, cat = tiny
+    p = pred.assign(pv_lo=[9.0, 7.0, 0.0, 5.0], pv_hi=[11.0, 9.0, 0.0, 7.0])
+    m = E.compute_metrics(truth, p, cat)
+    assert m["pv_interval_coverage_pct"] == 100.0          # p1 10 in [9,11], p2 8 in [7,9]; p4 has no predicted size
+    assert "pv_interval_coverage_pct" not in E.compute_metrics(truth, pred, cat)
