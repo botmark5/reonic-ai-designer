@@ -88,7 +88,7 @@ def trained():
 def test_predict_interface(trained):
     model, table = trained
     pred = model.predict(table.head(20))
-    assert list(pred.columns) == DESIGN_COLUMNS + ["offer_type", "pv_lo", "pv_hi"] and len(pred) == 20
+    assert list(pred.columns) == DESIGN_COLUMNS + ["offer_type", "pv_lo", "pv_hi", "pv_alt1", "pv_alt2"] and len(pred) == 20
     assert (pred.pv_lo <= pred.pv_kwp + 1e-9).all() and (pred.pv_hi >= pred.pv_kwp - 1e-9).all()
     assert ((pred.pv_kwp == 0) | pred.has_pv).all()
     assert model.predict(table.head(0)).empty
@@ -458,3 +458,13 @@ def test_battery_mode_and_catalogue(trained):
     pred = model.predict(table)
     for inst, g in pred.join(table.installer).groupby("installer"):
         assert set(g.battery_kwh.round(1)) <= set(model.catalogue_[inst]["battery_kwh"]) | {0.0}
+
+
+def test_pv_alternatives(trained):
+    model, _ = trained
+    d = model.propose({"annual_kwh": 6000, "has_existing_pv": False}, "instA")["design"]["pv"]
+    if d["include"] and model.pv_size_clf_ is not None:
+        alts = d["alternatives"]
+        assert len(alts) <= 2 and all(abs(a["kwp"] - d["kwp"]) > 0.05 and 0 <= a["share"] <= 1 for a in alts)
+        capped = model.propose({"annual_kwh": 6000, "has_existing_pv": False, "roof_max_kwp": 5.0}, "instA")["design"]["pv"]
+        assert all(a["kwp"] <= 5.0 for a in capped.get("alternatives", []))
