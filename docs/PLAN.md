@@ -44,6 +44,8 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 
 ## Phase 4 — Stretch
 - [ ] Homeowner view (variants only, savings/payback/autarky in plain words)
+- [x] Interactive 3D house `<House3D>` (web/src/components/house3d): panels from kWp, battery/inverter/wallbox/heat pump, energy flows, presets, tooltips, still-image fallback
+  - mounting in the planner and /offer/[token] is session B's (snippet in web/src/components/house3d/README.md)
 - [x] ElevenLabs "Explain my offer" voice + voice agent calling /design (backend: web/voice — create_design tool, post-call webhook, /api/solar, /api/voice/explain; audio off until the voice is confirmed)
 - [ ] Validation screen
 - [ ] Confidence calibration, A→B findings for the deck, fix worst 3 edge cases
@@ -52,6 +54,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
 
 ## Decisions
+- Sat 19:20 · 3D house is procedural three.js (Blender not installed); session B mounts `<House3D>`; roof from home.tilt_deg/orientation_deg, overridable by Google Solar via the `roof` prop
 - Sat 19:15 · Orchestrator session coordinates the 4 Claude Code sessions via .status/ (local); merges green PRs, keeps this file honest
 - Sat 20:10 · Engine trains on engine/labels expert_designs.parquet with its cleaned home columns (default 4,500 kWh kept WITH its flag; < 1,500 kWh invalid)
 - Sat 20:10 · Test set locked in engine/artifacts/test_ids.json (grouped by customer, seed 42); all tuning by CV on the training part
