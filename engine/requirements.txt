@@ -10,3 +10,4 @@ python-dotenv
 matplotlib
 pyarrow
 pytest
+httpx

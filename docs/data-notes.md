@@ -128,3 +128,54 @@ Status: v1.1 schema (adds n_wallboxes, roof_mixed, pv_source size_band; is_prima
 | items_signature | str | sorted "name|qty" list of the option's line items; used for is_duplicate_option |
 | has_solar | bool | raw status-quo flag (existing PV), used for offer_type |
 | storage_kwh_entered | float | kWh entered as "existing storage" before the planned-battery check |
+
+## Physics assumptions (engine/physics.py, branch engine/physics)
+Hourly synthetic year (8,760 h), deterministic with a fixed seed. Synthetic shapes, NOT the official BDEW / weather tables.
+- PV: 950 kWh/kWp/yr for south ~30–35°; orientation/tilt factor grid (E/W 30° ≈ 0.85, flat ≈ 0.88, north 30° ≈ 0.62,
+  vertical south ≈ 0.70). Missing orientation/tilt → south, 30° (reported in `assumptions`). Monthly split of the yearly
+  yield (Jan 2.7 % … Jul 13.6 %), daylight bell at 48° N, east roofs peak earlier, west later.
+- Weather: seeded sunny/cloudy factor per day (Beta 0.7/0.9, darkest day 2 % of clear) + hour-to-hour PV spread
+  (lognormal σ 0.4); each month keeps its share of the yearly yield.
+- Household load: H0-like 24 h shape; Reonic presets as multipliers on day/morning/evening presence
+  (HomeOffice/Senior ↑ day, FullTime ↓ day, Family ↑ morning+evening); weekend daytime ×1.2; seasonal ±17 %;
+  hour-to-hour appliance spread (lognormal σ 0.9). `CustomFromEditor`/unknown → H0.
+- EV: km/100 × 18 kWh, charged 18–23 h (option "solar": 10–15 h). Unknown distance → 12,000 km.
+- Heat pump: size = heat demand / 2,450 full-load hours (median of the 13 heat-pump projects of 2a8ba8e2), snapped to
+  5/7/10/12 kW; electricity = heat demand / SCOP 3.5, by heating-degree-day month share + 15 % flat hot water.
+  Only for gas/oil/other non-renewable heating; never if a heat pump exists or the installer sells none.
+- Battery: 90 % usable, 0.5 C, 95 % one-way efficiency, self-consumption-first dispatch.
+- Self-consumption = PV used in the home / PV produced; autarky = PV used in the home / consumption.
+- Calibration (tests enforce it): 4,500 kWh + 5 kWp → SC 30 % / autarky 32 %; + 5 kWh battery → 54 %;
+  10 kWp + 10 kWh → 76 % (HTW-Berlin rule-of-thumb ranges). Known optimism: very small homes with large systems
+  (3,000 kWh, 10 kWp + 10 kWh → 88 %, real ~80–85 %).
+- Economics: every price is a placeholder in `engine/config/economics.toml` (data has no prices).
+
+## Label table contract (proposed by engine/physics — engine/labels please confirm or tell Cala)
+`engine/evaluate.py` reads `engine/artifacts/expert_designs.parquet` (or .csv). **One row per project × offer option.**
+
+| column | type | required | meaning |
+|---|---|---|---|
+| project_id | str | yes | joins to projects_status_quo.csv |
+| installer | str | yes | folder name, e.g. 2a8ba8e2 |
+| option_number | int | yes | offer option number |
+| is_primary | bool | yes | exactly one True per project (the expert design we score against) |
+| has_pv / pv_kwp | bool / float | yes | pv_kwp = 0 when no PV |
+| has_battery / battery_kwh | bool / float | yes | battery_kwh = 0 when no battery; extensions summed |
+| has_wallbox | bool | yes | |
+| has_heatpump / heatpump_kw | bool / float | yes | heatpump_kw = 0 when none |
+| option_id, wallbox_kw, inverter_kw | str / float | optional | |
+
+Home inputs are NOT needed in the label table: evaluate.py joins them from data/raw (`load_inputs()`, api.md names).
+Variant range per project = min/max of pv_kwp and battery_kwh over all its options (computed by evaluate.py).
+`engine/artifacts/catalogue.json` is read as `{installer: [battery sizes]}` or `{installer: {"battery_kwh": [...]}}`;
+if absent, sizes seen ≥ 5× per installer in the labels are used.
+
+## Evaluation protocol (engine/evaluate.py)
+- Held-out: 80/20 split by project_id, stratified by installer, seed 42. Transfer: train on one installer, test on the other.
+- Truth = primary option. PV MAE on projects with expert PV; battery MAE + "within one catalogue step" on projects with
+  an expert battery (predicting no battery = size miss). Yes/no accuracy per component. NaN predictions = misses
+  (excluded from MAE but counted).
+- Variant-range hit rate on all projects: strict = inside [min, max]; tolerant = PV ± 1.0 kWp, battery ± 1 catalogue step
+  (step 0 = no battery).
+- Baselines: kWp = annual kWh / 1000 (battery = installer's most common size, yes/no = majority), and median/mode per
+  installer × consumption band (0–2.5–3.5–4.5–5.5–7–9–∞ MWh).

@@ -4,7 +4,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 
 ## Phase 0 — Setup
 - [ ] Mark: private repo + invite Cala; push starter kit
-- [ ] Cala: clone, copy data into data/raw, Python env, CSVs load
+- [x] Cala: clone, copy data into data/raw, Python env, CSVs load
 - [ ] Mark: web/ Next.js + Tailwind + shadcn + Framer Motion on Vercel
 - [ ] Both: confirm docs/api.md v0
 
@@ -18,15 +18,17 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 
 ## Phase 2 — Engine and evaluation (Cala)
 - [ ] docs/engine-spec.md in plain English
-- [ ] Baselines (kWp ≈ kWh/1000; median by consumption band)
-- [ ] Chained model PV → battery → wallbox, installer-aware, snapped to catalogue
-- [ ] Similar-homes lookup → ranges + 5 nearest real projects
-- [ ] Locks: recompute around fixed components
-- [ ] Physics check + heat pump rules
-- [ ] Evaluation: held-out + installer A→B; variant-range hit rate; vs baselines
+- [x] Baselines (kWp ≈ kWh/1000; median by consumption band)
+- [x] Chained model PV → battery → wallbox, installer-aware, snapped to catalogue
+- [x] Similar-homes lookup → ranges + 5 nearest real projects
+- [x] Locks: recompute around fixed components
+- [x] Physics check + heat pump rules
+- [x] Evaluation: held-out + installer A→B; variant-range hit rate; vs baselines
+  - done on INTERIM labels (engine/interim_labels.py); rerun `python -m engine.train` once expert_designs.parquet lands
 - [ ] Error analysis by segment/installer
-- [ ] /validate
+- [x] /validate
 - [ ] FastAPI deployed, matches docs/api.md
+  - engine/api.py runs locally and matches api.md (+ optional additions, see engine/README.md); not deployed yet
 
 ## Phase 3 — Product (Mark)
 - [ ] Design system + mockups (Claude chat) → tokens into web/
@@ -46,9 +48,17 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
 
 ## Decisions
+- Sat 19:00 · Heat pump is a customer OPTION (offered for gas/oil homes, not included by default); /design returns the full design with and without it so the customer can choose by budget/needs
+- Sat 18:40 · Model trains on interim labels (engine/interim_labels.py) until engine/labels lands; swap is automatic
+- Sat 18:40 · PV size model: Huber loss + monotonic constraints (more demand / EV never shrinks PV); PV snapped to 450 W modules
+- Sat 18:40 · New projects use an offer date capped at the 90th percentile of training dates (last month is an unusual retrofit batch)
+- Sat 18:40 · Claude: Haiku 5.5 for /refine (structured output), Sonnet 5.5 for /explain (streamed, server-side refusal fallback); keyword/template fallback without key
 - Sat 18:30 · Expert labels v1 (engine/labels): primary = lowest full new-system option; default 4,500 kWh = consumption unknown;
   2a8 panels at 450 W; battery from the (shifted) numeric column; retrofits kept with offer_type, main model on new_system only.
   Rules: docs/labels-rules.md · schema: docs/data-notes.md
+- Sat 18:00 · Physics = hourly synthetic year with seeded sunny/cloudy days, calibrated to HTW-Berlin rule-of-thumb ranges (not official BDEW tables)
+- Sat 18:00 · Variant-range hit = inside [min, max] of the project's options ± tolerance (PV ± 1 kWp, battery ± 1 catalogue step); strict number reported too
+- Sat 18:00 · Label contract proposed in docs/data-notes.md (one row per project × option, is_primary flag); evaluate.py joins inputs from data/raw
 - Sat 16:00 · Data questions answered by our own assumptions (docs/data-notes.md); only business questions to Reonic
 - Sat 15:45 · Build in Claude Code (Next.js), not Lovable · design system + mockups in Claude chat first
 - Sat 15:15 · Keep all raw fields; expert-design table is derived on top

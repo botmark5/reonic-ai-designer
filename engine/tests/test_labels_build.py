@@ -18,6 +18,7 @@ def built():
 
 def schema_columns() -> list[str]:
     text = (ROOT / "docs" / "data-notes.md").read_text().split("## expert_designs.parquet schema", 1)[1]
+    text = re.split(r"^## ", text, maxsplit=1, flags=re.M)[0]  # stop at the next top-level section
     cols = []
     for line in text.splitlines():
         m = re.match(r"\|\s*([a-z_, ]+?)\s*\|", line)
