@@ -71,3 +71,13 @@ Installer transfer (train on one, test on the other), PV MAE where both have PV:
 `economics` block; `options.heatpump` (with/without comparison); `heatpump.option`; `physics.flags/assumptions/load_kwh/...`; `battery.alternatives`; `installer` and
 `offer_date`/`orientation_deg`/`tilt_deg`/`existing_wallbox` as optional request fields; `/installers`, `/health`.
 `/refine` returns `{changes, summary, parsed_by, home, locks, design}`.
+
+## Deploy
+The engine needs the Reonic data (or at least the trained artifacts), which are **never on GitHub**.
+So a host that builds straight from the GitHub repo will not work out of the box. Options:
+1. **Docker image built locally, pushed to a PRIVATE registry/host** (Fly.io, Railway, Render with a private image):
+   `docker build -f engine/Dockerfile -t reonic-engine .` from the repo root. The image contains data/ and the model;
+   set `ANTHROPIC_API_KEY` and `ENGINE_CORS_ORIGINS=https://<web>.vercel.app` as host secrets.
+2. **Demo from this laptop through a tunnel** (`cloudflared tunnel --url http://localhost:8000`): no data leaves the
+   machine, but the laptop must stay on.
+Then set `NEXT_PUBLIC_ENGINE_URL` in the web app (Vercel) to the engine URL.
