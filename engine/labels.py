@@ -7,11 +7,13 @@ docs/data-notes.md) and engine/artifacts/catalogue.json (sizes each installer ac
 then prints cross-checks. Rules: docs/labels-rules.md.
 """
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
 
 from engine.label_rules.components import (
+    PACKAGE_KWH_RE,
     extract_battery,
     extract_brand,
     extract_heatpump,
@@ -22,11 +24,26 @@ from engine.label_rules.components import (
 from engine.label_rules.home import clean_status_quo
 from engine.label_rules.items import load_raw
 from engine.label_rules.offer import add_project_columns, classify_offer
-from engine.label_rules.pv import PANEL_WP_ASSUMED, extract_pv, extract_roof_type, has_scaffolding
+from engine.label_rules.pv import (
+    _DC_INSTALL,
+    _PACKAGE_23C,
+    _SIZE_BAND,
+    _SUBSTRUCTURE,
+    INSTALLER_2A8,
+    INSTALLER_23C,
+    PANEL_WP_ASSUMED,
+    TOLERANCE_KWP,
+    extract_pv,
+    extract_roof_type,
+    has_scaffolding,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = ROOT / "data" / "raw"
 ARTIFACTS = ROOT / "engine" / "artifacts"
+
+# "Substructure Cross-Lay up to 6kWp": the open-ended lowest band (pv.py only knows "A-B kWp").
+_UP_TO_BAND = re.compile(r"^(?:SL Rack )?Substructure\b.*?up to\s*(\d+(?:\.\d+)?)\s*kWp", re.I)
 
 FRONT_COLUMNS = [
     "installer", "project_id", "customer_contact_id", "option_id", "option_number", "is_primary", "n_options",
@@ -98,9 +115,85 @@ def build(raw_dir: Path = RAW_DIR) -> tuple[pd.DataFrame, dict]:
     return designs.reset_index(drop=True), make_catalogue(designs)
 
 
-def cross_checks(designs: pd.DataFrame) -> str:
+def _per_option_facts(designs: pd.DataFrame, parts: pd.DataFrame) -> pd.DataFrame:
+    """One row per option with the raw-line quantities the cross-checks compare (indexed like designs by installer+option_id)."""
+    names, qty = parts["component_name"], parts["quantity"].fillna(1.0)
+    f = parts[["installer", "option_id"]].copy()
+    f["sub"] = qty.where(names.str.match(_SUBSTRUCTURE), 0.0)
+    f["dc"] = qty.where(names.str.match(_DC_INSTALL), 0.0)
+    f["pkg_kwh"] = names.map(lambda n: float(m.group(1).replace(",", ".")) if (m := PACKAGE_KWH_RE.search(n)) else float("nan"))
+    f["pkg_kwp"] = names.map(lambda n: float(m.group(1)) if (m := _PACKAGE_23C.match(n)) else float("nan"))
+    is_module = (parts["component_type"] == "Module") & (parts["module_watt_peak"] > 0)
+    f["module_kwp"] = (qty * parts["module_watt_peak"]).where(is_module) / 1000
+    f["band"] = names.map(_band_of)
+    facts = f.groupby(["installer", "option_id"]).agg(
+        sub=("sub", "sum"), dc=("dc", "sum"), pkg_kwh=("pkg_kwh", "first"), pkg_kwp=("pkg_kwp", "first"),
+        module_kwp=("module_kwp", lambda s: s.sum() if s.notna().any() else float("nan")),
+        band=("band", lambda s: next((b for b in s if b is not None), None)),
+    ).reset_index()
+    return designs.merge(facts, on=["installer", "option_id"], how="left", validate="one_to_one")
+
+
+def _band_of(name: str) -> tuple[float, float] | None:
+    if m := _SIZE_BAND.match(name):
+        return float(m.group(1)), float(m.group(2))
+    if m := _UP_TO_BAND.match(name):
+        return 0.0, float(m.group(1))
+    return None
+
+
+def _agree_line(label: str, agree: pd.Series) -> str:
+    return f"{label}: agree {int(agree.sum())}, differ {int((~agree).sum())} (of {len(agree)} options with both)"
+
+
+def _source_pair_checks(d: pd.DataFrame) -> list[str]:
+    """Which pair of PV sources disagrees, and how that lines up with the pv_sources_disagree flag."""
+    a2 = d[(d.installer == INSTALLER_2A8) & (d["sub"] > 0) & (d.dc > 0)]
+    sub_eq_dc = (a2["sub"] - a2.dc).abs() < 0.5
+    c23 = d[(d.installer == INSTALLER_23C) & d.pkg_kwp.notna() & d.module_kwp.notna()]
+    pkg_eq_mod = (c23.pkg_kwp - c23.module_kwp).abs() <= TOLERANCE_KWP
+    lines = [
+        _agree_line("2a8 Substructure qty vs DC Install qty", sub_eq_dc),
+        "  pv_sources_disagree among those: "
+        f"{int(a2.pv_sources_disagree[sub_eq_dc].sum())} of the agreeing, {int(a2.pv_sources_disagree[~sub_eq_dc].sum())} of the differing",
+        _agree_line("23c package kWp vs module-line kWp", pkg_eq_mod),
+        "  pv_sources_disagree among those: "
+        f"{int(c23.pv_sources_disagree[pkg_eq_mod].sum())} of the agreeing, {int(c23.pv_sources_disagree[~pkg_eq_mod].sum())} of the differing",
+    ]
+    flagged = d[d.pv_sources_disagree]
+    rest = flagged[~flagged.index.isin(a2.index[~sub_eq_dc]) & ~flagged.index.isin(c23.index[~pkg_eq_mod])]
+    lines.append(f"pv_sources_disagree total {len(flagged)}; not explained by either pair above: {len(rest)} "
+                 "(e.g. package vs per-panel count, roof mounting vs substructure)")
+    if len(rest):
+        lines.append(rest.groupby(["installer", "pv_source"]).size().to_string())
+    return lines
+
+
+def cross_checks(designs: pd.DataFrame, parts: pd.DataFrame) -> str:
     def table(col: str, frame: pd.DataFrame = designs) -> str:
         return pd.crosstab(frame[col], frame.installer, margins=True).to_string()
+
+    d = _per_option_facts(designs, parts)
+    c23 = d[d.installer == INSTALLER_23C]
+
+    # package "+ Y kWh" in the name vs BatteryStorage rows (battery_kwh from lines unless the package is the only source)
+    both = c23[c23.pkg_kwh.notna() & c23.battery_source.isin(["numeric_column", "name"])]
+    kwh_agree = (both.pkg_kwh - both.battery_kwh).abs() <= TOLERANCE_KWP
+    kwh_lines = [_agree_line("package kWh vs battery line kWh", kwh_agree)]
+    if (~kwh_agree).any():
+        near = (both.pkg_kwh - both.battery_kwh).abs() <= 0.3
+        kwh_lines.append(f"  of the differing, within 0.3 kWh (package name rounds the FoxESS module-level sizes, e.g. 10 vs 9.84): {int((near & ~kwh_agree).sum())}")
+        pairs = both[~kwh_agree].groupby(["pkg_kwh", "battery_kwh"]).size().sort_values(ascending=False).head(10)
+        kwh_lines += ["top differing pairs (package kWh, line kWh): options", pairs.to_string()]
+
+    # "Substructure 6-8.8kWp" / "up to 6kWp" band vs the pv_kwp we chose
+    banded = c23[c23.band.notna() & (c23.pv_kwp > 0)]
+    in_band = banded.apply(lambda r: r.band[0] - TOLERANCE_KWP <= r.pv_kwp <= r.band[1] + TOLERANCE_KWP, axis=1)
+    band_lines = [f"in band {int(in_band.sum())}, out of band {int((~in_band).sum())} (of {len(banded)} options with a band line and pv_kwp > 0)"]
+    band_lines.append("by pv_source (in band / options):\n" + banded.assign(in_band=in_band).groupby("pv_source").in_band.agg(["sum", "size"]).to_string())
+    if (~in_band).any():
+        band_lines.append("out of band, by band and pv_source (pv_kwp range):\n" + banded[~in_band].assign(band=lambda x: x.band.map(lambda b: f"{b[0]:g}-{b[1]:g}"))
+                          .groupby(["band", "pv_source"]).pv_kwp.agg(["size", "min", "max"]).to_string())
 
     primary = designs[designs.is_primary]
     full = designs[designs.is_full_design & ~designs.is_outlier]
@@ -110,6 +203,9 @@ def cross_checks(designs: pd.DataFrame) -> str:
         "== offer_type", table("offer_type"),
         "== offer_type of primary rows", table("offer_type", primary),
         "== pv_sources_disagree", table("pv_sources_disagree"),
+        "== pv_sources_disagree by source pair", *_source_pair_checks(d),
+        "== 23c package kWh vs line kWh", *kwh_lines,
+        "== 23c substructure band vs pv_kwp", *band_lines,
         "== roof_type (options with PV)", table("roof_type", designs[designs.pv_kwp > 0]),
         "== outliers", designs[designs.is_outlier][["installer", "project_id", "option_number", "pv_kwp", "battery_kwh"]].to_string(),
         "== primary full designs: pv_kwp / battery_kwh quantiles",
@@ -121,11 +217,12 @@ def cross_checks(designs: pd.DataFrame) -> str:
 
 def main() -> None:
     designs, catalogue = build()
+    parts, _ = load_raw(RAW_DIR)
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     designs.to_parquet(ARTIFACTS / "expert_designs.parquet", index=False)
     (ARTIFACTS / "catalogue.json").write_text(json.dumps(catalogue, indent=2))
     print(f"wrote {len(designs)} rows × {designs.shape[1]} columns → {ARTIFACTS / 'expert_designs.parquet'}")
-    print(cross_checks(designs))
+    print(cross_checks(designs, parts))
 
 
 if __name__ == "__main__":

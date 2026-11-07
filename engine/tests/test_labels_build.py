@@ -61,3 +61,22 @@ def test_commercial_project_is_outlier(built):
     designs, _ = built
     row = designs[designs.project_id.str.startswith("b7d6755c")]
     assert row.is_outlier.all()
+
+
+def test_cross_checks_cover_brief_step3(built):
+    from engine.label_rules.items import load_raw
+    from engine.labels import cross_checks
+
+    designs, _ = built
+    parts, _ = load_raw(RAW_DIR)
+    text = cross_checks(designs, parts)
+    for header in (
+        "== 23c package kWh vs line kWh",
+        "== 23c substructure band vs pv_kwp",
+        "== pv_sources_disagree by source pair",
+    ):
+        assert header in text
+    m = re.search(r"2a8 Substructure qty vs DC Install qty: agree (\d+), differ (\d+)", text)
+    assert m, text
+    assert int(m.group(2)) < 10
+    assert int(m.group(1)) > 1000
