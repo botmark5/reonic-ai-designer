@@ -8,7 +8,7 @@ import { StatusBadge, type Tone } from "@/components/ui/status-badge";
 import { COMPONENTS, sizeOf } from "@/lib/diff";
 import { fmtInt, fmtKwp, fmtSize, LABEL } from "@/lib/format";
 import type { DemoProject } from "@/lib/heldout";
-import { headlines, verdicts, type VerdictKind } from "@/lib/reality";
+import { ADDON_HEADLINES, coverage, headlines, headlineSource, verdicts, type VerdictKind } from "@/lib/reality";
 import type { ComponentKey, EvalResponse, ExpertVariant, MetricSet, ProjectResponse } from "@/lib/types";
 import { PREDICTORS } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -112,10 +112,17 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
 
   const M = evalRes.metrics[PREDICTORS.model];
   const offline = evalRes.served?.source === "offline";
-  const heads = headlines(evalRes.metrics as Parameters<typeof headlines>[0]);
-  const answered = (evalRes as EvalResponse & { with_existing_pv_answer?: { metrics?: Record<string, MetricSet> } }).with_existing_pv_answer?.metrics?.[PREDICTORS.model];
+  // Headline = new full systems when the engine reports that slice (else all projects); add-on sales separately.
+  const src = headlineSource(evalRes as Parameters<typeof headlineSource>[0]);
+  const HM = src.metrics[PREDICTORS.model] as MetricSet | undefined;
+  const heads = headlines(src.metrics);
+  const addOns = src.addOns ? headlines(src.addOns, PREDICTORS.model, ADDON_HEADLINES) : [];
+  const nAddOns = src.addOns ? n(src.addOns[PREDICTORS.model] as MetricSet, "n_projects") : null;
+  const cov = coverage(HM) ?? coverage(M);
+  const answered = evalRes.with_existing_pv_answer?.metrics?.[PREDICTORS.model];
   const fmt = (x: number | null, unit: "kWp" | "%") => (x == null ? "–" : unit === "kWp" ? x.toFixed(2) : `${Math.round(x)}`);
-  const nTest = n(M, "n_projects") ?? (evalRes.protocol?.n_test as number | undefined) ?? null;
+  const nTest = n(HM, "n_projects") ?? (src.fullOnly ? null : ((evalRes.protocol?.n_test as number | undefined) ?? null));
+  const nAll = n(M, "n_projects") ?? (evalRes.protocol?.n_test as number | undefined) ?? null;
   const transfer = Object.entries(evalRes.transfer ?? {});
 
   return (
@@ -123,7 +130,7 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <ServedBadge served={evalRes.served} />
-          {evalRes.served?.source === "offline" && <span className="text-body-sm text-ink-muted">Engine offline: numbers below are the last published results.</span>}
+          {offline && <span className="text-body-sm text-ink-muted">Engine offline: no numbers are shown until it is reachable again.</span>}
         </div>
         <h1 className="m-0 text-[clamp(32px,4vw,48px)] leading-none font-normal tracking-[-0.02em]">Does it design like your experts?</h1>
         <p className="m-0 max-w-2xl text-body text-ink-body">Every number on this page comes from homes the engine never saw while learning.</p>
@@ -229,7 +236,9 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
         </section>
 
         <section aria-labelledby="across" className="flex flex-col gap-4">
-          <h2 id="across" className="m-0 text-label uppercase text-ink-muted">Across {nTest ? fmtInt(nTest) : "all"} held-out homes</h2>
+          <h2 id="across" className="m-0 text-label uppercase text-ink-muted">
+            Across {nTest ? fmtInt(nTest) : "all"} held-out {src.fullOnly ? "new systems" : "homes"}
+          </h2>
           {offline ? (
             <div className="rounded-lg border border-dashed border-border bg-surface-1 p-6 text-body-sm text-ink-muted">
               Engine offline: the held-out metrics appear here as soon as it is reachable again. No numbers are shown in the meantime.
@@ -254,6 +263,37 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
                   </span>
                 </div>
               ))}
+              {cov != null && (
+                <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4">
+                  <div className="flex flex-wrap-reverse items-start justify-between gap-2">
+                    <span className="min-w-[12ch] flex-1 text-[13px] leading-[18px] text-ink-body">Expert solar inside our P10–P90 range</span>
+                    <StatusBadge tone={Math.abs(cov - 80) <= 5 ? "success" : "warning"}>
+                      {Math.abs(cov - 80) <= 5 ? "Calibrated" : cov < 80 ? "Range too narrow" : "Range too wide"}
+                    </StatusBadge>
+                  </div>
+                  <span className="font-mono text-metric font-medium tabular">
+                    {Math.round(cov)} <small className="text-[15px] text-ink-muted">%</small>
+                  </span>
+                  <span className="text-[12px] leading-4 text-ink-muted">Target 80 %: an honest range holds about 8 in 10 expert choices.</span>
+                </div>
+              )}
+            </div>
+          )}
+          {!offline && addOns.length > 0 && (
+            <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4">
+              <span className="text-[13px] text-ink-body">
+                Add-on sales{nAddOns ? ` (${fmtInt(nAddOns)} homes)` : ""}: battery retrofits, extensions, wallbox only. Scored separately.
+              </span>
+              {addOns.map((t) => (
+                <div key={t.key} className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
+                  <span className="text-ink-muted">{t.label}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="font-mono tabular">{fmt(t.ours, t.unit)} %</span>
+                    <span className="text-ink-muted">vs {fmt(t.base, t.unit)} % best rule</span>
+                    {t.wins != null && <StatusBadge tone={t.wins ? "success" : "warning"}>{t.wins ? "Better" : "Below"}</StatusBadge>}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
           {!offline && answered && (
@@ -274,7 +314,7 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
                   </div>
                 ))}
               </div>
-              <span className="text-[12px] text-ink-muted">Same held-out homes; assumes the answer is right. One question is worth more than any model tweak.</span>
+              <span className="text-[12px] text-ink-muted">All {nAll ? fmtInt(nAll) : ""} held-out homes, add-ons included; assumes the answer is right. One question is worth more than any model tweak.</span>
             </div>
           )}
           {!offline && transfer.length > 0 && (
@@ -309,7 +349,7 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
                 </tr>
               </thead>
               <tbody className="font-mono tabular">
-                {Object.entries(evalRes.metrics).map(([name, m]) => (
+                {Object.entries(src.metrics as Record<string, MetricSet>).map(([name, m]) => (
                   <tr key={name} className={cn("border-t border-surface-2", name === PREDICTORS.model && "font-semibold text-ink")}>
                     <td className="py-1.5 font-sans">{name === PREDICTORS.model ? "Our engine" : name.replace("baseline_", "").replace(/_/g, " ")}</td>
                     <td className="py-1.5 text-right">{kwp(n(m, "pv_kwp_mae_all_projects"))}</td>
@@ -321,7 +361,7 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
             </table>
           </details>}
           <p className="m-0 text-[12px] leading-4 text-ink-muted">
-            Test set: {nTest ? fmtInt(nTest) : "20 %"} homes ({Math.round(((evalRes.protocol?.test_size as number) ?? 0.2) * 100)} %), split{" "}
+            Test set: {nAll ? fmtInt(nAll) : "20 %"} homes ({Math.round(((evalRes.protocol?.test_size as number) ?? 0.2) * 100)} %), split{" "}
             {String(evalRes.protocol?.split ?? "by customer").replace(/\s*\(.*\)/, "").replace("grouped by customer_contact_id", "by customer")}, seed{" "}
             {String(evalRes.protocol?.seed ?? 42)}, locked before training. Labels: {evalRes.labels_source ?? "engine"}.
           </p>

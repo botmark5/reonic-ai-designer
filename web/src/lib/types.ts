@@ -33,6 +33,11 @@ export interface Home {
   orientation_deg?: number | null; // 180 = south
   tilt_deg?: number | null;
   offer_date?: string | null; // ISO date; empty = today
+  /** Roof inputs (engine #27), filled from Google Solar when the address is known. undefined = never filled,
+   *  null = removed by the planner. The cap limits PV size; direction and pitch change yield, not size. */
+  roof_max_kwp?: number | null;
+  roof_azimuth?: number | null; // degrees clockwise from north, 180 = south
+  roof_pitch?: number | null; // degrees
 }
 
 /** Components the planner has fixed. null = engine decides. 0 = "none" (no PV / no battery / no heat pump). */
@@ -277,6 +282,11 @@ export interface EvalResponse {
   /** "installerA->installerB" -> predictor -> metrics (trained on A, tested on B) */
   transfer?: Record<string, Record<string, MetricSet>>;
   labels_source?: string;
+  /** report slice -> predictor -> metrics. "full_designs" = new full systems (the headline), "add_ons" = retrofits,
+   *  extensions and wallbox-only sales; also "known_consumption", "full_designs_known_consumption". */
+  segments?: Record<string, Record<string, MetricSet>>;
+  /** same held-out evaluation when the planner answered "Solar already on the roof?" */
+  with_existing_pv_answer?: { metrics?: Record<string, MetricSet>; segments?: Record<string, Record<string, MetricSet>> };
   served?: Served;
 }
 

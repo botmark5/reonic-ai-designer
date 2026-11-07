@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { House3D } from "@/components/house3d";
+import { House3D, roofFromSolarResult } from "@/components/house3d";
 import { Button } from "@/components/ui/button";
 import { ServedBadge } from "@/components/ui/served-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { COMPONENTS } from "@/lib/diff";
+import { roofInputsFromSolar } from "@/lib/roof";
+import type { SolarResult } from "@/lib/solar";
 import type { DesignRow } from "@/lib/supabase";
 import { OFFER_TYPE_LABEL, type OfferType } from "@/lib/types";
 import { HomeForm } from "./home-form";
@@ -91,6 +93,27 @@ function Workspace({
   const changed = new Set(s.change?.diff.changed ?? []);
   const offerType = r?.facts_for_explanation?.offer_type as OfferType | undefined;
   const lockedCount = Object.values(s.locks).filter((v) => v !== null && v !== undefined).length;
+
+  // Google Solar for the customer's address: roof cap, direction and pitch go into /design (once; the planner can
+  // edit or remove them in the form), and the real roof goes to the 3D house. Nothing happens without a result.
+  const [solar, setSolar] = useState<SolarResult | null>(null);
+  const { applyRoof } = p;
+  useEffect(() => {
+    const address = row.address?.trim();
+    if (!address) return;
+    const ctrl = new AbortController();
+    fetch(`/api/solar?address=${encodeURIComponent(address)}`, { signal: ctrl.signal })
+      .then((res) => (res.ok ? (res.json() as Promise<SolarResult>) : null))
+      .then((res) => {
+        if (!res || ctrl.signal.aborted) return;
+        setSolar(res);
+        const roof = roofInputsFromSolar(res);
+        if (roof) applyRoof(roof);
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [row.address, applyRoof]);
+  const roof3d = useMemo(() => roofFromSolarResult(solar), [solar]);
 
   async function send() {
     const res = await p.share();
@@ -182,7 +205,7 @@ function Workspace({
         ) : null}
         {r && (
           <section aria-label="The system on the house" className="mt-2">
-            <House3D design={r} home={s.home} mode="planner" />
+            <House3D design={r} home={s.home} mode="planner" roof={roof3d} />
           </section>
         )}
         {!r && (

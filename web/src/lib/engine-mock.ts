@@ -74,7 +74,8 @@ export function mockDesign(req: DesignRequest): DesignResponse {
 
   // PV: annual kWh / 1000 + EV bonus, snapped to 450 W modules
   const pvRaw = household / 1000 + ev / 1000;
-  const pvAuto = household > 0 ? snapPv(pvRaw) : 0;
+  const roofCap = home.roof_max_kwp && home.roof_max_kwp > 0 ? Math.floor(home.roof_max_kwp / 0.45) * 0.45 : Infinity;
+  const pvAuto = household > 0 ? Math.min(snapPv(pvRaw), Math.round(roofCap * 100) / 100) : 0;
   const pvKwp = locks.pv_kwp ?? pvAuto;
   const hasPv = pvKwp > 0;
   const pvRange: [number, number] = [snapPv(pvAuto * 0.85), snapPv(pvAuto * 1.2)];
