@@ -71,6 +71,7 @@ Status: v1.1 schema (adds n_wallboxes, roof_mixed, pv_source size_band; is_prima
 | is_full_design | bool | | `offer_type == "new_system"`; main model and evaluation use only these rows |
 | pv_kwp_min, pv_kwp_max | float | kWp | range of pv_kwp over the project's options with the same is_full_design value |
 | battery_kwh_min, battery_kwh_max | float | kWh | same range for battery_kwh (0 counts: "no battery" is a valid variant) |
+| (note) | | | ranges include `pv_implausible` options of the same project: 1 project (23c·9a560829) has pv_kwp_min 0.9 next to a 7.2 kWp primary. Filter those options before computing your own range if you need it exact. |
 
 ### Expert design (the labels)
 | column | type | unit | meaning |

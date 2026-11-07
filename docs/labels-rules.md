@@ -92,6 +92,9 @@ All 28 package-vs-lines conflicts in 23c are explained by rows 4–8 (added modu
 wallbox = a `Wallbox` row, OR a wallbox installation fee ("Install Wallbox", "Wallbox Installation") or "All-Inclusive Package - Wallbox".
 "Prep …" lines and "Power Boost for Existing Wallbox" alone → False. wallbox_kw = `wb_charging_speed_kw`/1000 of the Wallbox row
 (NaN when installed without a Wallbox row); n_wallboxes = Σ qty of Wallbox rows (≥ 1 when wallbox).
+Added after the final review: a wallbox sold only as a promo/product line of type Other ("Free 11kW AC Wallbox Promo",
+"EV Charger Pro 2") also counts (kW from the name, n = 1); promo text next to a real Wallbox row never adds a second one.
+Matched 2 real 23c options.
 
 | # | option | line items | result |
 |---|---|---|---|
@@ -159,6 +162,7 @@ has_backup = "Smart Guard", "Backup Box", "Emergency Power", "Backup Solution", 
 | EV without wallbox | 24 (2a8) + 7 (23c) options with has_ev and no wallbox | keep as is: a real expert decision (existing charger, socket). |
 | Wallbox without EV | 406 + 64 options | keep: installers upsell; has_ev is a weak signal. Reported in data notes. |
 | Very large systems | 1 option > 30 kWp (99.9), batteries > 40 kWh: 45 (2a8), 108 (23c) | `is_outlier`, kept in file, excluded from training and evaluation. |
+| Placeholder PV quantities | full designs with 0 < pv_kwp < 1 (e.g. 23c·15699765: 1 module next to a "15-30kWp" tier and a 12 kW inverter): 6 options | `pv_implausible`, also `is_outlier` (added after the final review). |
 | Projects with no parts | 20 + 6, all at the 4,500 kWh default | not in the parquet; counted in data notes. |
 | Exact duplicate options | 64 projects (2a8), 4 (23c) | `is_duplicate_option` on the higher number; kept; ranges unchanged. |
 | Variants differing only in battery | 75 projects (2a8) | keep all; battery range = min/max. Lowest option is the smallest battery in 77 projects and the largest in 48, so evaluation must also report range-hit, not only error vs the primary. |
