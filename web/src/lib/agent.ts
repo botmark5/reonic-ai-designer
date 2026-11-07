@@ -166,8 +166,8 @@ export function allowedLockValues(c: ComponentKey, r: DesignResponse | null, pla
   if (!r) return s;
   const d = r.design;
   if (c === "pv") {
-    if (d.pv.kwp) s.add(d.pv.kwp);
-    d.pv.range?.forEach((x) => s.add(x));
+    if (d.pv.include && d.pv.kwp) s.add(d.pv.kwp);
+    if (d.pv.include) d.pv.range?.forEach((x) => s.add(x)); // no new PV (e.g. battery retrofit): the range means nothing
   }
   if (c === "battery") {
     if (d.battery.kwh) s.add(d.battery.kwh);
@@ -187,7 +187,7 @@ export function allowedLockValues(c: ComponentKey, r: DesignResponse | null, pla
 function summarize(r: DesignResponse) {
   const d = r.design;
   return {
-    pv: { kwp: sizeOf(d, "pv"), typical_range_kwp: d.pv.range, confidence: d.pv.confidence },
+    pv: d.pv.include ? { kwp: sizeOf(d, "pv"), typical_range_kwp: d.pv.range, confidence: d.pv.confidence } : { kwp: null, note: "no new PV in this design" },
     battery: { kwh: sizeOf(d, "battery"), range_kwh: d.battery.range, alternatives: d.battery.alternatives, confidence: d.battery.confidence },
     wallbox: { included: d.wallbox.include, kw: d.wallbox.kw },
     heatpump: {

@@ -118,6 +118,7 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
   const heads = headlines(src.metrics);
   const addOns = src.addOns ? headlines(src.addOns, PREDICTORS.model, ADDON_HEADLINES) : [];
   const nAddOns = src.addOns ? n(src.addOns[PREDICTORS.model] as MetricSet, "n_projects") : null;
+  // Shown only when /eval reports coverage (engine #43). 80 % is not an engine number: a P10–P90 range should hold 90 − 10 = 80 % by definition.
   const cov = coverage(HM) ?? coverage(M);
   const answered = evalRes.with_existing_pv_answer?.metrics?.[PREDICTORS.model];
   const fmt = (x: number | null, unit: "kWp" | "%") => (x == null ? "–" : unit === "kWp" ? x.toFixed(2) : `${Math.round(x)}`);
