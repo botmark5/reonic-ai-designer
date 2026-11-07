@@ -24,11 +24,16 @@ create table if not exists public.designs (
   call_id     uuid references public.calls(id) on delete set null,
   source      text not null default 'planner' check (source in ('voice', 'planner')),
   status      text not null default 'draft'   check (status in ('draft', 'review', 'sent')),
+  customer_name text,                                   -- "Weber, Augsburg" (from the call or typed by the planner)
+  address       text,
   home        jsonb not null,                           -- Home (web/src/lib/types.ts)
   locks       jsonb not null default '{}'::jsonb,       -- Locks
   design      jsonb,                                    -- DesignResponse from the engine
   explanation text
 );
+-- columns added after the first version (safe to re-run)
+alter table public.designs add column if not exists customer_name text;
+alter table public.designs add column if not exists address text;
 create index if not exists designs_created_at_idx on public.designs (created_at desc);
 create index if not exists designs_call_id_idx on public.designs (call_id);
 

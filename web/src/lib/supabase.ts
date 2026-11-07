@@ -40,6 +40,8 @@ export interface DesignRow {
   call_id: string | null;
   source: DesignSource;
   status: DesignStatus;
+  customer_name: string | null;
+  address: string | null;
   home: Home;
   locks: Locks;
   design: DesignResponse | null;

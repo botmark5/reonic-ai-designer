@@ -24,6 +24,8 @@ export interface Home {
   house_sqm: number | null;
   inhabitants: number | null;
   // optional extras accepted by the engine (not in api.md v0)
+  /** "Is there already PV on the roof?" true / false / null = not asked. The engine's strongest input (engine PR #9). */
+  has_existing_pv?: boolean | null;
   existing_wallbox?: boolean;
   orientation_deg?: number | null; // 180 = south
   tilt_deg?: number | null;
@@ -169,6 +171,15 @@ export interface Served {
   reason?: string; // why offline, e.g. "timeout after 4000 ms"
   ms: number; // round trip
 }
+
+/** facts_for_explanation.offer_type (engine PR #9). */
+export type OfferType = "pv" | "battery_retrofit" | "wallbox_only" | "other";
+export const OFFER_TYPE_LABEL: Record<OfferType, string> = {
+  pv: "New solar system",
+  battery_retrofit: "Battery add-on to existing solar",
+  wallbox_only: "Wallbox only",
+  other: "Order without solar or battery",
+};
 
 export interface DesignResponse {
   design: Design;
