@@ -82,3 +82,56 @@ export function verdicts(ours: OurSizes, variants: ExpertVariant[], batteryCatal
 
   return { pv, battery, wallbox, heatpump };
 }
+
+// ---------------------------------------------------------------------------
+// Headline metrics: our model vs the BEST simple baseline for each metric (named), read live from /eval.
+// ---------------------------------------------------------------------------
+export interface HeadlineDef {
+  key: string;
+  label: string;
+  better: "lower" | "higher";
+  unit: "kWp" | "%";
+  note?: string;
+}
+
+export const HEADLINES: HeadlineDef[] = [
+  { key: "pv_kwp_mae_all_projects", label: "Solar size error, all homes", better: "lower", unit: "kWp", note: "An unwanted or missing system counts as an error." },
+  { key: "pv_variant_hit_tolerant_pct", label: "Solar inside the expert's range", better: "higher", unit: "%", note: "Within 1 kWp of any variant the expert offered." },
+  { key: "pv_kwp_mae_when_both_pv", label: "Solar size error, where both chose solar", better: "lower", unit: "kWp" },
+  { key: "has_battery_accuracy", label: "Battery yes or no right", better: "higher", unit: "%", note: "The simple rule always guesses the majority answer." },
+  { key: "has_wallbox_accuracy", label: "Wallbox yes or no right", better: "higher", unit: "%", note: "The simple rule always guesses the majority answer." },
+];
+
+export const BASELINE_NAME: Record<string, string> = {
+  baseline_band_median: "consumption-band median",
+  baseline_kwh_per_1000: "kWh ÷ 1000 rule",
+  baseline_kwp_per_mwh: "kWp-per-MWh rule",
+};
+
+export interface Headline extends HeadlineDef {
+  ours: number | null;
+  base: number | null;
+  baseName: string | null;
+  wins: boolean | null;
+}
+
+type Metrics = Record<string, Record<string, number | null | undefined>>;
+
+export function headlines(metrics: Metrics, model = "design_model"): Headline[] {
+  const baselines = Object.keys(metrics).filter((k) => k.startsWith("baseline_"));
+  return HEADLINES.map((h) => {
+    const ours = metrics[model]?.[h.key] ?? null;
+    let base: number | null = null;
+    let baseName: string | null = null;
+    for (const b of baselines) {
+      const v = metrics[b]?.[h.key];
+      if (typeof v !== "number") continue;
+      if (base == null || (h.better === "lower" ? v < base : v > base)) {
+        base = v;
+        baseName = BASELINE_NAME[b] ?? b.replace("baseline_", "").replace(/_/g, " ");
+      }
+    }
+    const wins = ours == null || base == null ? null : h.better === "lower" ? ours < base : ours > base;
+    return { ...h, ours: typeof ours === "number" ? ours : null, base, baseName, wins };
+  });
+}

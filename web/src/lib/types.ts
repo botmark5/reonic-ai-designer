@@ -26,6 +26,9 @@ export interface Home {
   // optional extras accepted by the engine (not in api.md v0)
   /** "Is there already PV on the roof?" true / false / null = not asked. The engine's strongest input (engine PR #9). */
   has_existing_pv?: boolean | null;
+  /** true only when annual_kwh was left at the dataset default (4,500); false once the planner typed or confirmed it.
+   *  Engine support pending (extras are ignored until Cala adds it). */
+  demand_is_default?: boolean | null;
   existing_wallbox?: boolean;
   orientation_deg?: number | null; // 180 = south
   tilt_deg?: number | null;

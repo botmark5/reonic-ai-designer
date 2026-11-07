@@ -258,6 +258,7 @@ export async function runAgent(input: AgentInput, emit: (e: AgentEvent) => void,
         (applied as Record<string, unknown>)[k] = v;
       }
       if (applied.has_ev === true && home.ev_km_year == null && applied.ev_km_year == null) applied.ev_km_year = 15000;
+      if (typeof applied.annual_kwh === "number") applied.demand_is_default = false; // the planner gave a real figure
       home = { ...home, ...applied };
       dirty = true;
       return { content: `Updated: ${JSON.stringify(applied)}. Call run_design to see the effect.` };

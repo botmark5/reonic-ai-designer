@@ -42,3 +42,20 @@ describe("reality verdicts", () => {
     expect(r.heatpump.kind).toBe("option");
   });
 });
+
+describe("headline metrics", () => {
+  it("compares with the best baseline per metric and names it", async () => {
+    const { headlines } = await import("./reality");
+    const h = headlines({
+      design_model: { pv_kwp_mae_all_projects: 2.94, has_battery_accuracy: 86.7 },
+      baseline_band_median: { pv_kwp_mae_all_projects: 3.77, has_battery_accuracy: 89.8 },
+      baseline_kwh_per_1000: { pv_kwp_mae_all_projects: 4.95, has_battery_accuracy: 89.8 },
+    });
+    const pv = h.find((x) => x.key === "pv_kwp_mae_all_projects")!;
+    expect(pv.base).toBe(3.77);
+    expect(pv.baseName).toBe("consumption-band median");
+    expect(pv.wins).toBe(true);
+    const bat = h.find((x) => x.key === "has_battery_accuracy")!;
+    expect(bat.wins).toBe(false); // shown honestly
+  });
+});

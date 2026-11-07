@@ -26,7 +26,7 @@ export interface Offer {
 export const DEMO_HOME: Home = {
   annual_kwh: 4800, price_eur_kwh: 0.32, load_profile: "H0", has_ev: true, ev_km_year: 15000, existing_pv_kwp: null,
   existing_battery_kwh: null, heating: "Gas", heating_demand_kwh: null, roof_type: "Concrete tile", house_sqm: null,
-  inhabitants: 4, has_existing_pv: false,
+  inhabitants: 4, has_existing_pv: false, demand_is_default: false,
 };
 
 /** Battery sizes and wallbox yes/no the homeowner may pick between (from the share, else from the engine's alternatives). */
