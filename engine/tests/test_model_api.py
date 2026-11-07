@@ -330,3 +330,8 @@ def test_api_key_required_when_set(client, monkeypatch):
     assert client.post("/design", json=payload, headers={"X-Engine-Key": "s3cret"}).status_code == 200
     assert client.get("/health").status_code == 200                          # health stays open
     assert client.get("/installers").status_code == 401
+
+
+def test_pv_threshold_learned_out_of_fold(trained):
+    model, _ = trained
+    assert 0.2 <= model.pv_threshold_ <= 0.6
