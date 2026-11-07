@@ -24,6 +24,7 @@ export const BILL_PRICE_EUR_KWH = 0.35;
 const HOUSEHOLD_KWH: Record<number, number> = { 1: 1500, 2: 2500, 3: 3500, 4: 4250 };
 const HOUSEHOLD_KWH_5PLUS = 5000;
 const DEFAULT_KWH = 4000;
+const EV_KM_DEFAULT = 15000; // planner form and chat agent use the same default
 const CREATE_BUDGET_MS = 2500; // the agent must be able to speak within ~3 s
 const SOLAR_BUDGET_MS = 900;
 const POSTCALL_BUDGET_MS = 8000;
@@ -138,6 +139,8 @@ export function normaliseFacts(raw: unknown): NormalisedFacts {
 
   const assumptions: string[] = [];
   let annual = facts.annual_kwh && facts.annual_kwh > 0 ? facts.annual_kwh : null;
+  // The caller's own figure (use or bill) is real demand, not the dataset's 4,500 kWh placeholder.
+  const demandStated = annual != null || (facts.monthly_bill_eur ?? 0) > 0;
   if (annual == null && facts.monthly_bill_eur) {
     annual = Math.round((facts.monthly_bill_eur * 12) / BILL_PRICE_EUR_KWH / 100) * 100;
     assumptions.push(`Annual use estimated from a €${fmtNum(facts.monthly_bill_eur)}/month bill at ${BILL_PRICE_EUR_KWH} €/kWh.`);
@@ -161,7 +164,8 @@ export function normaliseFacts(raw: unknown): NormalisedFacts {
     price_eur_kwh: null, // engine default
     load_profile: "H0",
     has_ev: hasEv,
-    ev_km_year: hasEv ? facts.ev_km_year : null,
+    // An EV with no distance still needs a wallbox decision: 15,000 km/year, as in the planner form.
+    ev_km_year: hasEv ? (facts.ev_km_year ?? EV_KM_DEFAULT) : null,
     has_existing_pv: hasExistingPv,
     existing_pv_kwp: existingPvKwp,
     existing_battery_kwh: facts.existing_battery_kwh,
@@ -172,7 +176,9 @@ export function normaliseFacts(raw: unknown): NormalisedFacts {
     inhabitants: facts.household,
     orientation_deg: facts.roof_direction ? (ORIENTATION[facts.roof_direction] ?? null) : null,
     tilt_deg: null,
+    demand_is_default: demandStated ? false : null,
   };
+  if (hasEv && facts.ev_km_year == null) assumptions.push(`EV distance not given: ${EV_KM_DEFAULT.toLocaleString("en-US")} km/year assumed.`);
   return { facts, home, assumptions };
 }
 
