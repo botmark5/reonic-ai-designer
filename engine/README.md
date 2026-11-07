@@ -43,27 +43,26 @@ If `engine/artifacts/design_model.joblib` is missing, the API trains a model on 
 6. **Locks:** any component the planner fixes is kept, and the later steps adapt to it.
 7. **Reasons:** per-decision SHAP contributions (LightGBM `pred_contrib`) turned into sentences.
 
-## Results (held-out 20 %, 319 projects never seen in training; interim labels)
+## Results (held-out 20 %, 323 projects never seen in training, split by customer; interim labels)
 | metric | model | band median | kWp = kWh/1000 |
 |---|---|---|---|
-| PV kWp MAE, end to end | 2.90 | **2.67** | 4.80 |
-| PV kWp MAE, where both have PV | **2.53** | 2.67 | 4.74 |
-| PV inside the variant range ± 1 kWp | **40 %** | 30 % | 11 % |
-| battery kWh MAE, where both have one | **2.43** | 2.66 | 3.04 |
-| battery within one catalogue step | **62 %** | 58 % | 43 % |
-| battery inside the variant range ± 1 step | **60 %** | 55 % | 41 % |
+| PV kWp MAE, end to end | 3.33 | **2.93** | 5.29 |
+| PV kWp MAE, where both have PV | **2.70** | 2.93 | 5.22 |
+| PV inside the variant range ± 1 kWp | **40 %** | 28 % | 11 % |
+| battery kWh MAE, where both have one | **2.84** | 3.08 | 3.07 |
+| battery within one catalogue step | **53 %** | 51 % | 42 % |
+| battery inside the variant range ± 1 step | **54 %** | 50 % | 41 % |
 | PV yes/no accuracy | **89 %** | 81 % | 81 % |
-| battery yes/no accuracy | 87 % | **88 %** | 88 % |
-| wallbox yes/no accuracy | 78 % | 78 % | 78 % |
+| battery yes/no accuracy | 89 % | 89 % | 89 % |
+| wallbox yes/no accuracy | **73 %** | 72 % | 72 % |
 | heat pump yes/no accuracy | 99 % | 99 % | 99 % |
 
-Installer transfer (train on one, test on the other), PV MAE where both have PV: 2.99 vs 3.06 (A→B) and
-2.88 vs 3.53 (B→A) for model vs band median.
+Installer transfer (train on one, test on the other), PV MAE where both have PV: 2.97 vs 3.06 (23c108b7->2a8ba8e2) and 2.88 vs 3.53 (2a8ba8e2->23c108b7) for model vs band median.
 
 ## Known limitations (be honest in the pitch)
 - **Labels are interim** (my parser) until engine/labels lands; PV for installer 2a8ba8e2 is panel count × an assumed 450 W.
 - **PV size is barely predictable beyond consumption bands** (CV: 2.60 vs 2.69 kWp). The data has no roof size/orientation, which probably drives the expert choice.
-- **End-to-end PV MAE loses to the baseline**: about 17 of 257 test projects are wrongly predicted "no PV" (battery-only retrofits are hard to tell apart).
+- **End-to-end PV MAE loses to the baseline**: a few percent of test projects are wrongly predicted "no PV" (battery-only retrofits are hard to tell apart).
 - **Wallbox ≈ coin flip** without EV information. **Heat pump** is offered (not chosen) for gas/oil homes; experts added one in 11 of 24 cases.
 - **Time trend:** new projects use a date capped at the 90th percentile of training dates (~Mar 2026), because the last month is an unusual batch of battery-only retrofits.
 - **Economics use placeholder prices.**

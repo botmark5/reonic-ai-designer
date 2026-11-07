@@ -119,7 +119,8 @@ def build_interim_labels(raw_dir: Path | str = RAW_DIR) -> pd.DataFrame:
 def get_labels(rebuild: bool = False) -> tuple[pd.DataFrame, str]:
     """Mark's expert_designs.parquet if it exists, else the interim parse (cached). Returns (labels, source)."""
     if MARK_LABELS.exists():
-        return pd.read_parquet(MARK_LABELS), "engine/labels (expert_designs.parquet)"
+        from engine.evaluate import normalize_labels          # accepts engine/labels schema v1.1
+        return normalize_labels(pd.read_parquet(MARK_LABELS)), "engine/labels (expert_designs.parquet)"
     if INTERIM_LABELS.exists() and not rebuild:
         return pd.read_parquet(INTERIM_LABELS), "interim_labels (cached)"
     labels = build_interim_labels()

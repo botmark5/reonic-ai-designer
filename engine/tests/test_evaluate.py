@@ -227,3 +227,28 @@ def test_load_inputs_real_data():
     assert set(inp.installer) == {"23c108b7", "2a8ba8e2"}
     assert len(inp) == 342 + 1277
     assert inp.annual_kwh.median() == pytest.approx(4500)
+
+
+# ---------------------------------------------------------------- engine/labels schema v1.1 + customer split
+def test_normalize_mark_schema(synthetic):
+    labels = synthetic[0].rename(columns={"has_battery": "battery", "has_wallbox": "wallbox", "has_heatpump": "heatpump"})
+    labels = labels.drop(columns=["has_pv"])
+    labels["heatpump_kw"] = np.nan                               # v1.1: NaN = no heat pump
+    labels["is_outlier"] = False
+    labels.loc[labels.index[0], "is_outlier"] = True             # a primary option -> whole project dropped
+    norm = E.normalize_labels(labels)
+    E.validate_labels(norm)
+    assert {"has_pv", "has_battery", "has_wallbox", "has_heatpump"} <= set(norm.columns)
+    assert (norm.heatpump_kw == 0).all()
+    assert labels.project_id.iloc[0] not in set(norm.project_id)
+    assert E.normalize_labels(norm).equals(norm)                 # idempotent
+    assert len(E.build_eval_table(labels, synthetic[1])) == labels.project_id.nunique() - 1
+
+
+def test_split_groups_customers(synthetic):
+    labels, inputs = synthetic
+    inputs = inputs.assign(customer_contact_id=[f"c{i // 2}" for i in range(len(inputs))])   # 2 projects per customer
+    t = E.build_eval_table(labels, inputs)
+    train, test = E.grouped_split(t, seed=3)
+    assert not set(train.customer_contact_id) & set(test.customer_contact_id)
+    assert not set(train.project_id) & set(test.project_id)
