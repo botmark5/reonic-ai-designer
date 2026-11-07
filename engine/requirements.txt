@@ -8,6 +8,6 @@ pydantic
 anthropic
 python-dotenv
 matplotlib
-pytest
 pyarrow
+pytest
 httpx

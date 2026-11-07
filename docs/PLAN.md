@@ -9,12 +9,12 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [ ] Both: confirm docs/api.md v0
 
 ## Phase 1 — Data and expert designs (Cala + Mark pair)
-- [ ] Profile every column of both installers (fill rate, values, outliers) → docs/data-notes.md
-- [ ] Expert design per project: PV kWp, battery kWh, wallbox, heat pump, inverter kW; all variants kept
-- [ ] Extra features: roof type, scaffolding, brand, installer, date, retrofit flags
-- [ ] Edge cases decided and written down
-- [ ] Per-installer catalogue of real sizes
-- [ ] engine/artifacts/expert_designs.parquet + 20 random projects spot-checked by hand
+- [x] Profile every column of both installers (fill rate, values, outliers) → docs/data-notes.md
+- [x] Expert design per project: PV kWp, battery kWh, wallbox, heat pump, inverter kW; all variants kept
+- [x] Extra features: roof type, scaffolding, brand, installer, date, retrofit flags
+- [x] Edge cases decided and written down
+- [x] Per-installer catalogue of real sizes
+- [x] engine/artifacts/expert_designs.parquet + 20 random projects spot-checked by hand
 
 ## Phase 2 — Engine and evaluation (Cala)
 - [ ] docs/engine-spec.md in plain English
@@ -53,6 +53,9 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - Sat 18:40 · PV size model: Huber loss + monotonic constraints (more demand / EV never shrinks PV); PV snapped to 450 W modules
 - Sat 18:40 · New projects use an offer date capped at the 90th percentile of training dates (last month is an unusual retrofit batch)
 - Sat 18:40 · Claude: Haiku 5.5 for /refine (structured output), Sonnet 5.5 for /explain (streamed, server-side refusal fallback); keyword/template fallback without key
+- Sat 18:30 · Expert labels v1 (engine/labels): primary = lowest full new-system option; default 4,500 kWh = consumption unknown;
+  2a8 panels at 450 W; battery from the (shifted) numeric column; retrofits kept with offer_type, main model on new_system only.
+  Rules: docs/labels-rules.md · schema: docs/data-notes.md
 - Sat 18:00 · Physics = hourly synthetic year with seeded sunny/cloudy days, calibrated to HTW-Berlin rule-of-thumb ranges (not official BDEW tables)
 - Sat 18:00 · Variant-range hit = inside [min, max] of the project's options ± tolerance (PV ± 1 kWp, battery ± 1 catalogue step); strict number reported too
 - Sat 18:00 · Label contract proposed in docs/data-notes.md (one row per project × option, is_primary flag); evaluate.py joins inputs from data/raw

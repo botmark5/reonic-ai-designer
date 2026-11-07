@@ -8,3 +8,7 @@ node_modules/
 .next/
 .DS_Store
 engine/artifacts/*.pkl
+engine/artifacts/*.parquet
+.claude/worktrees/
+engine/artifacts/spotcheck.md
+engine/artifacts/catalogue.json
