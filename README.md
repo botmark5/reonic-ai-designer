@@ -53,7 +53,7 @@ Before/after per improvement, everything we tried that did not help, and the err
 **Web.** It runs without any keys: the engine falls back to the offline estimate and the store to an in-memory demo inbox.
 ```bash
 cd web && npm ci && npm run dev        # http://localhost:3000
-npm test                               # 157 tests
+npm test                               # 158 tests
 ```
 
 **Engine.** It needs Reonic's data in `data/raw/`, which is never committed, or the trained artifacts.

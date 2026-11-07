@@ -97,7 +97,7 @@ Expert range means the smallest to largest PV across the variants the expert off
 | Voice call to draft design on production | 207 ms engine time | d-voice smoke test, 2026-11-08 00:13 | Safe |
 | Engine health check | 0.15–0.16 s (5 calls, laptop to the live engine) | measured 2026-11-08 00:20 | Safe |
 | Engine tests | 380 pytest (363 run without the raw data, 17 need it) | `pytest`, main 9ee0431 | Safe |
-| Web tests | 157 vitest in 19 files | `npm test` in `web/`, main 9ee0431 | Safe |
+| Web tests | 158 vitest in 19 files | `npm test` in `web/`, main 9ee0431 | Safe |
 | Who decides sizes | the engine only. Claude turns planner text into input changes and writes explanations. | `CLAUDE.md`, `engine/README.md` | Safe |
 
 ## Don't say
