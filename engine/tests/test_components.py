@@ -360,6 +360,40 @@ def test_r8_inverter_beats_wallbox():
     assert extract_brand(items) == "GoodWe"
 
 
+def test_r8_package_row_brand_from_column():
+    items = make_items([
+        {"name": "Complete Package 2 GoodWe 10.8kWp + 10kWh", "type": "Other", "brand": "GoodWe"},
+        {"name": "Manual Transfer Switch", "type": "AccessoryToBatteryStorage"},
+    ])
+    assert extract_brand(items) == "GoodWe"
+
+
+def test_r8_package_row_brand_from_word_after_package_number_when_column_empty():
+    items = make_items([{"name": "Complete Package 3 FoxESS 15.3kWp + 15kWh", "type": "Other", "brand": ""}])
+    assert extract_brand(items) == "FoxESS"
+
+
+def test_r8_battery_row_beats_package_row():
+    items = make_items([
+        {"name": "Complete Package 1 GoodWe 6.3kWp + 5kWh", "type": "Other", "brand": "GoodWe"},
+        battery("Sigenergy AIOS Battery 9kWh", 9000, brand="Sigenergy"),
+    ])
+    assert extract_brand(items) == "Sigenergy"
+
+
+def test_r8_package_beats_energy_manager():
+    items = make_items([
+        {"name": "Energy Manager B", "type": "AccessoryToModule", "brand": "Huawei"},
+        {"name": "Complete Package 1 Sigenergy 6.3kWp + 6kWh", "type": "Other", "brand": "Sigenergy"},
+    ])
+    assert extract_brand(items) == "Sigenergy"
+
+
+def test_r8_package_row_with_never_counting_brand_is_unknown():
+    items = make_items([{"name": "Complete Package 1 Sunpro 6.3kWp", "type": "Other", "brand": "Sunpro"}])
+    assert extract_brand(items) == "Unknown"
+
+
 def test_r8_energy_manager_is_last_fallback():
     items = make_items([{"name": "Energy Manager B", "type": "AccessoryToModule", "brand": "Huawei"}, {"name": "PV Module 450W", "type": "Module", "brand": "Trina"}])
     assert extract_brand(items) == "Huawei"

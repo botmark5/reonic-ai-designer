@@ -22,6 +22,7 @@ WALLBOX_FEE_RE = re.compile(r"^(?:Install Wallbox|Wallbox Installation)(?: [A-Z]
 BACKUP_RE = re.compile(
     r"Smart Guard|Backup Box|Emergency Power|Backup Solution|Home Backup Interface|Transfer Switch", re.I
 )
+PACKAGE_BRAND_RE = re.compile(r"^Complete Package \d+ (\S+)", re.I)
 MANAGER_RE = re.compile(r"Energy Manager|Optimizer|Smart Meter|Energy Meter", re.I)
 
 KNOWN_BRANDS = ("Huawei", "EcoFlow", "SAJ", "SolarEdge", "Enphase", "Sigenergy", "GoodWe", "FoxESS", "Azzurro")
@@ -162,6 +163,12 @@ def extract_brand(items: pd.DataFrame) -> str:
     for level in levels:
         for row in level:
             brand = _row_brand(row, allow_last_level=False)
+            if brand:
+                return brand
+    for row in rows:
+        match = PACKAGE_BRAND_RE.match(row["component_name"])
+        if match:
+            brand = _row_brand({**row, "component_name": match.group(1)}, allow_last_level=False)
             if brand:
                 return brand
     for row in rows:
