@@ -13,8 +13,29 @@ const LINKS = [
   { href: "/reality", label: "Reality check" },
 ] as const;
 
+const isHomeowner = (path: string) => path.startsWith("/offer");
+
+/** Logo: links to the planner on planner pages; plain on homeowner pages. */
+export function Brand({ logo }: { logo: React.ReactNode }) {
+  const path = usePathname();
+  if (isHomeowner(path))
+    return (
+      <span className="flex shrink-0 items-center gap-2.5">
+        {logo}
+        <span className="hidden text-body-sm font-medium text-ink-muted sm:inline">Your offer</span>
+      </span>
+    );
+  return (
+    <Link href="/" className="flex shrink-0 items-center gap-2.5 rounded-sm" aria-label="Reonic AI Designer, designs">
+      {logo}
+      <span className="hidden text-body-sm font-medium text-ink-muted sm:inline">AI Designer</span>
+    </Link>
+  );
+}
+
 export function AppNav() {
   const path = usePathname();
+  if (isHomeowner(path)) return null;
   return (
     <nav aria-label="Main" className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
       {LINKS.map((l) => {
