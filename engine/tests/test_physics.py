@@ -83,7 +83,7 @@ def test_east_roof_shifts_production_earlier():
 
 def test_pv_seasonality():
     prof = P._pv_unit_profile(180.0, 42).reshape(365, 24).sum(axis=1)
-    assert prof[:31].sum() < 0.05 and prof[181:212].sum() > 0.12      # January small, July big
+    assert prof[:31].sum() < 0.05 and prof[181:212].sum() > 0.11      # January small, July big (PVGIS: 4.1 % / 11.9 %)
 
 
 # ---------------------------------------------------------------- load profiles

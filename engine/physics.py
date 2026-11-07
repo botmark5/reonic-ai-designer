@@ -53,6 +53,43 @@ _ORIENT_FACTOR = np.array([
     [0.88, 0.76, 0.62, 0.51, 0.42, 0.28],   # north
 ])
 
+# PVGIS (EU JRC) replaces the rule-of-thumb table when engine/config/pvgis_augsburg.json is present:
+# real yearly yield per tilt x orientation (central German location), normalised to south / 30 deg = 1.0,
+# and the real monthly split of the yearly yield. The base (950 kWh/kWp, German average) stays: Augsburg itself
+# yields more (1,120 kWh/kWp at south 30 deg) and the projects' locations are unknown.
+PVGIS_FILE = Path(__file__).resolve().parent / "config" / "pvgis_augsburg.json"
+
+
+def _load_pvgis():
+    global _AZ_DEV, _TILT, _ORIENT_FACTOR, PV_MONTH_SHARE, PV_SOURCE
+    PV_SOURCE = "rule-of-thumb table"
+    if not PVGIS_FILE.exists():
+        return
+    import json
+    d = json.loads(PVGIS_FILE.read_text())
+    y = {tuple(int(v) for v in k.split("|")): e for k, e in d["yield_kwh_per_kwp"].items()}
+    tilts = sorted({t for t, _ in y})
+    devs = [0, 45, 90, 135, 180]
+    ref = y[(30, 0)]
+    table = []
+    for dev in devs:
+        row = []
+        for t in tilts:
+            if t == 0:
+                row.append(y[(0, 0)] / ref)
+            else:
+                vals = [y[(t, a)] for a in ({dev, -dev} if dev not in (0, 180) else {dev}) if (t, a) in y]
+                row.append(float(np.mean(vals)) / ref)
+        table.append(row)
+    _AZ_DEV, _TILT, _ORIENT_FACTOR = np.array(devs), np.array(tilts), np.array(table)
+    if d.get("monthly_south_35"):
+        m = np.array(d["monthly_south_35"], dtype=float)
+        PV_MONTH_SHARE = m / m.sum()
+    PV_SOURCE = "PVGIS v5.3 (EU JRC), Augsburg"
+
+
+_load_pvgis()
+
 # Household load: relative consumption per hour of day (0..23), H0-like weekday shape
 H0_SHAPE = np.array([0.60, 0.45, 0.40, 0.38, 0.38, 0.42, 0.60, 0.85, 0.95, 0.95, 0.95, 1.00,
                      1.10, 1.05, 0.95, 0.90, 0.95, 1.10, 1.40, 1.55, 1.50, 1.35, 1.10, 0.80])
@@ -126,6 +163,7 @@ class Home:
     price_increase: float | None = None
     orientation_deg: float | None = None        # compass azimuth: 180 = south, 90 = east, 270 = west
     tilt_deg: float | None = None
+    roof_max_kwp: float | None = None           # max PV the roof fits (e.g. Google Solar API)
 
 
 @dataclass
@@ -489,6 +527,9 @@ def sanity_flags(home: Home, system: System, sim: SimResult | None = None) -> li
         elif ratio > 2:
             flags.append(_flag("pv", "warn", "PV_OVERSIZED",
                                f"PV produces {ratio:.1f}x the home's consumption: large share goes to the grid."))
+    if home.roof_max_kwp and system.pv_kwp > home.roof_max_kwp + 1e-6:
+        flags.append(_flag("pv", "warn", "ROOF_CAPACITY_EXCEEDED",
+                           f"{system.pv_kwp:g} kWp is more than the roof fits ({home.roof_max_kwp:g} kWp)."))
     if system.pv_kwp > 30:
         flags.append(_flag("pv", "info", "PV_VERY_LARGE", f"{system.pv_kwp:g} kWp is very large for a single-family home."))
     if 0 < system.pv_kwp < 2:

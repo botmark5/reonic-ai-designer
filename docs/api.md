@@ -30,3 +30,11 @@ Response: { "changes": { "has_ev": true, "ev_km_year": 15000 }, "design": { ...a
 
 ## GET /eval → { "metrics": {...}, "by_installer": {...}, "baselines": {...} }
 ## GET /project/{id} → { "home": {...}, "expert": {...}, "variants": [...], "ours": {...} }
+
+## Additions (engine, additive and optional; nothing renamed or removed)
+- `home.has_existing_pv`: true / false / null ("Solar already on the roof?").
+- `home.roof_max_kwp`, `home.roof_azimuth` (degrees clockwise from north, 180 = south), `home.roof_pitch` (degrees):
+  from the Google Solar API. PV is capped at `roof_max_kwp` (whole 450 W panels; a planner lock above it is kept and
+  flagged `ROOF_CAPACITY_EXCEEDED`); azimuth/pitch drive yield, self-consumption and economics (PVGIS factors).
+- Response: `options.heatpump` (design with and without a heat pump), `economics`, `physics.flags`,
+  `battery.alternatives`, `facts_for_explanation.offer_type`. Header `X-Engine-Key` on every endpoint except `/health`.

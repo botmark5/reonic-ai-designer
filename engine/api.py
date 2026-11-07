@@ -63,6 +63,10 @@ class Home(BaseModel):
     existing_wallbox: bool = False
     orientation_deg: Optional[float] = Field(None, ge=0, le=360, description="180 = south")
     tilt_deg: Optional[float] = Field(None, ge=0, le=90)
+    # roof from the Google Solar API (optional): caps PV and drives the yield physics
+    roof_max_kwp: Optional[float] = Field(None, gt=0, le=200, description="max PV the roof fits, kWp")
+    roof_azimuth: Optional[float] = Field(None, ge=0, le=360, description="degrees clockwise from north, 180 = south")
+    roof_pitch: Optional[float] = Field(None, ge=0, le=90, description="roof tilt in degrees")
     offer_date: Optional[str] = Field(None, description="ISO date; empty = today")
 
 
