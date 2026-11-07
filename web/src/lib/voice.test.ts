@@ -159,6 +159,22 @@ describe("normaliseFacts", () => {
     expect(normaliseFacts({ has_existing_pv: false, existing_pv_kwp: 5 }).home).toMatchObject({ has_existing_pv: false, existing_pv_kwp: null });
   });
 
+  it("defaults ev_km_year to 15000 when the caller has an EV but gave no distance", () => {
+    const n = normaliseFacts({ has_ev: "yes", household: 3 });
+    expect(n.home).toMatchObject({ has_ev: true, ev_km_year: 15000 });
+    expect(n.assumptions.join(" ")).toContain("15,000 km/year assumed");
+    expect(normaliseFacts({ has_ev: "yes", ev_km_year: "8.000" }).home.ev_km_year).toBe(8000);
+    expect(normaliseFacts({ has_ev: "no" }).home).toMatchObject({ has_ev: false, ev_km_year: null });
+    expect(normaliseFacts({ has_ev: "no" }).assumptions.join(" ")).not.toContain("km/year");
+  });
+
+  it("marks demand as real (demand_is_default=false) only when use or bill was stated", () => {
+    expect(normaliseFacts({ annual_kwh: 4500 }).home.demand_is_default).toBe(false);
+    expect(normaliseFacts({ monthly_bill_eur: 120 }).home.demand_is_default).toBe(false);
+    expect(normaliseFacts({ household: 4 }).home.demand_is_default).toBeNull();
+    expect(normaliseFacts({}).home.demand_is_default).toBeNull();
+  });
+
   it("post-call fallback draft carries has_existing_pv to the engine", async () => {
     let seen: DesignRequest | null = null;
     const d = deps({ design: async (req) => ((seen = req), mockDesign(req)), now: () => NOW * 1000 });
