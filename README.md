@@ -62,7 +62,7 @@ python -m venv .venv && .venv/bin/pip install -r engine/requirements.txt
 .venv/bin/python -m engine.labels      # expert designs + catalogue
 .venv/bin/python -m engine.train       # evaluation (= GET /eval) + shipped model
 .venv/bin/uvicorn engine.api:app --port 8000
-.venv/bin/python -m pytest -q          # 379 tests (17 need the data)
+.venv/bin/python -m pytest -q          # 380 tests (17 need the data)
 ```
 Then set `ENGINE_URL` (and `ENGINE_API_KEY` if the engine has one) in `web/.env.local`. All environment variables are listed in [docs/deploy.md](docs/deploy.md).
 

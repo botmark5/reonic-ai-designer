@@ -1,7 +1,7 @@
 # Pitch facts
 
 Every number the pitch, deck or README may use, with where it comes from and how to say it.
-Checked on 2026-11-08 at 00:20 against the live engine's `GET /eval`: every metric matched the shipped model.
+Checked on 2026-11-08 at 00:20 (P10–P90 coverage at 00:55) against the live engine's `GET /eval`: every metric matched the shipped model.
 
 **How to read this**
 - **Safe** means say it as written.
@@ -73,8 +73,8 @@ Expert range means the smallest to largest PV across the variants the expert off
 ## 6. Trust: ranges, installers, consumption
 | fact | number | source | say it |
 |---|---|---|---|
-| Expert PV falls inside the engine's P10–P90 range, all homes | **80 %** (target 80 %) | RESULTS.md, "P10–P90 contains expert PV", column E. Not in `/eval` yet: issue #43. | Safe. The /reality tile may stay empty until #43 is done. |
-| Same, new systems answered | 79 % | RESULTS.md, full designs (answered), column E | Safe |
+| Expert PV falls inside the engine's P10–P90 range, all homes | **80 %** (target 80 %) | `/eval` `metrics.dm.pv_interval_coverage_pct`; RESULTS.md, "P10–P90 contains expert PV", column E | Safe |
+| Same, new systems answered | 79 % | `/eval` `with_existing_pv_answer.segments.full_designs.dm.pv_interval_coverage_pct` | Safe |
 | Trained on installer B only, tested on installer A (PV size where both chose PV, not answered) | 2.91 vs 3.00 kWp best rule | `/eval` `transfer["23c108b7->2a8ba8e2"].*.pv_kwp_mae_when_both_pv` | Caveat: small margin, tested on all of A's projects. |
 | Trained on A only, tested on B | 2.79 vs 3.15 kWp | `/eval` `transfer["2a8ba8e2->23c108b7"].*` | Same caveat |
 | Engine beats the best rule in held-out and transfer tests per installer | 4 of 4 | `aggregates.json` `pv_mae_installer_transfer`; deck chart 2b | Safe |
@@ -96,8 +96,8 @@ Expert range means the smallest to largest PV across the variants the expert off
 | One full design from the engine | 0.27–0.49 s (10 calls, laptop to the live engine) | measured 2026-11-08 00:20 | Safe: "under half a second". |
 | Voice call to draft design on production | 207 ms engine time | d-voice smoke test, 2026-11-08 00:13 | Safe |
 | Engine health check | 0.15–0.16 s (5 calls, laptop to the live engine) | measured 2026-11-08 00:20 | Safe |
-| Engine tests | 379 pytest (362 run without the raw data, 17 need it; all 379 pass with it) | `pytest`, main 201ead9 | Safe |
-| Web tests | 157 vitest in 19 files | `npm test` in `web/`, main 201ead9 | Safe |
+| Engine tests | 380 pytest (363 run without the raw data, 17 need it) | `pytest`, main 9ee0431 | Safe |
+| Web tests | 157 vitest in 19 files | `npm test` in `web/`, main 9ee0431 | Safe |
 | Who decides sizes | the engine only. Claude turns planner text into input changes and writes explanations. | `CLAUDE.md`, `engine/README.md` | Safe |
 
 ## Don't say
