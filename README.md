@@ -44,7 +44,7 @@ The table shows mean PV error per home in kWp (lower is better). "Answered" mean
 Other results:
 - Asking about existing solar cuts PV error by 25 %, and the offer type is right for 95 % of homes instead of 83 %.
 - The expert's PV falls inside the engine's P10–P90 range for 80 % of homes, which is the target.
-- On battery and wallbox yes/no, the engine is level with the best rule, not better.
+- On battery and wallbox yes/no, the engine is only level with the best rule for new systems. It is better once the planner answers the existing-solar question, and slightly below without the answer.
 
 Every number, its source and how to phrase it: [docs/pitch-facts.md](docs/pitch-facts.md).
 Before/after per improvement, everything we tried that did not help, and the error analysis: [engine/RESULTS.md](engine/RESULTS.md).
@@ -67,7 +67,7 @@ python -m venv .venv && .venv/bin/pip install -r engine/requirements.txt
 Then set `ENGINE_URL` (and `ENGINE_API_KEY` if the engine has one) in `web/.env.local`. All environment variables are listed in [docs/deploy.md](docs/deploy.md).
 
 ## Known limits
-- **PV size has hit the ceiling of these inputs.** Every learner, rule and hybrid we tried lands at 2.47–2.57 kWp error. The rest is roof size and customer wishes, which the data does not hold. Roof capacity from Google Solar is an optional input and caps the size.
+- **PV size has hit the ceiling of these inputs.** Every learner, hybrid and tuned variant we tried lands at 2.47–2.57 kWp error. kNN and sizing for the economic optimum did worse. The rest is roof size and customer wishes, which the data does not hold. Roof capacity from Google Solar is an optional input and caps the size.
 - **The existing-solar answer matters most.** The data records existing solar for only 5 % of battery-only add-ons, so without the answer the engine has to guess whether a home needs a new system or an add-on.
 - **Installer A's PV sizes assume 450 W per panel**, because their offers list only panel counts.
 - **The wallbox is close to a coin flip** without EV information. The heat pump is offered for gas and oil homes, never imposed.

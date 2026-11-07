@@ -22,8 +22,8 @@ Sources:
 | Split | grouped by customer (41 customers have 2 projects), stratified by installer, seed 42 | `/eval` `protocol` | Safe |
 | Installers in the data | 2: A (248 test homes) and B (67 test homes) | `/eval` `by_installer` | Safe. Say "Installer A / B", never the ids. |
 | Shipped model is trained on | 1,563 projects | live `GET /health` `trained_on_projects` | Safe |
-| Expert designs parsed from offer line items | 1,994 offer options from 1,593 projects | `docs/data-notes.md` | Safe |
-| Hand check of the parsed expert designs | 20 random projects, every size correct | `engine/spotcheck.py` (PR #7) | Safe |
+| Expert designs parsed from offer line items | 1,994 offer options (1,637 + 357) from 1,593 projects | `docs/data-notes.md` inventory table (options); `docs/engine-spec.md` (projects) | Safe |
+| Hand check of the parsed expert designs | 20 random projects checked by hand against their raw offer lines | `docs/PLAN.md` Phase 1; `engine/spotcheck.py` (PR #7) | Safe as "hand-checked". The result is not recorded, so don't claim "all correct". |
 | Comparison | the **best** of 3 rules of thumb for each metric: kWh ÷ 1,000, installer median per consumption band, installer kWp per MWh | `/eval` `baselines` | Safe. Always say "best rule of thumb", not "a baseline". |
 | Installer A's PV size rests on an assumed 450 W per panel | median design 9.0 kWp; 8.6 at 430 W, 9.5 at 475 W | `docs/engine-spec.md` §3 | Caveat: only if asked about label quality. |
 
@@ -73,7 +73,7 @@ Expert range means the smallest to largest PV across the variants the expert off
 ## 6. Trust: ranges, installers, consumption
 | fact | number | source | say it |
 |---|---|---|---|
-| Expert PV falls inside the engine's P10–P90 range, all homes | **80 %** (target 80 %); best rule 9 % | RESULTS.md, "P10–P90 contains expert PV", column E. Not in `/eval` yet: issue #43. | Safe. The /reality tile may stay empty until #43 is done. |
+| Expert PV falls inside the engine's P10–P90 range, all homes | **80 %** (target 80 %) | RESULTS.md, "P10–P90 contains expert PV", column E. Not in `/eval` yet: issue #43. | Safe. The /reality tile may stay empty until #43 is done. |
 | Same, new systems answered | 79 % | RESULTS.md, full designs (answered), column E | Safe |
 | Trained on installer B only, tested on installer A (PV size where both chose PV, not answered) | 2.91 vs 3.00 kWp best rule | `/eval` `transfer["23c108b7->2a8ba8e2"].*.pv_kwp_mae_when_both_pv` | Caveat: small margin, tested on all of A's projects. |
 | Trained on A only, tested on B | 2.79 vs 3.15 kWp | `/eval` `transfer["2a8ba8e2->23c108b7"].*` | Same caveat |
@@ -84,7 +84,7 @@ Expert range means the smallest to largest PV across the variants the expert off
 ## 7. What the data can and cannot explain
 | fact | number | source | say it |
 |---|---|---|---|
-| Every method tried for PV size lands in a narrow band | 2.47–2.57 kWp (5-fold CV by customer, new systems, 1,046 homes) | RESULTS.md, round 2 | Safe: "we hit the ceiling of what these inputs explain; the rest is roof and customer wishes". |
+| Every learner, hybrid and tuned variant tried for PV size lands in a narrow band | 2.47–2.57 kWp (5-fold CV by customer, new systems, 1,046 homes); kNN 2.83 and the economic optimum 2.77 did worse | RESULTS.md, round 2 | Safe: "we hit the ceiling of what these inputs explain; the rest is roof and customer wishes". |
 | Experts do not size for maximum return | sizing for the economic optimum gives 2.77 kWp error vs 2.49 for the engine | RESULTS.md, round 2 | Safe |
 | Installers size the battery by PV size, not by consumption | engine rule 2.25 kWh, "1 kWh per kWp" 2.54, "1 kWh per 1,000 kWh" 4.46 (CV) | RESULTS.md, round 2, battery table | Safe |
 | Installers size PV at about 2 kWp per MWh | median 1.9 (A) and 2.2 (B) kWp per MWh; "kWh ÷ 1,000" undersizes by about half | `docs/engine-spec.md` §3 | Safe |

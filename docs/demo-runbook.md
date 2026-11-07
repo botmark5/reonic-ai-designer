@@ -5,7 +5,7 @@ Every engine number below was checked on the live engine on 2026-11-08 at 00:20 
 Numbers for the pitch: `docs/pitch-facts.md`.
 
 ## T−30 min: pre-flight
-1. Open `<APP_URL>/api/engine/health`. It should report the engine reachable, the key accepted and one /design made.
+1. Open `<APP_URL>/api/engine/health`. It should report the engine reachable, the key configured, and one /design served by the engine.
    If not, go to "Engine down" below.
 2. If `PLANNER_PASSCODE` is set, sign in at `<APP_URL>/login` in the demo browser and keep that tab open.
 3. Open four tabs in this order: `/live`, `/` (planner), `/reality`, and an empty tab for the offer.
@@ -18,12 +18,12 @@ Numbers for the pitch: `docs/pitch-facts.md`.
 | time | screen | do | expect on screen | say |
 |---|---|---|---|---|
 | 0:00–0:20 | slide | Opening line. | | "Planners rebuild the same system from scratch for every home. We let the installer's own past offers draft it, and the planner stays in charge." |
-| 0:20–1:20 | `/live` | Start the voice call on the phone, held to the mic, and play the caller persona below. | "Incoming call", then the fact checklist filling in, then "Draft design". At the end: "Draft is in the planner's inbox". | "An AI agent takes the site-visit call. It asks about existing solar first, because that is the strongest signal we found." |
+| 0:20–1:20 | `/live` | Start the voice call on the phone, held to the mic, and play the caller persona below. | "Incoming call" (replaced by the caller's name once given), then the fact checklist filling in, then "Draft design". At the end: "In the planner's inbox for review." | "An AI agent takes the site-visit call. It asks about existing solar first, because that is the strongest signal we found." |
 | 1:20–1:35 | `/live` | Click **Open in planner**. | Planner page with "Drafted by AI from a call". **9.9 kWp, 10 kWh battery, no wallbox.** A **10 kW heat pump** appears as a customer option. | "Every size comes from the engine, trained on this installer's signed offers. Claude never picks a size." |
 | 1:35–2:00 | planner | Point at a card's range and its reasons, then at the 3D house. | P10–P90 range bar, reasons, similar homes. | "Not a black box: a range, the reasons, and similar homes the installer already built." |
 | 2:00–2:30 | planner | Click the example **They are buying an EV next year**, or type it, then **Update design**. | "Updating…", then the **Changed** marker. **About 11 kWp, 10 kWh, wallbox on.** | "The planner talks to it like a colleague. PV, battery and wallbox are decided as one chain, so the EV pulls the PV up and adds the wallbox." |
 | 2:30–2:45 (optional) | planner | Open **Roof size and direction** and set **Roof fits up to (kWp)** to 6. | **5.85 kWp, 7 kWh**, wallbox still on. | "Roof only fits 6 kWp? The battery follows the PV down." |
-| 2:45–3:45 | `/reality` | Click **Compare with expert**. Read the headline, then click the example cases **EV owner** and **Experts disagree**. | Metrics from held-out homes. EV owner: ours **10.8 kWp / 9.7 kWh / wallbox** vs the expert's **10.8 / 9 / wallbox**. Experts disagree: ours **9.0 kWp**, inside the expert's two variants (6.75 and 12.15 kWp). | "Every number here comes from 315 homes the engine never saw. Against the best rule of thumb, it is on par for new systems and 4× closer on add-on sales. And it lands inside the expert's own options." |
+| 2:45–3:45 | `/reality` | On the planner, click **Compare with expert**, or switch to the pre-opened `/reality` tab. Read the headline, then click the example cases **EV owner** and **Experts disagree**. | Metrics from held-out homes. EV owner: ours **10.8 kWp / 9.7 kWh / wallbox** vs the expert's **10.8 / 9 / wallbox**. Experts disagree: ours **9.0 kWp**, inside the expert's two variants (6.75 and 12.15 kWp). | "Every number here comes from 315 homes the engine never saw. Against the best rule of thumb, it is on par for new systems and 4× closer on add-on sales. And it lands inside the expert's own options." |
 | 3:45–4:00 | planner | Back on the planner tab: **Use this design**, then **Send to homeowner**, then **Open** in the toast. | "Design saved as the offer", then "Homeowner link copied". The offer opens in the empty tab. | "One click and the homeowner gets a link." |
 | 4:00–4:40 | `/offer/<token>` | Scroll the 3D house, then click **Listen to your offer**. | "Your energy system, explained", the house, savings, then the explanation (audio only if TTS is on). | "Plain words for the homeowner, and they can listen instead of read." |
 | 4:40–5:00 | slide | Close. | | "Same engine, one question answered, 25 % less PV error. Measured on 315 homes it never saw." |
