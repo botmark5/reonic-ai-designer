@@ -33,6 +33,14 @@ Order (first that applies wins; any other source that gives a different size set
 
 pv_wp_assumed = 450 when rule 3 or 5 used, else NaN.
 
+Rulings made during implementation (2026-11-07):
+- Rule 1(a) applies only when module qty ≤ 3 (`MAX_EXTRA_MODULE_LINES`). Example 12 (16 modules vs an 18 kWp = 40-panel
+  package, Roof Mounting 16) is a downsize, not an extra; the literal "less than half" text is replaced by this.
+- Rule 1(b): named extras get the module lines' wattage (example 14 → 27 × 475 W); in rule 2 the wattage in the extra's name, else 450 W.
+- `pv_sources_disagree` ignores one-unit kits only for 23c108b7. 54 options are flagged (48 in 23c: unnamed 2–3 extra panels
+  next to a package, 480 W modules vs the package's 450 W math, planner downsizes). Informational only.
+- A lone "Substructure up to X kWp" ×1 gives no size (0 real cases).
+
 | # | option | line items (short) | result | why |
 |---|---|---|---|---|
 | 1 | 2a8·eddf2e3e·1 | Substructure Concrete Roof 19, DC Install 19, Optimizer 19, Scaffolding 19 m² | 19 panels, 8.55 kWp, substructure | standard case; scaffolding qty is m², ignored |
@@ -43,7 +51,7 @@ pv_wp_assumed = 450 when rule 3 or 5 used, else NaN.
 | 6 | 2a8·e02367b6·1 | PV Complete Package 5kW, no per-panel lines | 5.0 kWp, panels NaN, package_name | package fallback |
 | 7 | 2a8·77df6fee·1 | PV Complete Package 8kW + DC Install 20 | 20 panels, 9.0, disagree | per-panel count beats 2a8 package (optimizer counts vs package kW are inconsistent: 300–1,500 W/panel in 26 options) |
 | 8 | 2a8·896f0b7f·3 | PV Module 475W ×5, Substructure 5 | 5 panels, 2.375, wp_assumed NaN | module wattage known |
-| 9 | 2a8·3e24b41b·1 | solar-tagged: Meter Consolidation B, Travel – Extension | 0, none | fees only |
+| 9 | 2a8·3e24b41b·1 | solar-tagged: Meter Consolidation B, Travel & Logistics Flat Rate - Extension | 0, none | fees only |
 | 10 | 23c·874b9d41·1 | Package 10.8kWp + 9kWh, Roof Mounting 26, Substructure 26 | 10.8, disagree | package beats roof mounting (4 such conflicts) |
 | 11 | 23c·821f5b66·3 | Package 10.8, Module 463W(col 450) ×27, "Additional Module" ×3 | 27 panels, 12.15 | module lines are the total |
 | 12 | 23c·55b3d6c7·7 | Package 18kWp, Module ×16 @450 | 16 panels, 7.2, disagree | planner downsized |
@@ -93,7 +101,7 @@ wallbox = a `Wallbox` row, OR a wallbox installation fee ("Install Wallbox", "Wa
 | 4 | 2a8·001f8d72·1 | Install Wallbox only | True, NaN kW (23 such options: customer's own / bundled) |
 | 5 | 2a8·2dd07ff1·1 | Wallbox Component On-Site + Install Wallbox | True, NaN |
 | 6 | 2a8·022f6a90·1 | Prep Wallbox | False (3 options) |
-| 7 | 2a8·688ce9ed·1 | All-Inclusive Package - Wallbox + Travel – Wallbox | True, NaN |
+| 7 | 2a8·688ce9ed·1 | All-Inclusive Package - Wallbox + Travel & Logistics Flat Rate - Wallbox | True, NaN |
 | 8 | 2a8 (1 option) | Power Boost for Existing Wallbox | False |
 | 9 | 23c·18e2495a·1 | "December Promo Free Wallbox with PV" + Sigenergy AC Wallbox | True, kW from row |
 | 10 | 2a8 EcoFlow | Wallbox 11kW v2 (Free) | True, 11 |
@@ -145,7 +153,7 @@ has_backup = "Smart Guard", "Backup Box", "Emergency Power", "Backup Solution", 
 
 | case | evidence | proposed decision |
 |---|---|---|
-| Retrofit onto existing PV | has_solar True in 18 projects (2a8 only); 130 battery-only options have has_solar False, so the flag under-reports | offer with new PV + (has_solar or "Stringing Existing Modules" or "– Extension" fee) → `pv_extension`; module replacement (2a8·77ad01c0: PV Module 400W ×3 + "Removal of Old PV Module" ×3) → `pv_extension`. Not full designs. |
+| Retrofit onto existing PV | has_solar True in 18 projects (2a8 only); 130 battery-only options have has_solar False, so the flag under-reports | offer with new PV + (has_solar or "Stringing Existing Modules" or "All-Inclusive Package - Extension" / "Travel & Logistics Flat Rate - Extension" fee (plain hyphen, as in the data)) → `pv_extension`; module replacement (2a8·77ad01c0: PV Module 400W ×3 + "Removal of Old PV Module" ×3) → `pv_extension`. Not full designs. |
 | Battery-only offers | 199 (2a8) + 11 (23c) options; 187 with "Extension" wording | `battery_retrofit` (also with a wallbox). Kept for the battery-size catalogue, not for the main chain. |
 | Wallbox-only / heat-pump-only | 70 / 21 options | `wallbox_only` / `heatpump_only`. Heat-pump-only rows still feed the heat-pump rules. |
 | EV without wallbox | 24 (2a8) + 7 (23c) options with has_ev and no wallbox | keep as is: a real expert decision (existing charger, socket). |

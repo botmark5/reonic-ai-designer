@@ -3,31 +3,48 @@
 Data: `data/raw/<installer>/projects_status_quo.csv` (one row per project = the home before) and
 `project_options_parts.csv` (offer line items per project and offer option = what the installer proposed).
 
-| Folder | Projects | Projects with parts | Notes |
-|---|---|---|---|
-| 2a8ba8e2 | 1,277 | 1,257 | Huawei / EcoFlow / SAJ; PV modules not listed as items; per-panel items only |
-| 23c108b7 | 342 | 336 | Sigenergy / GoodWe / FoxESS "Complete Package N … X kWp + Y kWh" bundles; modules 450–480 W listed |
+| Folder | Projects | With parts | Options | Offer dates | Main brands |
+|---|---|---|---|---|---|
+| 2a8ba8e2 | 1,277 | 1,257 | 1,637 | 2024-06 → 2026-04 | Huawei, EcoFlow, SAJ (+ SolarEdge, Enphase); PV modules almost never listed |
+| 23c108b7 | 342 | 336 | 357 | 2025-06 → 2026-04 | Sigenergy (+ GoodWe, FoxESS, EcoFlow); "Complete Package … X kWp + Y kWh" bundles |
 
-## Assumptions (ours, not confirmed by Reonic — revisit if they answer)
-- Each folder = one installer company. Model installer-aware.
-- `energy_demand_wh` = yearly household consumption in Wh (4,500,000 = 4,500 kWh/yr).
-- `energy_price_per_wh` = €/Wh (0.00032 = 0.32 €/kWh). `energy_price_increase` = yearly price growth (0.03 = 3%).
-- `load_profile`: H0 = German BDEW standard household profile (the default); FamilyOfFour, HomeOfficeOnePerson,
-  FullTimeOnePerson, SeniorOnePerson, … = Reonic presets describing household type / daytime presence. Useful as a feature
-  (daytime presence raises self-consumption → favours more PV, less battery). Treat H0 as "unknown household type".
-- `technology`: solar = PV, ses = storage (battery system), wallbox, heatpump.
-- `has_solar`, `has_storage`, `has_wallbox`, `heating_existing_type` = what the home ALREADY has before the project.
-  `heating_existing_type = Heatpump` = existing heat pump, not one being sold. Projects with existing PV are retrofits / extensions.
-- Offer options (`option_number` / `option_id`) = variants of one offer (e.g. same 20 panels, battery 7 / 10 / 14 kWh).
-  ~22% of projects in 2a8ba8e2 have 2+ variants. Which one was signed is NOT recorded.
-  → Primary label = option 1 (decide after profiling); keep ALL variants as the "acceptable range" for evaluation
-  (hit = prediction inside the variant range) and as the options a homeowner may choose between.
-- 2a8ba8e2 panel count = quantity of per-panel items (substructure, DC install, optimizer). Module wattage unknown →
-  assume 450 W (the other installer lists 450–480 W); report sensitivity for 430 / 450 / 475 W.
-- Battery kWh from names ("Battery LFP 10kWh", "Sigenergy AIOS Battery 9kWh", "+ 9kWh"), summing extensions; the numeric
-  `battery_capacity_kwh` column is almost always empty (and in Wh when present).
-- New heat pumps appear in < 10 projects → heat pump = rules + physics (heating demand ÷ full-load hours), stated openly.
-- House size and inhabitants are almost always empty → planner-entered optional inputs, not model features.
+Verified on the data 2026-11-07 (profiling + `engine/labels.py`). Extraction rules: `docs/labels-rules.md`.
+
+## Facts checked in the data
+- Every project has `first_signed_at` → the data is **won offers only**. Which option was signed is not recorded.
+- **Numeric columns in the parts file are shifted.** On BatteryStorage rows `inverter_power_kw` holds the battery capacity
+  in Wh (filled on 100% of battery rows). On Inverter rows `battery_capacity_kwh` holds inverter power in W.
+  `wb_charging_speed_kw`, `heatpump_nominal_power_kw`, `module_watt_peak` are in W.
+- Status-quo units: `energy_demand_wh` Wh/yr, `energy_price_per_wh` €/Wh, `solar_size_kwp` **Wp**, `storage_size_kwh` **Wh**,
+  `wallbox_charge_speed_kw` W, `heating_existing_heating_demand_wh` Wh.
+- `energy_demand_wh` is exactly 4,500,000 (the Reonic default) in 410 / 69 projects → treated as **consumption unknown**
+  (`consumption_known` False; 67% / 80% of projects with parts have a real value). 21 projects have 0–1 kWh → invalid.
+- `has_storage` is mostly the battery being sold, entered by the planner: 9 of 11 have build year ≥ offer year or the offer
+  sells exactly that size. Only 2 real existing batteries. `has_solar` is True in 18 projects (2a8 only) and under-reports
+  retrofits: 130 battery-only offers have `has_solar` False.
+- `load_profile` is H0 in 92% (= household type unknown). `heating_existing_type` empty in 88% (= Unknown, not "no heating").
+  House size, build year, inhabitants < 1% filled → optional planner inputs, not features.
+- Option 1 is missing in 399 / 132 projects (numbers are not 1..n). 22% of 2a8 projects and 6% of 23c projects have 2+ options.
+  Exact duplicate options in 64 / 4 projects. Variants differing only in battery size: 75 projects (2a8).
+- 41 customers have two projects (2a8) → group train/test splits by customer as well as project.
+
+## Labelling decisions (approved by Mark 2026-11-07; details and examples in docs/labels-rules.md)
+- Primary label = lowest option_number among the project's full new-system designs (lowest overall if none). All variants kept:
+  per-project min/max PV and battery = the acceptable range for evaluation and the homeowner's choices.
+- `offer_type`: new_system 1,624 · battery_retrofit 232 · wallbox_only 75 · no_components 25 · heatpump_only 21 · pv_extension 17
+  options. Main model and evaluation use `is_full_design` (= new_system) and not `is_outlier`.
+- PV kWp, in order: module lines (qty × planning W) → 23c package kWp → 2a8 per-panel count (Substructure qty) × 450 W →
+  2a8 "PV Complete Package N kW" → 23c Roof Mounting qty × 450 W → size band midpoint. 2a8 has no module wattage, so 450 W is
+  assumed (`pv_wp_assumed`). Sensitivity on 923 primary 2a8 designs: median 8.6 / 9.0 / 9.5 kWp at 430 / 450 / 475 W.
+- Battery kWh = Σ BatteryStorage column (Wh/1000 × qty), excluding the EcoFlow AC coupler; name only when the column is empty;
+  23c package "+ Y kWh" only when no battery row (72 options). Lines beat packages (all 28 conflicts are planner changes).
+- Wallbox = Wallbox row or a wallbox installation fee (kW unknown then). Heat pump kW from the product name (column is rounded).
+- 23c "Substructure/Roof Mounting A-B kWp" bands are price tiers, not measurements: panel count × 450 W falls outside the
+  line's own band in 33 of 209 options, both below and above (20 panels in a "15-20kWp" tier, 36 in "8.8-15kWp"). The count wins.
+  One option names a module wattage only in a surcharge line ("Surcharge AIKO 475W", 24 panels) → kept at 450 W.
+- Outliers (> 30 kWp or > 40 kWh): 2 options (99.9 kWp / 108 kWh commercial; 45 kWh battery-only).
+- Among primary full designs: no battery in 5.6% (2a8) / 1.2% (23c); wallbox in 26% / 22%; heat pump in 7 projects (2a8).
+  New heat pumps: 31 options in 17 projects, all 2a8 → heat pump = rules + physics, not learned.
 - No prices in the data → savings/payback use stated market assumptions (see PLAN business case).
 
 ## expert_designs.parquet schema
@@ -104,3 +121,10 @@ Status: v1.1 schema (adds n_wallboxes, roof_mixed, pv_source size_band; is_prima
 |---|---|---|
 | is_outlier | bool | pv_kwp > 30 or battery_kwh > 40 (commercial-size); exclude from training and evaluation |
 | pv_sources_disagree | bool | two PV sources in the option give different sizes; the value kept follows the source order in the rules |
+
+### Extra columns (helpers, may be ignored)
+| column | type | meaning |
+|---|---|---|
+| items_signature | str | sorted "name|qty" list of the option's line items; used for is_duplicate_option |
+| has_solar | bool | raw status-quo flag (existing PV), used for offer_type |
+| storage_kwh_entered | float | kWh entered as "existing storage" before the planned-battery check |

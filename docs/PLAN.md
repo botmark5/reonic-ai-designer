@@ -9,12 +9,12 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [ ] Both: confirm docs/api.md v0
 
 ## Phase 1 — Data and expert designs (Cala + Mark pair)
-- [ ] Profile every column of both installers (fill rate, values, outliers) → docs/data-notes.md
-- [ ] Expert design per project: PV kWp, battery kWh, wallbox, heat pump, inverter kW; all variants kept
-- [ ] Extra features: roof type, scaffolding, brand, installer, date, retrofit flags
-- [ ] Edge cases decided and written down
-- [ ] Per-installer catalogue of real sizes
-- [ ] engine/artifacts/expert_designs.parquet + 20 random projects spot-checked by hand
+- [x] Profile every column of both installers (fill rate, values, outliers) → docs/data-notes.md
+- [x] Expert design per project: PV kWp, battery kWh, wallbox, heat pump, inverter kW; all variants kept
+- [x] Extra features: roof type, scaffolding, brand, installer, date, retrofit flags
+- [x] Edge cases decided and written down
+- [x] Per-installer catalogue of real sizes
+- [x] engine/artifacts/expert_designs.parquet + 20 random projects spot-checked by hand
 
 ## Phase 2 — Engine and evaluation (Cala)
 - [ ] docs/engine-spec.md in plain English
@@ -46,6 +46,9 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
 
 ## Decisions
+- Sat 18:30 · Expert labels v1 (engine/labels): primary = lowest full new-system option; default 4,500 kWh = consumption unknown;
+  2a8 panels at 450 W; battery from the (shifted) numeric column; retrofits kept with offer_type, main model on new_system only.
+  Rules: docs/labels-rules.md · schema: docs/data-notes.md
 - Sat 16:00 · Data questions answered by our own assumptions (docs/data-notes.md); only business questions to Reonic
 - Sat 15:45 · Build in Claude Code (Next.js), not Lovable · design system + mockups in Claude chat first
 - Sat 15:15 · Keep all raw fields; expert-design table is derived on top
