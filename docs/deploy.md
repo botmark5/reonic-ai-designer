@@ -11,11 +11,12 @@ the offline estimate and the store to an in-memory demo inbox.
 ## Environment variables (names only; values live in Vercel and in web/.env.local, never in git)
 | Name | Scope | Needed for |
 |---|---|---|
+| `PLANNER_PASSCODE` | server | **required in production**: planners sign in at /login; protects all planner pages and APIs (unset = open, local dev only) |
 | `ENGINE_URL` | server | live engine (unset or down = offline estimate, badge shown) |
 | `ENGINE_API_KEY` | server | `X-Engine-Key` for the engine |
 | `ANTHROPIC_API_KEY` | server | refine agent `/api/agent`, voice explain (unset = engine `/refine`, templates) |
-| `NEXT_PUBLIC_SUPABASE_URL` | browser + server | designs, shares, realtime inbox |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | browser | read-only (RLS: designs, shares) + realtime |
+| `NEXT_PUBLIC_SUPABASE_URL` | server | designs, shares, calls (read and written by server routes only) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | browser | optional: the browser no longer reads Supabase (no anon policies) |
 | `SUPABASE_SERVICE_ROLE_KEY` | server | all writes, calls (server-only) |
 | `ELEVENLABS_TOOL_SECRET` | server | voice agent → `/api/voice/create-design` |
 | `ELEVENLABS_WEBHOOK_SECRET` | server | post-call webhook HMAC |
@@ -27,8 +28,10 @@ the offline estimate and the store to an in-memory demo inbox.
 | `HELDOUT_PROJECT_IDS` | server | comma-separated held-out project ids for /reality's "Random home" (locally read from the gitignored engine/artifacts/test_ids.json; optional) |
 
 ## Before the first production deploy
-1. Apply `supabase/schema.sql`, then `supabase/migrations/*.sql` in date order (conversation_id, calls_private).
-2. Set the engine's CORS/allowed origin if it checks one (`ENGINE_CORS_ORIGINS=https://<project>.vercel.app`); the web
+1. Apply `supabase/schema.sql`, then `supabase/migrations/*.sql` in order: conversation_id, calls_private, no_anon_reads.
+   After that the anon key can read nothing; every read goes through authenticated server routes.
+2. Set `PLANNER_PASSCODE`. Public without it: only `/offer/<token>`, `/api/offer/*`, `/api/voice/*` (own secrets), `/api/solar`, `/api/engine/health`.
+3. Set the engine's CORS/allowed origin if it checks one (`ENGINE_CORS_ORIGINS=https://<project>.vercel.app`); the web
    app calls it from the server, so CORS only matters for direct browser calls (none today).
-3. Point the ElevenLabs tool and webhook at `https://<project>.vercel.app/api/voice/...` (docs/voice-agent.md).
-4. Smoke test: `GET /api/engine/health` (engine reachable, key accepted, one /design), then `/`, `/live`, `/reality`.
+4. Point the ElevenLabs tool and webhook at `https://<project>.vercel.app/api/voice/...` (docs/voice-agent.md).
+5. Smoke test: `GET /api/engine/health` (engine reachable, key accepted, one /design), then `/`, `/live`, `/reality`.

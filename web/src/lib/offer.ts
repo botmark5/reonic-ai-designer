@@ -13,9 +13,9 @@ export interface AllowedVariant {
   values: (number | boolean)[];
 }
 
+/** What the homeowner's browser receives (no design id: the token is the only handle). */
 export interface Offer {
   token: string;
-  designId: string | null; // null for the demo token (not stored)
   customer: string | null;
   home: Home;
   locks: Locks;
@@ -38,26 +38,29 @@ export function defaultAllowed(d: DesignResponse): AllowedVariant[] {
   ];
 }
 
-export function parseAllowed(raw: unknown, d: DesignResponse): AllowedVariant[] {
-  if (!Array.isArray(raw) || raw.length === 0) return defaultAllowed(d);
-  return raw.filter(
-    (v): v is AllowedVariant => !!v && typeof v === "object" && ["battery", "wallbox"].includes((v as AllowedVariant).component) && Array.isArray((v as AllowedVariant).values),
-  );
+export async function getOfferWithId(token: string): Promise<(Offer & { designId: string | null }) | null> {
+  if (token === "demo") {
+    const o = await getOffer(token);
+    return o && { ...o, designId: null };
+  }
+  const found = await getStore().getShare(token);
+  if (!found) return null;
+  const o = await getOffer(token);
+  return o && { ...o, designId: found.design.id };
 }
 
 export async function getOffer(token: string): Promise<Offer | null> {
   if (token === "demo") {
     const design = await engine.design({ installer: DEFAULT_INSTALLER, home: DEMO_HOME, locks: EMPTY_LOCKS });
-    return { token, designId: null, customer: null, home: DEMO_HOME, locks: EMPTY_LOCKS, design, allowed: defaultAllowed(design) };
+    return { token, customer: null, home: DEMO_HOME, locks: EMPTY_LOCKS, design, allowed: defaultAllowed(design) };
   }
   const found = await getStore().getShare(token);
   if (!found) return null;
   const row: DesignRow = found.design;
   const design = row.design ?? (await engine.design({ installer: DEFAULT_INSTALLER, home: row.home, locks: row.locks }));
-  return {
-    token, designId: row.id, customer: row.customer_name, home: row.home, locks: { ...EMPTY_LOCKS, ...row.locks }, design,
-    allowed: parseAllowed(found.share.allowed_variants, design),
-  };
+  // Allowed choices follow the CURRENT design (the planner may have changed it after sharing), so the
+  // homeowner's starting point is always one of them.
+  return { token, customer: row.customer_name, home: row.home, locks: { ...EMPTY_LOCKS, ...row.locks }, design, allowed: defaultAllowed(design) };
 }
 
 /** True if every chosen value is one the installer allowed. */

@@ -2,59 +2,32 @@
 
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import { toast } from "sonner";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { fmtRelative } from "@/lib/format";
-import { getBrowserSupabase, type DesignRow } from "@/lib/supabase";
+import type { DesignRow } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 const STATUS: Record<DesignRow["status"], string> = { draft: "Draft", review: "Ready to send", sent: "Sent to homeowner" };
 
-/** Designs newest first. Live via Supabase realtime when configured. */
+/** Designs newest first (the parent polls the server; the browser never reads Supabase directly). */
 export function Inbox({
-  initial,
+  rows,
   selectedId,
   onSelect,
   onNew,
 }: {
-  initial: DesignRow[];
+  rows: DesignRow[];
   selectedId: string;
   onSelect: (row: DesignRow) => void;
   onNew: (name: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
-  const [rows, setRows] = useState(initial);
   const [now, setNow] = useState(() => Date.now());
-
-  const [seen, setSeen] = useState(initial);
-  if (seen !== initial) {
-    setSeen(initial);
-    setRows(initial);
-  }
-
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000);
-    const db = getBrowserSupabase();
-    if (!db) return () => clearInterval(t);
-    const ch = db
-      .channel("designs-inbox")
-      .on("postgres_changes", { event: "*", schema: "public", table: "designs" }, (p) => {
-        const row = p.new as DesignRow;
-        if (!row?.id) return;
-        setRows((rs) => {
-          const exists = rs.some((r) => r.id === row.id);
-          if (!exists && p.eventType === "INSERT" && row.source === "voice")
-            toast("New design from a call", { description: row.customer_name ?? "Unnamed home", action: { label: "Open", onClick: () => onSelect(row) } });
-          return exists ? rs.map((r) => (r.id === row.id ? { ...r, ...row } : r)) : [row, ...rs];
-        });
-      })
-      .subscribe();
-    return () => {
-      clearInterval(t);
-      db.removeChannel(ch);
-    };
-  }, [onSelect]);
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <section aria-labelledby="inbox-title" className="flex flex-col gap-1.5">

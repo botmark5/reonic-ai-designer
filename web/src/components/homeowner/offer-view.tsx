@@ -39,12 +39,14 @@ export function OfferView({ offer }: { offer: Offer }) {
   const [design, setDesign] = useState<DesignResponse>(base);
   const [busy, setBusy] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const reqId = useRef(0);
   const batteryAllowed = (offer.allowed.find((a) => a.component === "battery")?.values ?? []) as number[];
   const wallboxAllowed = offer.allowed.find((a) => a.component === "wallbox")?.values ?? [];
   const [battery, setBattery] = useState<number>(sizeOf(base.design, "battery") ?? 0);
   const [wallbox, setWallbox] = useState<boolean>(base.design.wallbox.include);
 
   async function choose(next: { battery_kwh: number; wallbox: boolean }) {
+    const id = ++reqId.current; // only the latest choice may update the page
     setBusy(true);
     try {
       const res = await fetch(`/api/offer/${offer.token}`, {
@@ -53,11 +55,12 @@ export function OfferView({ offer }: { offer: Offer }) {
         body: JSON.stringify({ action: "variant", ...next }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Please try again.");
-      setDesign(await res.json());
+      const d = (await res.json()) as DesignResponse;
+      if (id === reqId.current) setDesign(d);
     } catch (e) {
       toast.error("Could not update your offer", { description: (e as Error).message });
     } finally {
-      setBusy(false);
+      if (id === reqId.current) setBusy(false);
     }
   }
 
@@ -78,13 +81,13 @@ export function OfferView({ offer }: { offer: Offer }) {
         <ServedBadge served={design.served} className="self-start" />
       </header>
 
-      <ListenButton offer={offer} design={design} />
+      <ListenButton offer={offer} />
 
       <div id="house3d-slot">
         <House3D design={design} home={offer.home} mode="homeowner" />
       </div>
 
-      <section aria-label="Your system" className={cn("flex flex-col divide-y divide-border rounded-lg border border-border bg-surface-1 px-4", busy && "opacity-70 transition-opacity")}>
+      <fieldset disabled={busy} aria-label="Your system" className={cn("m-0 flex min-w-0 flex-col divide-y divide-border rounded-lg border border-border bg-surface-1 px-4 py-0", busy && "opacity-70 transition-opacity")}>
         <Row
           icon={<SunMedium className="size-5 text-comp-pv" strokeWidth={1.5} />}
           title="Solar panels"
@@ -123,7 +126,7 @@ export function OfferView({ offer }: { offer: Offer }) {
             </label>
           </Row>
         )}
-      </section>
+      </fieldset>
       {batteryAllowed.length > 1 && <p className="-mt-6 m-0 text-[13px] text-ink-muted">★ what your installer recommends</p>}
 
       <section aria-label="What it means for you" className="grid grid-cols-2 gap-3">
@@ -187,7 +190,7 @@ export function OfferView({ offer }: { offer: Offer }) {
 
 /** "Listen to your offer": session D's /api/voice/explain (text + audio when enabled); falls back to the engine's
  *  homeowner explanation as text. */
-function ListenButton({ offer, design }: { offer: Offer; design: DesignResponse }) {
+function ListenButton({ offer }: { offer: Offer }) {
   const [state, setState] = useState<"idle" | "loading" | "playing" | "text">("idle");
   const [text, setText] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null);
@@ -200,10 +203,10 @@ function ListenButton({ offer, design }: { offer: Offer; design: DesignResponse 
     }
     setState("loading");
     try {
-      const res = await fetch("/api/voice/explain", {
+      const res = await fetch(`/api/offer/${offer.token}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(offer.designId ? { design_id: offer.designId, audio: true } : { design_response: design, audio: true }),
+        body: JSON.stringify({ action: "listen" }),
       });
       if (!res.ok) throw new Error();
       const r = (await res.json()) as { text: string; audio_base64: string | null };
@@ -218,11 +221,12 @@ function ListenButton({ offer, design }: { offer: Offer; design: DesignResponse 
     } catch {
       // Fallback: the engine's plain-language explanation, streamed as text.
       try {
-        const res = await fetch("/api/engine/explain", {
+        const res = await fetch(`/api/offer/${offer.token}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ design_response: design, audience: "homeowner" }),
+          body: JSON.stringify({ action: "explain" }),
         });
+        if (!res.ok) throw new Error();
         setText(await res.text());
         setState("text");
       } catch {

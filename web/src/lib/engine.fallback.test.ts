@@ -87,4 +87,16 @@ describe("engine client fallback", () => {
     const { engine, EngineError } = await load();
     await expect(engine.project("x")).rejects.toBeInstanceOf(EngineError);
   });
+
+  it("surfaces input errors (422) instead of hiding them behind the estimate", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "heating: bad value" }, { status: 422 })));
+    const { engine, EngineError, EXAMPLE_DESIGN_REQUEST } = await load();
+    await expect(engine.design(EXAMPLE_DESIGN_REQUEST)).rejects.toBeInstanceOf(EngineError);
+  });
+
+  it("never serves an invented held-out project when the engine is not configured", async () => {
+    vi.stubEnv("ENGINE_URL", "");
+    const { engine } = await load();
+    await expect(engine.project("abc")).rejects.toMatchObject({ status: 503 });
+  });
 });

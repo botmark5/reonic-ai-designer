@@ -31,6 +31,7 @@ export interface PlannerState {
   flags: ValidationFlag[];
   change: Change | null;
   busy: boolean;
+  refining: boolean; // the agent is working: inputs are frozen until it answers
   error: string | null;
 }
 
@@ -71,11 +72,13 @@ export function usePlanner(initial: DesignRow) {
     flags: [],
     change: null,
     busy: !initial.design,
+    refining: false,
     error: null,
   }));
   const stateRef = useRef(s);
   stateRef.current = s;
   const abortRef = useRef<AbortController | null>(null);
+  const validateRef = useRef<AbortController | null>(null);
   const changeId = useRef(0);
 
   const save = useCallback((patch: Partial<DesignRow>) => {
@@ -91,7 +94,12 @@ export function usePlanner(initial: DesignRow) {
     );
   }, []);
 
-  const validate = useCallback(async (home: Home, d: Design, signal: AbortSignal) => {
+  const validate = useCallback(async (home: Home, d: Design, outer?: AbortSignal) => {
+    validateRef.current?.abort();
+    const ctrl = new AbortController();
+    validateRef.current = ctrl;
+    outer?.addEventListener("abort", () => ctrl.abort());
+    const signal = ctrl.signal;
     try {
       const v = await post<ValidateResponse>("/api/engine/validate", { installer: INSTALLER, home, design: plannerDesign(d) }, signal);
       if (!signal.aborted) setS((p) => ({ ...p, flags: v.flags }));
@@ -116,7 +124,7 @@ export function usePlanner(initial: DesignRow) {
           busy: false,
           change: diff.changed.length || note ? { id: ++changeId.current, diff, note } : p.change,
         }));
-        save({ home, locks, design: response });
+        save({ home, locks }); // the server re-runs the engine; it never stores a design sent by the browser
         validate(home, response.design, ctrl.signal);
       } catch (e) {
         if (ctrl.signal.aborted) return;
@@ -131,9 +139,8 @@ export function usePlanner(initial: DesignRow) {
     const st = stateRef.current;
     if (!st.response) run(st.home, st.locks);
     else {
-      const ctrl = new AbortController();
-      validate(st.home, st.response.design, ctrl.signal);
-      return () => ctrl.abort();
+      validate(st.home, st.response.design);
+      return () => validateRef.current?.abort();
     }
   }, [run, validate]);
 
@@ -171,6 +178,7 @@ export function usePlanner(initial: DesignRow) {
   /** Apply a refine result (from the agent or engine /refine). */
   const applyRefine = useCallback(
     (r: Pick<RefineResponse, "home" | "locks" | "design" | "summary">) => {
+      abortRef.current?.abort(); // a refine result wins over a design run that started before it
       const st = stateRef.current;
       const diff = diffDesigns(st.response?.design, r.design.design);
       logOverride("refine", { home: st.home, locks: st.locks }, { home: r.home, locks: r.locks }, r.summary);
@@ -180,14 +188,19 @@ export function usePlanner(initial: DesignRow) {
         locks: r.locks,
         response: r.design,
         busy: false,
+        refining: false,
         change: { id: ++changeId.current, diff, note: r.summary },
       }));
-      save({ home: r.home, locks: r.locks, design: r.design });
-      const ctrl = new AbortController();
-      validate(r.home, r.design.design, ctrl.signal);
+      save({ home: r.home, locks: r.locks });
+      validate(r.home, r.design.design);
     },
     [logOverride, save, validate],
   );
+
+  const setRefining = useCallback((refining: boolean) => {
+    if (refining) abortRef.current?.abort();
+    setS((p) => ({ ...p, refining }));
+  }, []);
 
   const setStatus = useCallback(
     (status: DesignRow["status"]) => {
@@ -200,14 +213,9 @@ export function usePlanner(initial: DesignRow) {
   const share = useCallback(async () => {
     const st = stateRef.current;
     if (!st.response) return null;
-    const d = st.response.design;
-    const sizes = new Set<number>([0, ...(d.battery.alternatives ?? []).map((a) => a.kwh), ...(d.battery.kwh ? [d.battery.kwh] : [])]);
-    const allowed = [
-      { component: "battery", values: [...sizes].sort((a, b) => a - b) },
-      { component: "wallbox", values: [true, false] },
-    ];
     try {
-      const r = await post<{ token: string; path: string }>("/api/shares", { design_id: st.row.id, allowed_variants: allowed });
+      // allowed variants are computed by the server from the engine's alternatives
+      const r = await post<{ token: string; path: string }>("/api/shares", { design_id: st.row.id });
       setS((p) => ({ ...p, row: { ...p.row, status: "sent" } }));
       return r;
     } catch (e) {
@@ -216,7 +224,7 @@ export function usePlanner(initial: DesignRow) {
     }
   }, []);
 
-  return { s, run, setHomeField, setHome, setLock, applyRefine, setStatus, share, logOverride };
+  return { s, run, setHomeField, setHome, setLock, applyRefine, setRefining, setStatus, share, logOverride };
 }
 
 export type Planner = ReturnType<typeof usePlanner>;

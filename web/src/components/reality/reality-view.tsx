@@ -77,6 +77,7 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
   const go = useCallback(
     (id: string) => {
       if (projectId) setHistory((h) => [...h.slice(-20), projectId]);
+      setErrorId(null);
       setProjectId(id);
     },
     [projectId],
@@ -136,7 +137,7 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
               </p>
             </div>
             <div className="flex gap-2">
-              <Button variant="secondary" size="sm" disabled={!history.length} onClick={() => setHistory((h) => (setProjectId(h[h.length - 1]), h.slice(0, -1)))}>
+              <Button variant="secondary" size="sm" disabled={!history.length} onClick={() => setHistory((h) => (setErrorId(null), setProjectId(h[h.length - 1]), h.slice(0, -1)))}>
                 Previous
               </Button>
               <Button variant="secondary" size="sm" disabled={!ids.length} onClick={random}>
@@ -166,7 +167,9 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
           )}
 
           {state === "error" ? (
-            <p className="m-0 text-body-sm text-critical-text">This project could not be loaded from the engine. Try another home.</p>
+            <p className="m-0 text-body-sm text-critical-text">
+              This project could not be loaded: the engine is offline or does not know this id. No example values are shown in its place.
+            </p>
           ) : (
             <div className={cn("overflow-x-auto", state === "loading" && "opacity-60 transition-opacity")} aria-busy={state === "loading"}>
               <table className="w-full min-w-[520px] border-collapse text-[14px]">

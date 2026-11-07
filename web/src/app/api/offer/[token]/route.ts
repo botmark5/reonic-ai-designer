@@ -1,19 +1,36 @@
 import { DEFAULT_INSTALLER, engine } from "@/lib/engine";
 import { errorResponse } from "@/lib/api-route";
-import { choiceAllowed, getOffer } from "@/lib/offer";
+import { choiceAllowed, getOfferWithId } from "@/lib/offer";
+import { allowRequest, clientKey, readJsonCapped } from "@/lib/rate-limit";
+import { handleExplain, voiceDeps } from "@/lib/voice";
+import { after } from "next/server";
 import { getStore } from "@/lib/store";
 
 /**
- * POST /api/offer/:token
+ * POST /api/offer/:token (public: the token is the homeowner's access; rate-limited)
  *   { action: "variant", battery_kwh?, wallbox? } → the engine's design for that choice (only allowed values)
  *   { action: "accept", battery_kwh?, wallbox? }  → logs the homeowner's choice (overrides row, by "homeowner")
+ *   { action: "listen" }                            → session D's offer explanation (text + audio when enabled)
+ *   { action: "explain" }                           → the engine's homeowner explanation, streamed text (fallback)
  */
 export async function POST(req: Request, ctx: RouteContext<"/api/offer/[token]">) {
   try {
+    if (!allowRequest("offer", clientKey(req), 40, 60_000)) return Response.json({ error: "Too many requests. Wait a minute." }, { status: 429 });
     const { token } = await ctx.params;
-    const body = (await req.json()) as { action?: string; battery_kwh?: number; wallbox?: boolean };
-    const offer = await getOffer(token);
+    const body = (await readJsonCapped<{ action?: string; battery_kwh?: number; wallbox?: boolean }>(req, 4_000)) ?? {};
+    const offer = await getOfferWithId(token);
     if (!offer) return Response.json({ error: "This offer link is not valid." }, { status: 404 });
+    if (body.action === "listen") {
+      const payload = offer.designId ? { design_id: offer.designId, audio: true } : { design_response: offer.design, audio: true };
+      return handleExplain(
+        new Request(new URL("/api/voice/explain", req.url), { method: "POST", headers: req.headers, body: JSON.stringify(payload) }),
+        { ...voiceDeps(after), allowInlineDesign: true }, // the design comes from our server, not the client
+      );
+    }
+    if (body.action === "explain") {
+      const { stream } = await engine.explain({ design_response: offer.design, audience: "homeowner" });
+      return new Response(stream, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+    }
     const choice = { battery_kwh: body.battery_kwh, wallbox: body.wallbox };
     if (!choiceAllowed(offer.allowed, choice)) return Response.json({ error: "Your installer did not offer this option." }, { status: 400 });
 
