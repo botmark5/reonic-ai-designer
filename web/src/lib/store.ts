@@ -69,19 +69,20 @@ const home = (h: Partial<Home>): Home => ({
 });
 const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
 
-/** Example homes for an empty inbox (memory store, or a fresh Supabase table). */
+/** Example homes for an empty inbox (memory store, or a fresh Supabase table). Names end in "(example)" so they
+ *  are never mistaken for real customers; they are created only when the designs table is empty. */
 export function exampleDesigns(): DesignRow[] {
   const row = (r: Partial<DesignRow> & Pick<DesignRow, "customer_name" | "home">): DesignRow => ({
     id: randomUUID(), created_at: ago(0), call_id: null, source: "planner", status: "draft", address: null,
     locks: { ...EMPTY_LOCKS }, design: null, explanation: null, ...r,
   });
   return [
-    row({ customer_name: "Weber, Augsburg", source: "voice", created_at: ago(4),
+    row({ customer_name: "Weber, Augsburg (example)", source: "voice", created_at: ago(4),
       home: home({ annual_kwh: 4800, has_ev: true, ev_km_year: 15000, inhabitants: 4, roof_type: "Concrete tile" }),
       locks: { ...EMPTY_LOCKS, wallbox: true } }),
-    row({ customer_name: "Huber, Landsberg", status: "review", created_at: ago(62),
+    row({ customer_name: "Huber, Landsberg (example)", status: "review", created_at: ago(62),
       home: home({ annual_kwh: 6200, heating: "Oil", inhabitants: 5 }) }),
-    row({ customer_name: "Schmidt, Friedberg", status: "sent", created_at: ago(60 * 26),
+    row({ customer_name: "Schmidt, Friedberg (example)", status: "sent", created_at: ago(60 * 26),
       home: home({ annual_kwh: 3400, inhabitants: 2, heating: "Heat pump" }) }),
   ];
 }
@@ -125,6 +126,26 @@ function memoryStore(): Store {
       return share && design ? { share, design } : null;
     },
   };
+}
+
+const seedLock = globalThis as unknown as { __reonicSeeding?: Promise<void> };
+
+/** Adds the example homes once when the designs table is empty. Concurrent first loads share one seeding run. */
+export async function seedIfEmpty(store: Store): Promise<void> {
+  if ((await store.listDesigns(1)).length > 0) return;
+  seedLock.__reonicSeeding ??= (async () => {
+    try {
+      if ((await store.listDesigns(1)).length > 0) return;
+      for (const ex of exampleDesigns().reverse()) {
+        const { id: _id, ...row } = ex;
+        void _id;
+        await store.createDesign(row);
+      }
+    } finally {
+      seedLock.__reonicSeeding = undefined;
+    }
+  })();
+  await seedLock.__reonicSeeding;
 }
 
 export function getStore(): Store {
