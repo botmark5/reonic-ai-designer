@@ -101,7 +101,8 @@ export function Inbox({
         <ul className="flex max-h-[300px] flex-col overflow-y-auto rounded-md border border-border bg-surface-1 p-1">
           {rows.map((r) => {
             const active = r.id === selectedId;
-            const fresh = r.source === "voice" && r.status === "draft";
+            const fresh = (r.source === "voice" || r.source === "form") && r.status === "draft";
+            const origin = r.source === "voice" ? "From call" : r.source === "form" ? "From site visit" : null;
             return (
               <li key={r.id}>
                 <button
@@ -119,11 +120,11 @@ export function Inbox({
                   </span>
                   {fresh ? (
                     <StatusBadge tone="ai" className="bg-surface-1">
-                      From call · new
+                      {origin} · new
                     </StatusBadge>
                   ) : (
                     <span className="text-[12px] leading-4 text-ink-muted">
-                      {r.source === "voice" ? "From call · " : ""}
+                      {origin ? `${origin} · ` : ""}
                       {STATUS[r.status]}
                     </span>
                   )}

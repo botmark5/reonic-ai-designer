@@ -22,7 +22,7 @@ create table if not exists public.designs (
   id          uuid primary key default gen_random_uuid(),
   created_at  timestamptz not null default now(),
   call_id     uuid references public.calls(id) on delete set null,
-  source      text not null default 'planner' check (source in ('voice', 'planner')),
+  source      text not null default 'planner' check (source in ('voice', 'planner', 'form')),
   status      text not null default 'draft'   check (status in ('draft', 'review', 'sent')),
   customer_name text,                                   -- "Weber, Augsburg" (from the call or typed by the planner)
   address       text,

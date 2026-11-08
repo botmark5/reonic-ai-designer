@@ -53,8 +53,8 @@ export function PlannerApp({ designs, initial }: { designs: DesignRow[]; initial
         for (const row of list) {
           if (known.current.has(row.id)) continue;
           known.current.add(row.id);
-          if (row.source === "voice")
-            toast("New design from a call", { description: homeTitle(row), action: { label: "Open", onClick: () => selectRef.current?.(row) } });
+          if (row.source === "voice" || row.source === "form")
+            toast(row.source === "voice" ? "New design from a call" : "New design from a site visit", { description: homeTitle(row), action: { label: "Open", onClick: () => selectRef.current?.(row) } });
         }
         setRows(list);
       } catch {}
@@ -233,7 +233,7 @@ function Workspace({
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex min-w-0 flex-col gap-1.5">
             <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge tone="ai">{row.source === "voice" ? "Drafted by AI from a call" : "Drafted by AI"}</StatusBadge>
+              <StatusBadge tone="ai">{row.source === "voice" ? "Drafted by AI from a call" : row.source === "form" ? "Drafted by AI from a site visit" : "Drafted by AI"}</StatusBadge>
               {lockedCount > 0 && <StatusBadge tone="neutral">{lockedCount === 1 ? "1 choice by you" : `${lockedCount} choices by you`}</StatusBadge>}
               <ServedBadge served={r?.served} />
             </div>
