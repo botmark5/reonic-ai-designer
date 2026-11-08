@@ -4,7 +4,7 @@ import { AUTH_COOKIE, authToken, plannerPasscode, safeEqual } from "@/lib/auth";
 /**
  * Planner pages and planner APIs need the planner cookie (when PLANNER_PASSCODE is set).
  * Public: the homeowner offer (/offer, /api/offer), login, engine health, and session D's voice/solar routes
- * (they authenticate themselves with their own secrets).
+ * (they authenticate themselves with their own secrets), and static assets incl. the homeowner offer's audio (mp3).
  */
 export async function proxy(req: NextRequest) {
   const pass = plannerPasscode();
@@ -22,6 +22,6 @@ export async function proxy(req: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!offer|api/offer|api/voice|api/solar|api/engine/health|login|api/login|_next/static|_next/image|brand|models|favicon\\.ico|.*\\.(?:png|svg|jpg|webp|glb|ico)$).*)",
+    "/((?!offer|api/offer|api/voice|api/solar|api/engine/health|login|api/login|_next/static|_next/image|brand|models|favicon\\.ico|.*\\.(?:png|svg|jpg|webp|glb|ico|mp3)$).*)",
   ],
 };

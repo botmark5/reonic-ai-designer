@@ -801,13 +801,25 @@ describe("handleExplain", () => {
     expect(f).toHaveBeenCalledTimes(1);
   });
 
+  it("never passes a login or error page off as the cached clip, and does not pay for a new one", async () => {
+    const key = explainKey(d0, "en", "voice1");
+    setStaticClips({
+      [key]: { text: "Hi.", by: "claude", language: "en", segments: [{ text: "Hi.", moment: null, start_s: 0, end_s: 0.5, time_of_day_h: null }], duration_s: 0.5, timing: "audio", audio_path: "/voice/demo.mp3" },
+    });
+    const f = vi.fn(async () => new Response("<!DOCTYPE html><html>login</html>", { headers: { "content-type": "text/html" } }));
+    const d = deps({ fetch: f as unknown as typeof fetch, elevenLabsKey: "el", voiceId: "voice1", ttsEnabled: true, anthropicKey: "ak" });
+    const body = await (await handleExplain(post("/api/voice/explain", { design_response: d0, audio: true }), d)).json();
+    expect(body).toMatchObject({ text: "Hi.", cached: "clip", audio_base64: null, audio_reason: "clip_unavailable" });
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
   it("serves a committed clip without calling Claude or ElevenLabs", async () => {
     const key = explainKey(d0, "en", "voice1");
     setStaticClips({
       [key]: { text: "Hi.", by: "claude", language: "en", segments: [{ text: "Hi.", moment: null, start_s: 0, end_s: 0.5, time_of_day_h: null }], duration_s: 0.5, timing: "audio", audio_path: "/voice/demo.mp3" },
     });
     const f = vi.fn(async (u: string | URL | Request) => {
-      if (String(u) === "http://x/voice/demo.mp3") return new Response(new Uint8Array([9, 9]));
+      if (String(u) === "http://x/voice/demo.mp3") return new Response(new Uint8Array([9, 9]), { headers: { "content-type": "audio/mpeg" } });
       throw new Error(`unexpected ${String(u)}`);
     });
     const d = deps({ fetch: f as unknown as typeof fetch, elevenLabsKey: "el", voiceId: "voice1", ttsEnabled: true, anthropicKey: "ak" });

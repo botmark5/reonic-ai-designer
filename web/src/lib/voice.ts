@@ -1061,12 +1061,14 @@ export async function handleExplain(req: Request, deps: VoiceDeps): Promise<Resp
     if (wantAudio) {
       try {
         const r = await deps.fetch(new URL(audio_path, req.url));
-        if (r.ok) audio_base64 = Buffer.from(await r.arrayBuffer()).toString("base64");
+        // Only real audio: a gate or error page must never be played (or passed off) as the clip.
+        if (r.ok && (r.headers.get("content-type") ?? "").startsWith("audio/")) audio_base64 = Buffer.from(await r.arrayBuffer()).toString("base64");
+        else log(`cached clip not served as audio (${r.status} ${r.headers.get("content-type") ?? "no type"})`);
       } catch (e) {
         log(`cached clip unreadable: ${e instanceof Error ? e.message : "unknown error"}`);
       }
     }
-    return reply({ ...rest, audio_base64, audio_url: audio_path }, "clip", undefined);
+    return reply({ ...rest, audio_base64, audio_url: audio_path }, "clip", wantAudio && !audio_base64 ? "clip_unavailable" : undefined);
   }
 
   // 2. This instance already made it (with audio if audio is wanted).
