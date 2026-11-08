@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Shuffle } from "lucide-react";
 import { HouseStage } from "@/components/house3d";
 import { Button } from "@/components/ui/button";
@@ -64,8 +64,16 @@ function describeHome(p: ProjectResponse) {
     .join(" · ");
 }
 
+const subscribeWide = (cb: () => void) => {
+  const m = window.matchMedia("(min-width: 768px)");
+  m.addEventListener("change", cb);
+  return () => m.removeEventListener("change", cb);
+};
+const useWide = () => useSyncExternalStore(subscribeWide, () => window.matchMedia("(min-width: 768px)").matches, () => false);
+
 export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalResponse; ids: string[]; demos: DemoProject[] }) {
   const demos = useMemo(() => caseChips(allDemos), [allDemos]);
+  const wide = useWide();
   const [projectId, setProjectId] = useState<string | null>(demos[0]?.project_id ?? ids[0] ?? null);
   const [history, setHistory] = useState<string[]>([]);
   const [project, setProject] = useState<ProjectResponse | null>(null);
@@ -231,6 +239,8 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
                         cameraKey="reality"
                         view="outside"
                         controls="minimal"
+                        // size chips on each house (c-3d), so the two systems compare at a glance; phones keep the clean house
+                        labels={wide}
                       />
                     ) : (
                       <div className="aspect-[4/3] w-full animate-pulse rounded-lg border border-border bg-surface-1 motion-reduce:animate-none md:aspect-[16/10]" aria-hidden />
