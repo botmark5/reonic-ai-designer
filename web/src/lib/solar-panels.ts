@@ -27,7 +27,8 @@ export interface PanelSegment {
   pitch_deg: number;
   azimuth_deg: number; // compass: 180 = south
   area_m2: number;
-  plane_height_m: number | null; // roof plane height above ground at the segment centre
+  plane_height_m: number | null; // Google: roof plane height in metres ABOVE SEA LEVEL at the segment centre
+  plane_height_rel_m: number | null; // the same, relative to the building's lowest roof segment (0 = lowest)
   center: LatLng & Local;
   bbox: Bbox | null;
   panel_count: number; // of the placed panels
@@ -98,6 +99,8 @@ export function placePanels(b: Insights, kwp: number): Placement {
       yearly_kwh: Math.round(p.yearlyEnergyDcKwh ?? 0),
     };
   });
+  const heights = (sp.roofSegmentStats ?? []).map((s) => s.planeHeightAtCenterMeters).filter((h): h is number => typeof h === "number");
+  const lowest = heights.length ? Math.min(...heights) : null;
   const segments: PanelSegment[] = (sp.roofSegmentStats ?? []).map((s, index) => {
     const c = ll(s.center);
     return {
@@ -106,6 +109,7 @@ export function placePanels(b: Insights, kwp: number): Placement {
       azimuth_deg: s.azimuthDegrees ?? 0,
       area_m2: s.stats?.areaMeters2 ?? 0,
       plane_height_m: s.planeHeightAtCenterMeters ?? null,
+      plane_height_rel_m: s.planeHeightAtCenterMeters != null && lowest != null ? r2(s.planeHeightAtCenterMeters - lowest) : null,
       center: { ...c, ...toLocal(c, center) },
       bbox: box(s.boundingBox),
       panel_count: panels.filter((p) => p.segment_index === index).length,

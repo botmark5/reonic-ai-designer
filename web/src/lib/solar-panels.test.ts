@@ -84,7 +84,8 @@ describe("placePanels", () => {
       bbox: { sw: { lat: 48.13695, lng: 11.57495 }, ne: { lat: 48.137, lng: 11.57505 } },
       panel_count: 8,
     });
-    expect(r.segments[1].panel_count).toBe(0);
+    expect(r.segments[1]).toMatchObject({ panel_count: 0, plane_height_rel_m: 0 });
+    expect(r.segments[0].plane_height_rel_m).toBe(0.1);
     expect(r.segments[0].center.y_m).toBeCloseTo(-2.2, 1);
     expect(r.building_bbox).toEqual({ sw: { lat: 48.1369, lng: 11.5749 }, ne: { lat: 48.1371, lng: 11.5751 } });
   });
