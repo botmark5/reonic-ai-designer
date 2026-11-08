@@ -2,7 +2,7 @@
  * Ours vs the expert, per component, with the same tolerances as engine/evaluate.py:
  * PV ±1 kWp, battery ±1 catalogue step, and anything inside the expert's offered variant range counts as a hit.
  */
-import type { ExpertVariant } from "./types";
+import type { DesignResponse, ExpertVariant } from "./types";
 
 export type VerdictKind = "match" | "range" | "close" | "option" | "off" | "missing" | "extra";
 export interface Verdict {
@@ -112,10 +112,15 @@ export interface Headline extends HeadlineDef {
   ours: number | null;
   base: number | null;
   baseName: string | null;
-  /** null = no comparison possible or a tie at the shown precision */
+  /** null = no comparison possible, or level with the rule */
   wins: boolean | null;
   tie: boolean;
+  /** inside the noise: ≤ 2 points for %, ≤ 5 % of the rule's error for kWp (pitch facts call these "level") */
+  level: boolean;
 }
+
+export const LEVEL_PCT_POINTS = 2;
+export const LEVEL_KWP_SHARE = 0.05;
 
 type Metrics = Record<string, Record<string, number | null | undefined>>;
 
@@ -191,7 +196,34 @@ export function headlines(metrics: Metrics, model = "design_model", defs: Headli
     // compare at the precision shown (kWp 2 decimals, % whole numbers): a tie on screen is a tie, not a loss
     const shown = (x: number) => (h.unit === "kWp" ? Math.round(x * 100) : Math.round(x));
     const tie = typeof ours === "number" && base != null && shown(ours) === shown(base);
-    const wins = ours == null || base == null || tie ? null : h.better === "lower" ? ours < base : ours > base;
-    return { ...h, ours: typeof ours === "number" ? ours : null, base, baseName, wins, tie };
+    const level =
+      typeof ours === "number" &&
+      base != null &&
+      (tie || (h.unit === "%" ? Math.abs(ours - base) <= LEVEL_PCT_POINTS : Math.abs(ours - base) <= LEVEL_KWP_SHARE * Math.abs(base) + 1e-9));
+    const wins = ours == null || base == null || level ? null : h.better === "lower" ? ours < base : ours > base;
+    return { ...h, ours: typeof ours === "number" ? ours : null, base, baseName, wins, tie, level };
   });
+}
+
+/**
+ * The expert's sale in our response shape, so the same 3D stage can draw it: the primary variant's sizes, our
+ * response for everything else (the stage reads sizes from `design`). None where the expert sold none.
+ */
+export function expertDesign(ours: DesignResponse, variants: ExpertVariant[]): DesignResponse {
+  const p = variants.find((x) => x.is_primary) ?? variants[0];
+  const d = ours.design;
+  const pv = (p?.pv_kwp ?? 0) > 0 ? p!.pv_kwp : null;
+  const bat = (p?.battery_kwh ?? 0) > 0 ? p!.battery_kwh : null;
+  const hp = (p?.heatpump_kw ?? 0) > 0 ? p!.heatpump_kw : null;
+  const wb = !!p?.has_wallbox;
+  return {
+    ...ours,
+    design: {
+      pv: { ...d.pv, include: pv != null, kwp: pv, reasons: [], alternatives: [] },
+      battery: { ...d.battery, include: bat != null, kwh: bat, reasons: [], alternatives: [] },
+      wallbox: { ...d.wallbox, include: wb, kw: wb ? (d.wallbox.kw ?? 11) : null, reasons: [] },
+      heatpump: { ...d.heatpump, include: hp != null, kw: hp, reasons: [] },
+    },
+    options: undefined,
+  };
 }
