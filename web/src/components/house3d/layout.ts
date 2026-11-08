@@ -26,6 +26,14 @@ export interface PanelSlot {
   v: number;
 }
 
+/**
+ * Ids of panels already on the roof start with this. A proposed panel in the same spot is a different panel: when
+ * the planner flips "solar already on the roof?", the old ones lift away and the proposal drops in, instead of the
+ * roof looking unchanged; the renderer also draws them in a weathered tint.
+ */
+export const EXISTING_ID = "existing:";
+export const isExisting = (id: string) => id.startsWith(EXISTING_ID);
+
 export interface Layout {
   slots: PanelSlot[];
   requested: number;

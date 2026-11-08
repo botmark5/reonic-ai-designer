@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { BATTERY_MODULE, MAX_BATTERY_MODULES, buildBatteryParts } from "./equipmentGeometry";
 import { slotToWorld, type Mount, type PlaneFrame } from "./houseGeometry";
-import { PANEL, type PanelSlot, type PlaneId } from "./layout";
+import { isExisting, PANEL, type PanelSlot, type PlaneId } from "./layout";
 import { nearestFree } from "./panelEdit";
 import type { Palette } from "./palette";
 import type { CompKey } from "./sceneSpec";
@@ -211,6 +211,8 @@ const PICK_LIFT = 0.06; // the picked panel rises a little off the roof, inside 
 const DRAG_LIFT = 0.22; // the dragged panel floats above the roof, under the pointer
 const GLIDE = 16; // 1/s: a dropped or repacked panel glides to its slot in about 0.2 s
 const PLAIN = new THREE.Color("#ffffff");
+/** Panels already on the roof: a few years of weather, so the proposal's fresh panels stand out next to them. */
+const EXISTING_TINT = new THREE.Color("#b4bac6");
 const SELECT = "#f2a516";
 const OUTLINE = 0.055; // outline width, metres
 const HANDLE_R = 0.09;
@@ -315,7 +317,7 @@ export function Panels({ slots, frames, palette, reduced, intro = true, pointer,
       scale.setScalar(v < 0.02 ? 0 : 0.94 + 0.06 * v);
       m4.compose(pos, q, scale);
       glass.current.setMatrixAt(i, m4);
-      glass.current.setColorAt(i, PLAIN);
+      glass.current.setColorAt(i, isExisting(id) ? EXISTING_TINT : PLAIN);
       order.current[i] = id;
       pos.addScaledVector(f.normal, -0.01);
       m4.compose(pos, q, scale);

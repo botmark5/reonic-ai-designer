@@ -2,7 +2,7 @@
  * Everything the 3D scene shows, decided from the engine's design. Pure: no three.js, no React.
  */
 import type { DesignResponse, Home } from "../../lib/types";
-import { layoutPanels, panelCount, PANEL, type Layout, type RoofPlane } from "./layout";
+import { EXISTING_ID, layoutPanels, panelCount, PANEL, type Layout, type RoofPlane } from "./layout";
 import type { ComponentKey, House3DMode, RoofInput } from "./types";
 
 export type CompKey = ComponentKey;
@@ -90,8 +90,10 @@ export function buildSceneSpec(
   // "no cap" (removed by the planner), undefined falls back to the Google Solar prop.
   const cap = home.roof_max_kwp;
   const maxNew = cap === null ? undefined : finite(cap) && cap >= 0 ? Math.floor(cap / PANEL.kwp + 1e-6) : roofInput?.maxPanels;
-  const layout = layoutPanels(existingWanted + panelCount(pv.include ? pv.kwp : 0, maxNew), planesFor(roof.pitchDeg));
-  const existingPanels = Math.min(existingWanted, layout.placed);
+  const packed = layoutPanels(existingWanted + panelCount(pv.include ? pv.kwp : 0, maxNew), planesFor(roof.pitchDeg));
+  const existingPanels = Math.min(existingWanted, packed.placed);
+  // the first slots are the panels already there; their own ids keep them apart from a proposal in the same spot
+  const layout: Layout = { ...packed, slots: packed.slots.map((s, i) => (i < existingPanels ? { ...s, id: EXISTING_ID + s.id } : s)) };
   const missing = designPanels - (layout.placed - existingPanels);
   const solarOn = pvOn || existingWanted > 0;
   const panelsOn = layout.placed > 0;
