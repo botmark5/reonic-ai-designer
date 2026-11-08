@@ -83,24 +83,25 @@ function Tiles({ apiKey, placement, sunUniforms, onFirstTiles, onError, onAttrib
   sunUniforms: RefObject<SunUniforms>;
   onHeights: (h: Heights) => void;
 }) {
-  const { camera, gl } = useThree();
+  const { camera, gl, scene } = useThree();
   const { lat, lng } = placement.center;
-  const tiles = useMemo(() => {
-    const t = new TilesRenderer();
-    t.registerPlugin(new GoogleCloudAuthPlugin({ apiToken: apiKey, autoRefreshToken: true }));
-    t.registerPlugin(new GLTFExtensionsPlugin({ dracoLoader: new DRACOLoader().setDecoderPath(DRACO) }));
-    t.registerPlugin(new TileCompressionPlugin());
-    t.registerPlugin(new TilesFadePlugin());
-    t.registerPlugin(new ReorientationPlugin({ lat: THREE.MathUtils.degToRad(lat), lon: THREE.MathUtils.degToRad(lng), height: 0, recenter: true }));
-    return t;
-  }, [apiKey, lat, lng]);
+  const cb = useRef({ onFirstTiles, onError, onAttribution, onHeights, placement });
+  useEffect(() => { cb.current = { onFirstTiles, onError, onAttribution, onHeights, placement }; });
+  const live = useRef<TilesRenderer | null>(null);
 
-  const cb = useRef({ onFirstTiles, onError, onAttribution, onHeights });
-  useEffect(() => { cb.current = { onFirstTiles, onError, onAttribution, onHeights }; });
-
+  // created and disposed in the same effect: a dispose()d renderer has lost its plugins and must never come back
+  // (StrictMode re-runs, route hide/show). A new kWp at the same address keeps the tiles; only the panels change.
   useEffect(() => {
+    const tiles = new TilesRenderer();
+    tiles.registerPlugin(new GoogleCloudAuthPlugin({ apiToken: apiKey, autoRefreshToken: true }));
+    tiles.registerPlugin(new GLTFExtensionsPlugin({ dracoLoader: new DRACOLoader().setDecoderPath(DRACO) }));
+    tiles.registerPlugin(new TileCompressionPlugin());
+    tiles.registerPlugin(new TilesFadePlugin());
+    tiles.registerPlugin(new ReorientationPlugin({ lat: THREE.MathUtils.degToRad(lat), lon: THREE.MathUtils.degToRad(lng), height: 0, recenter: true }));
     tiles.setCamera(camera);
     tiles.setResolutionFromRenderer(camera, gl);
+    scene.add(tiles.group);
+    live.current = tiles;
     let first = false;
     let timer = 0;
     const ray = new THREE.Raycaster();
@@ -113,24 +114,23 @@ function Tiles({ apiKey, placement, sunUniforms, onFirstTiles, onError, onAttrib
     const around = (x: number, z: number) => quantile([0, 0.8, -0.8].flatMap((dx) => [0, 0.8, -0.8].map((dz) => hitY(x + dx, z + dz))), 0.25);
     // rays straight down onto the photogrammetry calibrate Google's plane heights; refined as finer tiles arrive
     const measure = () => {
+      const { segments } = cb.current.placement;
       const hits = new Map<number, number>();
-      for (const s of placement.segments) {
+      for (const s of segments) {
         const [x, z] = toScene(s.center.x_m, s.center.y_m);
         const y = around(x, z);
         if (y !== null) hits.set(s.index, y);
       }
       if (!hits.size) return;
-      const { offset, heights } = segmentHeights(placement.segments, hits, GEOID_M);
+      const { offset, heights } = segmentHeights(segments, hits, GEOID_M);
       // coarse tiles are chords far below the real surface: wait for detail before trusting the rays
       if (Math.abs(offset - GEOID_M) > PLAUSIBLE_M) return;
-      const ys = [...heights.values()];
-      cb.current.onHeights({ roof: Math.max(...ys), segments: heights });
+      cb.current.onHeights({ roof: Math.max(...heights.values()), segments: heights });
     };
     const onModel = (e: { scene?: THREE.Object3D }) => {
       if (e.scene) patchSun(e.scene, sunUniforms.current);
       if (!first) { first = true; cb.current.onFirstTiles(); }
     };
-    patchSun(tiles.group, sunUniforms.current);
     const onEnd = () => {
       window.clearTimeout(timer);
       timer = window.setTimeout(measure, 150);
@@ -148,17 +148,24 @@ function Tiles({ apiKey, placement, sunUniforms, onFirstTiles, onError, onAttrib
       tiles.removeEventListener("load-model", onModel);
       tiles.removeEventListener("tiles-load-end", onEnd);
       tiles.removeEventListener("load-error", onFail);
+      scene.remove(tiles.group);
+      if (live.current === tiles) live.current = null;
       tiles.dispose();
     };
-  }, [tiles, camera, gl, placement, sunUniforms]);
+  }, [apiKey, lat, lng, camera, gl, scene, sunUniforms]);
+
+  // panels changed at the same address: measure again for the new segments
+  useEffect(() => { live.current?.dispatchEvent({ type: "tiles-load-end" }); }, [placement]);
 
   useFrame(() => {
+    const tiles = live.current;
+    if (!tiles) return;
     tiles.setResolutionFromRenderer(camera, gl);
     camera.updateMatrixWorld();
     tiles.update();
   });
 
-  return <primitive object={tiles.group} />;
+  return null;
 }
 
 interface Drop { s: SpringState; wait: number }
@@ -248,8 +255,13 @@ function Rig({ target }: { target: THREE.Vector3 }) {
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
+    if (placed.current) {
+      // later refinements only move the point the camera orbits, keeping the viewer's own angle and distance
+      void c.moveTo(target.x, target.y, target.z, true);
+      return;
+    }
     const p = target.clone().add(VIEW);
-    void c.setLookAt(p.x, p.y, p.z, target.x, target.y, target.z, placed.current);
+    void c.setLookAt(p.x, p.y, p.z, target.x, target.y, target.z, false);
     placed.current = true;
   }, [target]);
   return (

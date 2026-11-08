@@ -196,6 +196,8 @@ const SCRATCH = {
 export interface PanelEditing {
   selected: string | null;
   grid: PanelSlot[];
+  /** Panels already on the roof: they stay where they are. */
+  locked: ReadonlySet<string>;
   onPick: (id: string | null) => void;
   onMove: (id: string, to: PanelSlot) => void;
 }
@@ -219,6 +221,13 @@ export function Panels({ slots, frames, palette, reduced, intro = true, pointer,
   const controls = useThree((st) => st.controls);
   const drag = useRef<{ id: string; x: number; y: number; moved: boolean; to: PanelSlot | null } | null>(null);
   const [ghost, setGhost] = useState<PanelSlot | null>(null);
+  // editing switched off (or unmount) mid-drag: never leave the orbit disabled or the cursor grabbing
+  const editing = !!edit;
+  useEffect(() => () => {
+    drag.current = null;
+    setControls(controls, true);
+    document.body.style.cursor = "";
+  }, [controls, editing]);
   const glass = useRef<THREE.InstancedMesh>(null);
   const rim = useRef<THREE.InstancedMesh>(null);
   const states = useRef(new Map<string, PanelState>());
@@ -310,10 +319,21 @@ export function Panels({ slots, frames, palette, reduced, intro = true, pointer,
     }
     return null;
   };
+  const endDrag = (e: ThreeEvent<PointerEvent>) => {
+    const d = drag.current;
+    if (!d) return null;
+    e.stopPropagation();
+    drag.current = null;
+    (e.target as unknown as Element).releasePointerCapture?.(e.pointerId);
+    setControls(controls, true);
+    setGhost(null);
+    document.body.style.cursor = "";
+    return d;
+  };
   const editHandlers = edit ? {
     onPointerDown: (e: ThreeEvent<PointerEvent>) => {
       const id = e.instanceId !== undefined ? order.current[e.instanceId] : undefined;
-      if (!id) return;
+      if (!id || edit.locked.has(id)) return; // existing panels: let the camera orbit instead
       e.stopPropagation();
       (e.target as unknown as Element).setPointerCapture?.(e.pointerId);
       drag.current = { id, x: e.clientX, y: e.clientY, moved: false, to: null };
@@ -330,17 +350,14 @@ export function Panels({ slots, frames, palette, reduced, intro = true, pointer,
       document.body.style.cursor = "grabbing";
     },
     onPointerUp: (e: ThreeEvent<PointerEvent>) => {
-      const d = drag.current;
+      const d = endDrag(e);
       if (!d) return;
-      e.stopPropagation();
-      (e.target as unknown as Element).releasePointerCapture?.(e.pointerId);
-      drag.current = null;
-      setControls(controls, true);
-      setGhost(null);
-      document.body.style.cursor = "";
       if (d.moved && d.to) edit.onMove(d.id, d.to);
       else if (!d.moved) edit.onPick(edit.selected === d.id ? null : d.id);
     },
+    // a touch that turns into a page scroll, or a lost capture: drop the drag, move nothing
+    onPointerCancel: (e: ThreeEvent<PointerEvent>) => { endDrag(e); },
+    onLostPointerCapture: (e: ThreeEvent<PointerEvent>) => { endDrag(e); },
   } : {};
 
   const poseOf = (slot: PanelSlot, lift: number) => {

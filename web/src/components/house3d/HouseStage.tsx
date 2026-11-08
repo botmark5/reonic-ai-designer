@@ -42,7 +42,8 @@ export interface HouseStageProps {
   onTimeOfDayChange?: (hours: number) => void;
   /** Planner may drag, add and remove panels (only places them; never changes the engine's kWp). */
   editable?: boolean;
-  onPanelsChange?: (panels: StagePanel[]) => void;
+  /** The planner moved, added or removed panels; null = back to the engine's layout (Reset). */
+  onPanelsChange?: (panels: StagePanel[] | null) => void;
   /** Floating labels on the model (PV kWp, battery kWh), sized for a projector. */
   labels?: boolean;
   /** Which overlays to show. Default "full". */
@@ -106,18 +107,16 @@ export function HouseStage({
   );
 
   function renderStage() {
-  if (shownView === "inside") {
-    return (
-      <InsideStage
-        design={design}
-        home={home}
-        mode={mode}
-        controls={controls === undefined || controls === "full"}
-        onZonesChange={onZonesChange}
-        className={className}
-      />
-    );
-  }
+  const inside = shownView === "inside" ? (
+    <InsideStage
+      design={design}
+      home={home}
+      mode={mode}
+      controls={controls === undefined || controls === "full"}
+      onZonesChange={onZonesChange}
+      className={className}
+    />
+  ) : null;
   if (tiles && location) {
     return (
       <SiteStage
@@ -137,7 +136,11 @@ export function HouseStage({
       />
     );
   }
+  // the model stays mounted (hidden, paused) while Inside shows: edits, time and camera survive the switch
   return (
+    <>
+      {inside}
+      <div hidden={!!inside}>
     <House3D
       design={design}
       home={home}
@@ -157,6 +160,8 @@ export function HouseStage({
       flyIn={flyIn}
       className={className}
     />
+      </div>
+    </>
   );
   }
 }
