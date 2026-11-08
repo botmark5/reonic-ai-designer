@@ -10,6 +10,7 @@ import {
   handleExplain,
   handlePostCall,
   normaliseFacts,
+  parseHousehold,
   offerTemplate,
   spokenSummary,
   toolInstruction,
@@ -159,6 +160,28 @@ describe("normaliseFacts", () => {
     expect(normaliseFacts({ has_existing_pv: false, existing_pv_kwp: 5 }).home).toMatchObject({ has_existing_pv: false, existing_pv_kwp: null });
   });
 
+  it("parses household words and digits (EN + DE) into a number", () => {
+    const cases: [unknown, number | null][] = [
+      ["single", 1], ["alone", 1], ["1 person", 1], ["allein", 1],
+      ["couple", 2], ["two of us", 2], ["zu zweit", 2],
+      ["family of four", 4], ["vier Personen", 4], ["4 people", 4], [4, 4], ["4", 4],
+      ["5+", 5], ["couple with two kids", 4], ["single parent with one child", 2],
+      ["zu dritt", 3], ["50", 20], ["unknown", null], ["", null], [0, null],
+    ];
+    for (const [input, want] of cases) expect([input, parseHousehold(input)]).toEqual([input, want]);
+    expect(normaliseFacts({ household: "family of four" }).home).toMatchObject({ inhabitants: 4, annual_kwh: 4250 });
+  });
+
+  it("maps daytime presence to an engine preset only for one-person homes", () => {
+    expect(normaliseFacts({ household: "single", daytime_presence: true }).home.load_profile).toBe("HomeOfficeOnePerson");
+    expect(normaliseFacts({ household: 1, daytime_presence: "no" }).home.load_profile).toBe("FullTimeOnePerson");
+    expect(normaliseFacts({ household: 1, daytime_presence: "works from home" }).home.load_profile).toBe("HomeOfficeOnePerson");
+    expect(normaliseFacts({ household: 4, daytime_presence: true }).home.load_profile).toBe("H0");
+    expect(normaliseFacts({ daytime_presence: true }).home.load_profile).toBe("H0");
+    expect(normaliseFacts({ household: 1 }).home.load_profile).toBe("H0");
+    expect(normaliseFacts({ household: 4, daytime_presence: true }).facts.daytime_presence).toBe(true);
+  });
+
   it("defaults ev_km_year to 15000 when the caller has an EV but gave no distance", () => {
     const n = normaliseFacts({ has_ev: "yes", household: 3 });
     expect(n.home).toMatchObject({ has_ev: true, ev_km_year: 15000 });
@@ -182,6 +205,15 @@ describe("normaliseFacts", () => {
     await handlePostCall(post("/api/voice/post-call", body, { "elevenlabs-signature": sign(body, "wh-secret", NOW) }), d);
     await Promise.all(d.deferred.map((fn) => fn()));
     expect(seen!.home).toMatchObject({ has_existing_pv: true, existing_pv_kwp: 5 });
+  });
+
+  it("post-call fallback draft uses a household given only in words", async () => {
+    let seen: DesignRequest | null = null;
+    const d = deps({ design: async (req) => ((seen = req), mockDesign(req)), now: () => NOW * 1000 });
+    const body = postCallBody("conv_hh", { household: "family of four", daytime_presence: true });
+    await handlePostCall(post("/api/voice/post-call", body, { "elevenlabs-signature": sign(body, "wh-secret", NOW) }), d);
+    await Promise.all(d.deferred.map((fn) => fn()));
+    expect(seen!.home).toMatchObject({ inhabitants: 4, annual_kwh: 4250, load_profile: "H0" });
   });
 
   it("reads EV answers", () => {

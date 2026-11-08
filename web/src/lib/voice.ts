@@ -81,6 +81,45 @@ export function parseText(v: unknown): string | null {
 
 const parseKey = (v: unknown) => parseText(v)?.toLowerCase().replace(/[\s-]+/g, "_") ?? null;
 
+const HOUSEHOLD_MAX = 20;
+const NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eins: 1, eine: 1, einem: 1, einer: 1, zwei: 2, drei: 3, vier: 4, "fünf": 5, fuenf: 5, sechs: 6, sieben: 7, acht: 8, neun: 9, zehn: 10,
+};
+const nWord = `(\\d+|${Object.keys(NUMBER_WORDS).join("|")})`;
+const toN = (w: string) => NUMBER_WORDS[w] ?? Number(w);
+
+/** "family of four", "zu zweit", "couple with two kids", "5+", 4 → people in the household (1..20), else null. */
+export function parseHousehold(v: unknown): number | null {
+  const clamp = (n: number | null) => (n == null || !Number.isFinite(n) || n < 1 ? null : Math.min(Math.round(n), HOUSEHOLD_MAX));
+  if (typeof v === "number") return clamp(v);
+  const t = parseText(v)?.toLowerCase();
+  if (!t) return null;
+  // adults + children: "couple with two kids", "single parent with one child", "Paar mit zwei Kindern"
+  const kids = t.match(new RegExp(`\\b${nWord}\\s+(kids?|child(ren)?|kinder?n?)\\b`));
+  const adults = /\b(couple|paar|ehepaar|two adults|zwei erwachsene)\b/.test(t) ? 2
+    : /\b(single parent|alleinerziehend\w*)\b/.test(t) ? 1 : null;
+  if (kids && adults != null) return clamp(adults + toN(kids[1]));
+  const zu = t.match(/\bzu\s*(zweit|dritt|viert|fünft|fuenft)\b/);
+  if (zu) return { zweit: 2, dritt: 3, viert: 4, "fünft": 5, fuenft: 5 }[zu[1]] ?? null;
+  const nums = [...t.matchAll(new RegExp(`\\b${nWord}\\b`, "g"))].map((m) => toN(m[1]));
+  if (nums.length) return clamp(Math.max(...nums));
+  if (/\b(single|alone|just me|myself|allein\w*|ich allein)\b/.test(t)) return 1;
+  if (/\b(couple|paar|ehepaar|two of us|wife and i|husband and i|partner)\b/.test(t)) return 2;
+  return null;
+}
+
+/** Is someone at home during the day? true / false / null (not asked or unclear). */
+export function parsePresence(v: unknown): boolean | null {
+  const b = parseBool(v);
+  if (b != null) return b;
+  const t = parseText(v)?.toLowerCase();
+  if (!t) return null;
+  if (/home ?office|work(s|ing)? from home|retired|rentner|pension|(mostly|usually|always) (at )?home|tagsüber zu ?hause|meist zu ?hause/.test(t)) return true;
+  if (/full[- ]?time|vollzeit|(mostly|usually) (out|away)|not (at )?home|nicht zu ?hause|tagsüber weg|commut/.test(t)) return false;
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Facts → engine Home
 // ---------------------------------------------------------------------------
@@ -91,7 +130,7 @@ export interface VoiceFacts {
   annual_kwh: number | null;
   monthly_bill_eur: number | null;
   household: number | null;
-  daytime_presence: string | null;
+  daytime_presence: boolean | null;
   has_ev: boolean | null;
   ev_km_year: number | null;
   heating: string | null;
@@ -115,15 +154,14 @@ const fmtNum = (x: number) => String(Number(x.toFixed(2)));
 
 export function normaliseFacts(raw: unknown): NormalisedFacts {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const household = parsePositive(r.household);
   const facts: VoiceFacts = {
     conversation_id: parseText(r.conversation_id),
     customer_name: parseText(r.customer_name),
     address: parseText(r.address),
     annual_kwh: parsePositive(r.annual_kwh),
     monthly_bill_eur: parsePositive(r.monthly_bill_eur),
-    household: household != null && household >= 1 && household <= 20 ? Math.round(household) : null,
-    daytime_presence: parseText(r.daytime_presence),
+    household: parseHousehold(r.household),
+    daytime_presence: parsePresence(r.daytime_presence),
     has_ev: parseBool(r.has_ev),
     ev_km_year: parsePositive(r.ev_km_year),
     heating: parseKey(r.heating),
@@ -162,7 +200,9 @@ export function normaliseFacts(raw: unknown): NormalisedFacts {
   const home: Home = {
     annual_kwh: annual,
     price_eur_kwh: null, // engine default
-    load_profile: "H0",
+    // Engine presets exist for who is home only in one-person homes; other households keep H0 (answer stays in facts).
+    load_profile: facts.household === 1 && facts.daytime_presence != null
+      ? (facts.daytime_presence ? "HomeOfficeOnePerson" : "FullTimeOnePerson") : "H0",
     has_ev: hasEv,
     // An EV with no distance still needs a wallbox decision: 15,000 km/year, as in the planner form.
     ev_km_year: hasEv ? (facts.ev_km_year ?? EV_KM_DEFAULT) : null,
@@ -184,7 +224,7 @@ export function normaliseFacts(raw: unknown): NormalisedFacts {
 
 /** Enough to size a system without inventing the household's use. */
 function hasUsageFacts(raw: Record<string, unknown>): boolean {
-  return [raw.annual_kwh, raw.monthly_bill_eur, raw.household].some((v) => (parsePositive(v) ?? 0) > 0);
+  return [raw.annual_kwh, raw.monthly_bill_eur].some((v) => (parsePositive(v) ?? 0) > 0) || parseHousehold(raw.household) != null;
 }
 
 // ---------------------------------------------------------------------------

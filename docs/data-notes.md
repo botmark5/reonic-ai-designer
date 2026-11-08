@@ -192,3 +192,8 @@ if absent, sizes seen ≥ 5× per installer in the labels are used.
   answer to "Is there already PV on the roof?" is therefore taken as yes for battery_retrofit / pv_extension, no for
   new_system, unknown for wallbox_only / other. `has_solar = False` in the data means "not answered", not "no".
 - Training uses every project twice (answered + unanswered) so the model works with and without the answer.
+
+- Voice calls (d-voice, web/src/lib/voice.ts): `daytime_presence` maps to a `load_profile` preset only for one-person
+  households (home during the day → `HomeOfficeOnePerson`, out → `FullTimeOnePerson`), mirroring the engine's own note
+  parser (engine/llm.py: "home office" → `HomeOfficeOnePerson`). Multi-person homes keep `H0` because no preset
+  describes their daytime presence. Household answers in words are parsed to a number (capped at 20).
