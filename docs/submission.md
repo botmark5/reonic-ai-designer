@@ -51,7 +51,7 @@ In Reonic's words, planners "spend hours on every single design", and "the first
 
 ### 4. Execution and demo
 - The demo runs end to end on production: phone call → draft in the inbox → "buying an EV next year" → design adapts → compared with the real expert design and the metrics across 315 held-out homes → homeowner link.
-- 410 engine tests and 419 web tests (main 5daaafc, 8 Nov; re-count right before submitting).
+- 413 engine tests and 419 web tests (main 5daaafc, 8 Nov; re-count right before submitting).
 - The engine evaluation is reproducible from the repository, given Reonic's data.
 
 ## Best use of ElevenLabs
