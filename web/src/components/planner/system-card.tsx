@@ -65,8 +65,12 @@ export function cardStatus(c: ComponentKey, r: DesignResponse, locks: Locks, fla
     if (opt?.available) return { tone: "warning", label: "Customer option" };
     return { tone: "neutral", label: locked ? "Set by planner" : "Not needed" };
   }
-  if (locked) return { tone: "neutral", label: "Set by planner" };
   const physics = (r.physics.flags ?? []).find((f) => f.component === c && (f.level === "error" || f.level === "warn"));
+  if (locked) {
+    // a planner override is still validated against similar homes and physics: say so on the card (brief: "validation view")
+    const unusual = flags.find((x) => x.component === c && x.level === "warn") ?? physics;
+    return unusual ? { tone: "warning", label: "Set by planner · Unusual", title: unusual.message } : { tone: "neutral", label: "Set by planner" };
+  }
   if (physics?.level === "error") return { tone: "critical", label: "Implausible", title: physics.message };
   const f = flags.find((x) => x.component === c && x.level !== "info");
   if (f?.level === "warn") return { tone: "warning", label: "Unusual", title: f.message };
@@ -113,6 +117,15 @@ export function SystemCard({
         ? response.similar_homes.map((h) => h.battery_kwh ?? 0).filter((x) => x > 0)
         : [];
   const reasons = (c === "heatpump" && !d.include && hpOption?.available ? hpOption.reasons : d.reasons).slice(0, 3).map(strip);
+  // validation against similar homes (percentile) and physics, shown in full on the card, not only as a badge tooltip
+  const checks = Array.from(
+    new Set(
+      [
+        ...flags.filter((f) => f.component === c && (f.level === "warn" || f.level === "error")).map((f) => strip(f.message)),
+        ...(response.physics.flags ?? []).filter((f) => f.component === c && (f.level === "warn" || f.level === "error")).map((f) => f.message),
+      ],
+    ),
+  );
 
   return (
     <article
@@ -146,6 +159,14 @@ export function SystemCard({
       </p>
 
       {range && size != null && size > 0 && <ConfidenceRange component={c} value={size} range={range} peers={peers} />}
+
+      {checks.length > 0 && (
+        <ul className="m-0 flex list-none flex-col gap-1 rounded-sm bg-warning-tint px-2.5 py-1.5 text-[12px] leading-4 text-warning-text" aria-label={`${LABEL[c]} checks`}>
+          {checks.map((m) => (
+            <li key={m}>{m}</li>
+          ))}
+        </ul>
+      )}
 
       {reasons.length > 0 && (
         <ul className="m-0 flex list-disc flex-col gap-1 pl-[18px] text-[13px] leading-[19px] text-ink-body marker:text-ink-muted">
@@ -244,6 +265,16 @@ function Editor({
           <Button type="button" size="icon-sm" variant="secondary" aria-label="One panel more" onClick={() => setPv((v) => +(v + MODULE_KWP).toFixed(2))}>
             <Plus strokeWidth={1.5} />
           </Button>
+        </div>
+      )}
+      {c === "pv" && (d.pv.alternatives ?? []).length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Other sizes the engine finds plausible">
+          <span className="text-[12px] text-ink-muted">Also plausible:</span>
+          {(d.pv.alternatives ?? []).map((a) => (
+            <Button key={a.kwp} type="button" size="sm" variant={Math.abs(pv - a.kwp) < 1e-6 ? "default" : "secondary"} onClick={() => setPv(a.kwp)}>
+              {fmtValue("pv", a.kwp)} kWp · {Math.round(a.share * 100)} %
+            </Button>
+          ))}
         </div>
       )}
       {c === "battery" && (

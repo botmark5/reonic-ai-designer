@@ -251,8 +251,12 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
           <h2 id="across" className="m-0 text-label uppercase text-ink-muted">
             Across {nTest ? fmtInt(nTest) : "all"} held-out {src.fullOnly ? "new systems" : "homes"}
           </h2>
-          {src.answered && !offline && (
-            <p className="m-0 -mt-2 text-[12px] leading-4 text-ink-muted">With “Solar already on the roof?” answered, as the planner does. The card below shows what the answer adds.</p>
+          {!offline && (
+            <p className="m-0 -mt-2 text-[12px] leading-4 text-ink-muted">
+              {src.fullOnly
+                ? "New full systems, scored with the planner saying “new system” (the same answer for every home here, so it tells the engine nothing about sizes). Add-on sales below are scored without any answer, as the data records them."
+                : "Scored without the answer to “Solar already on the roof?”, as the data records it."}
+            </p>
           )}
           {offline ? (
             <div className="rounded-lg border border-dashed border-border bg-surface-1 p-6 text-body-sm text-ink-muted">
@@ -321,7 +325,7 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
           )}
           {!offline && answered && (
             <div className="flex flex-col gap-2 rounded-lg border border-border bg-ai-tint/50 p-4">
-              <span className="text-[13px] font-medium text-ink">When the planner answers “Solar already on the roof?”</span>
+              <span className="text-[13px] font-medium text-ink">What-if: the planner answers “Solar already on the roof?”</span>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px] sm:grid-cols-4">
                 {[
                   ["Solar size error", "pv_kwp_mae_all_projects", "kWp"],
@@ -337,7 +341,10 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
                   </div>
                 ))}
               </div>
-              <span className="text-[12px] text-ink-muted">All {nAll ? fmtInt(nAll) : ""} held-out homes, add-ons included; assumes the answer is right. One question is worth more than any model tweak.</span>
+              <span className="text-[12px] text-ink-muted">
+                All {nAll ? fmtInt(nAll) : ""} held-out homes, add-ons included. Not an accuracy: in this test the answer is derived from the expert offer itself,
+                so these numbers show what the question is worth when it is answered correctly, which is why the planner form and the voice agent ask it first.
+              </span>
             </div>
           )}
           {!offline && transfer.length > 0 && (

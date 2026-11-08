@@ -62,9 +62,16 @@ interface ComponentBase {
   reasons: string[];
 }
 
+export interface PvAlternative {
+  kwp: number;
+  share: number; // probability among the installer's standard sizes, 0..1
+}
+
 export interface PvDesign extends ComponentBase {
   kwp: number | null;
   range: [number, number];
+  /** Up to two other sizes the installer sells that the engine finds plausible (engine PR #56). */
+  alternatives?: PvAlternative[];
 }
 
 export interface BatteryAlternative {

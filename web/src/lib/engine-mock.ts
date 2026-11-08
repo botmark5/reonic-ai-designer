@@ -136,6 +136,7 @@ export function mockDesign(req: DesignRequest): DesignResponse {
               ...(ev > 0 ? [m(`EV adds ${fmt(ev)} kWh a year → +${round1(ev / 1000)} kWp.`)] : []),
               m(`Snapped to ${Math.round(pvKwp / MOCK_MODULE_KWP)} modules of 450 W.`),
             ],
+        alternatives: [], // the real engine lists up to two other standard sizes; the estimate has no catalogue
       },
       battery: {
         include: hasBat,

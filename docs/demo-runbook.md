@@ -9,7 +9,7 @@ Numbers for the pitch: `docs/pitch-facts.md`.
    If not, go to "Engine down" below.
 2. If `PLANNER_PASSCODE` is set, sign in at `<APP_URL>/login` in the demo browser and keep that tab open.
 3. Open four tabs in this order: `/live`, `/` (planner), `/reality`, and an empty tab for the offer.
-4. On `/reality`, check that the headline numbers show. "Engine offline" means the engine is down.
+4. On `/reality`, check that the headline numbers show. "Engine offline" means the engine is down. Numbers to expect: new systems 2.50 vs 2.62 kWp; what-if card 2.94 → 2.19 kWp (say "what-if", never "accuracy": the answer is derived from the expert offer in this test).
 5. Real voice call only: HQ's test call must have landed in the planner inbox on production. If it has not, use the scripted call.
 6. Phone: charged, hotspot ready, the ElevenLabs test-call link from `docs/voice-agent.md` open, volume up.
 7. Backup video: on the laptop desktop, already scrubbed to 0:00.
@@ -19,21 +19,21 @@ Numbers for the pitch: `docs/pitch-facts.md`.
 |---|---|---|---|---|
 | 0:00–0:20 | slide | Opening line. | | "Planners rebuild the same system from scratch for every home. We let the installer's own past offers draft it, and the planner stays in charge." |
 | 0:20–1:20 | `/live` | Start the voice call on the phone, held to the mic, and play the caller persona below. | "Incoming call" (replaced by the caller's name once given), then the fact checklist filling in, then "Draft design". At the end: "In the planner's inbox for review." | "An AI agent takes the site-visit call. It asks about existing solar first, because that is the strongest signal we found." |
-| 1:20–1:35 | `/live` | Click **Open in planner**. | Planner page with "Drafted by AI from a call". **9.9 kWp, 10 kWh battery, no wallbox.** A **10 kW heat pump** appears as a customer option. | "Every size comes from the engine, trained on this installer's signed offers. Claude never picks a size." |
+| 1:20–1:35 | `/live` | Click **Open in planner**. | Planner page with "Drafted by AI from a call". **9.9 kWp, 10 kWh battery, no wallbox.** A **10.5 kW heat pump** appears as a customer option (sizes are the installer's real ones since engine #60). | "Every size comes from the engine, trained on this installer's signed offers. Claude never picks a size." |
 | 1:35–2:00 | planner | Point at a card's range and its reasons, then at the 3D house. | P10–P90 range bar, reasons, similar homes. | "Not a black box: a range, the reasons, and similar homes the installer already built." |
 | 2:00–2:30 | planner | Click the example **They are buying an EV next year**, or type it, then **Update design**. | "Updating…", then the **Changed** marker. **About 11 kWp, 10 kWh, wallbox on.** | "The planner talks to it like a colleague. PV, battery and wallbox are decided as one chain, so the EV pulls the PV up and adds the wallbox." |
 | 2:30–2:45 (optional) | planner | Open **Roof size and direction** and set **Roof fits up to (kWp)** to 6. | **5.85 kWp, 7 kWh**, wallbox still on. | "Roof only fits 6 kWp? The battery follows the PV down." |
-| 2:45–3:45 | `/reality` | On the planner, click **Compare with expert**, or switch to the pre-opened `/reality` tab. Read the headline, then click the example cases **EV owner** and **Experts disagree**. | Metrics from held-out homes. EV owner: ours **10.8 kWp / 9.7 kWh / wallbox** vs the expert's **10.8 / 9 / wallbox**. Experts disagree: ours **9.0 kWp**, inside the expert's two variants (6.75 and 12.15 kWp). | "Every number here comes from 315 homes the engine never saw. On new systems it is on par with the best rule of thumb, 2.50 against 2.62 kWp. On add-on sales it correctly proposes no new solar for 87 % of homes, where rules of thumb manage 6 %. Its range holds the expert's choice for 79–81 % of new systems, on target." |
+| 2:45–3:45 | `/reality` | On the planner, click **Compare with expert**, or switch to the pre-opened `/reality` tab. Read the headline, then click the example cases **EV owner** and **Experts disagree**. | Metrics from held-out homes. EV owner: ours **10.8 kWp / 9.7 kWh / wallbox** vs the expert's **10.8 / 9 / wallbox**. Experts disagree: ours **9.0 kWp**, inside the expert's two variants (6.75 and 12.15 kWp). | "Every number here comes from 315 homes the engine never saw. On new systems it is on par with the best rule of thumb, 2.50 against 2.62 kWp, and its range holds the expert's choice for 79–81 % of them, on target. Over all homes the whole-project solar error is 22 % lower than the best rule, 2.94 against 3.77 kWp, because it recognises add-on sales from the planner's inputs: no new solar for 77 % of add-on homes, where rules of thumb manage 6 %." |
 | 3:45–4:00 | planner | Back on the planner tab: **Use this design**, then **Send to homeowner**, then **Open** in the toast. | "Design saved as the offer", then "Homeowner link copied". The offer opens in the empty tab. | "One click and the homeowner gets a link." |
 | 4:00–4:40 | `/offer/<token>` | Scroll the 3D house, then click **Listen to your offer**. | "Your energy system, explained", the house, savings, then the explanation (audio only if TTS is on). | "Plain words for the homeowner, and they can listen instead of read." |
-| 4:40–5:00 | slide | Close. | | "Same engine, one question answered, 25 % less PV error. Measured on 315 homes it never saw." |
+| 4:40–5:00 | slide | Close. | | "One engine for the planner, the homeowner and the phone call: a reviewed draft in half a second, every size explained, 22 % less solar error than the best rule of thumb. Measured on 315 homes it never saw." |
 
 ### Caller persona for the real call (say these facts, in this order)
 "Weber, in Augsburg." · "No, no solar and no battery yet." · "About 4,800 kilowatt hours, we're a family of four." ·
 "**No electric car.**" · "Gas boiler, about 15 years old. Concrete tile roof, facing south." · confirm the summary.
 
 The persona must say **no EV**, otherwise the EV step changes nothing.
-Expected draft: 9.9 kWp + 10 kWh, no wallbox, 10 kW heat pump option. Checked with the same facts on the live engine.
+Expected draft: 9.9 kWp + 10 kWh, no wallbox, 10.5 kW heat pump option (sizes checked 00:20; the heat pump size changed with engine #60 to the installer's real 10.5 kW). Re-check the draft once in pre-flight with the scripted call.
 
 ### Example cases on /reality, by role
 | button | ours (live engine) | expert | use on stage? |
@@ -41,8 +41,8 @@ Expected draft: 9.9 kWp + 10 kWh, no wallbox, 10 kW heat pump option. Checked wi
 | Typical home | 8.55 kWp, 9.2 kWh | 9.0 kWp, 10 kWh | Yes: within 1 kWp and one battery size. |
 | EV owner | 10.8 kWp, 9.7 kWh, wallbox | 10.8 kWp, 9 kWh, wallbox | **Yes: the best match.** |
 | Experts disagree | 9.0 kWp, 9.2 kWh | two variants: 6.75 and 12.15 kWp, 10 kWh | **Yes**: inside the expert's range. |
-| Heat pump case | 11.7 kWp + 10 kWh, **12 kW heat pump offered as an option** | 12.5 kW heat pump only, no PV | Only if asked: the heat pump size is close, but the engine also proposes PV the expert did not sell. |
-| Battery retrofit | 9.9 kWp + 10 kWh, a new system | 5 kWh battery-only add-on | **No.** This case is not yet given the existing-solar answer (issue #47). The page shows an amber **Unanswered mode** note on it, which disappears once #47 is fixed. If someone clicks it, point at the note and say: "This is the unanswered case. Answering 'solar already on the roof' turns it into a battery retrofit." |
+| Heat pump case | no new PV, no battery, a wallbox, **12.5 kW heat pump offered as an option** (checked on production 02:30 after engine #60: the home's consumption was left at the default, so the engine treats it as an add-on order) | 12.5 kW heat pump only, no PV | Only if asked: the heat pump size is exactly the expert's 12.5 kW and the engine, like the expert, proposes no PV; it adds a wallbox the expert did not sell. |
+| Battery retrofit | check on production before the demo: since engine #60 `/project` passes the recorded "consumption left at default" flag, so this case may now come out as a battery retrofit without the answer | 5 kWh battery-only add-on | Only if it shows a retrofit on production. Otherwise the amber **Unanswered mode** note appears; say: "This is the unanswered case. Answering 'solar already on the roof' turns it into a battery retrofit." |
 
 Live-engine checks you can repeat on the planner. Base home: 4,500 kWh, "Solar already on the roof?" = No.
 | change | design |
