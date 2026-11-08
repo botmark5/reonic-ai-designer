@@ -231,6 +231,17 @@ export function normaliseFacts(raw: unknown): NormalisedFacts {
   return { facts, home, assumptions };
 }
 
+/** The caller's own answers that /live shows next to the engine Home (top level of calls.facts). */
+function displayFacts(f: VoiceFacts) {
+  return {
+    customer_name: f.customer_name,
+    household: f.household,
+    monthly_bill_eur: f.monthly_bill_eur,
+    roof_direction: f.roof_direction,
+    heating_age_years: f.heating_age_years,
+  };
+}
+
 /** Enough to size a system without inventing the household's use. */
 function hasUsageFacts(raw: Record<string, unknown>): boolean {
   return [raw.annual_kwh, raw.monthly_bill_eur].some((v) => (parsePositive(v) ?? 0) > 0) || parseHousehold(raw.household) != null;
@@ -540,7 +551,7 @@ export async function createDraftFromFacts(
       status: opts.callStatus,
       customer_name: facts.customer_name ?? undefined,
       address: facts.address ?? undefined,
-      facts: { ...home, voice: facts, assumptions, solar, ...opts.extraFacts },
+      facts: { ...home, ...displayFacts(facts), voice: facts, assumptions, solar, ...opts.extraFacts },
       existing: opts.existing,
     }),
   ]);
@@ -674,7 +685,7 @@ export async function handleUpdateFacts(req: Request, deps: VoiceDeps): Promise<
       status: "live",
       customer_name: facts.customer_name ?? undefined,
       address: facts.address ?? undefined,
-      facts: { ...home, voice: facts, stated, assumptions, updated_fields: changed, facts_updated_at: new Date(deps.now()).toISOString() },
+      facts: { ...home, ...displayFacts(facts), voice: facts, stated, assumptions, updated_fields: changed, facts_updated_at: new Date(deps.now()).toISOString() },
       existing: call ?? undefined,
     });
     if (facts.address && !solarForAddress) {
