@@ -20,7 +20,7 @@ import { House3D, roofFromSolarResult } from "@/components/house3d";
 | Prop | Type | Notes |
 |---|---|---|
 | `design` | `DesignResponse` (`@/lib/types`) | What the engine returned. Excluded/null components are hidden. |
-| `home` | `Home` | Roof: `roof_azimuth` / `roof_pitch` (the planner's fields) win, then the `roof` prop, then `orientation_deg` / `tilt_deg`, then 35° south; `roof_max_kwp` caps the panels drawn. `existing_pv_kwp` (unless `has_existing_pv` is false) puts the panels already there on the roof, so a battery retrofit shows its solar. `annual_kwh`, `ev_km_year` drive the modelled day. |
+| `home` | `Home` | Roof: `roof_azimuth` / `roof_pitch` (the planner's fields) win, then the `roof` prop, then `orientation_deg` / `tilt_deg`, then 35° south; `roof_max_kwp` caps the panels drawn. `existing_pv_kwp` (unless `has_existing_pv` is false) puts the panels already there on the roof, so a battery retrofit shows its solar; they are drawn in a weathered tint and carry `existing:` ids, so flipping "solar already on the roof?" visibly swaps them for the engine's proposal (the proposal is new panels, not leftovers). `annual_kwh`, `ev_km_year` drive the modelled day. |
 | `mode` | `"planner" \| "homeowner"` | Labels and tooltips. |
 | `roof?` | `{ pitchDeg?, azimuthDeg?, maxPanels?, latitude?, longitude? }` | Overrides the home's roof. `roofFromSolarResult(result)` builds it from `/api/solar` (undefined when Google has nothing). |
 | `static?` | `boolean` | Always show the still image (slides, print). |

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DesignResponse } from "../../../lib/types";
-import type { RoofPlane } from "../layout";
+import { isExisting, type RoofPlane } from "../layout";
 import { demoDesign, demoDesignBig, demoHome } from "../mock";
 import { buildSceneSpec, resolveRoof } from "../sceneSpec";
 
@@ -143,6 +143,18 @@ describe("existing solar (battery retrofit)", () => {
     expect(s.layout.placed).toBe(20);
     expect(s.existingPanels).toBe(10);
     expect(s.components.pv.size).toBe("4.5 kWp new (10 × 450 W) + 4.5 kWp existing");
+  });
+
+  it("existing panels carry their own ids, so 'no solar on the roof' swaps them for the proposal instead of keeping them", () => {
+    const d = withDesign((x) => { x.design.pv.kwp = 4.5; });
+    const both = buildSceneSpec(d, { ...existing, existing_pv_kwp: 4.5 }, "planner", planesFor);
+    expect(both.layout.slots.slice(0, 10).every((p) => isExisting(p.id))).toBe(true);
+    expect(both.layout.slots.slice(10).some((p) => isExisting(p.id))).toBe(false);
+    const fresh = buildSceneSpec(d, { ...existing, has_existing_pv: false }, "planner", planesFor);
+    expect(fresh.existingPanels).toBe(0);
+    expect(fresh.layout.slots.some((p) => isExisting(p.id))).toBe(false);
+    // the proposal takes the spots the old panels had, under new ids: nothing from the "yes" roof survives the flip
+    expect(fresh.layout.slots.filter((p) => both.layout.slots.some((q) => q.id === p.id))).toHaveLength(0);
   });
 
   it("ignores existing_pv_kwp when the planner said there is no solar on the roof", () => {
