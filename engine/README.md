@@ -65,7 +65,7 @@ Every claim is against the BEST of three baselines for that metric: kWh/1000, me
 **All projects** (model without the existing-PV answer):
 | metric | model | best baseline | which baseline |
 |---|---|---|---|
-| PV kWp MAE, all projects (unwanted PV counts) | **2.93** | 3.77 | band median |
+| PV kWp MAE, all projects (unwanted PV counts) | **2.93** | 3.85 | band median |
 | PV kWp MAE, where both have PV (size only) | **2.48** | 2.64 | band median |
 | PV within ± 1.5 kWp | 40 % | **43 %** | band median |
 | PV inside the expert's variant range ± 1 kWp | **42 %** | 30 % | band median |
@@ -101,7 +101,7 @@ Every claim is against the BEST of three baselines for that metric: kWh/1000, me
 | battery yes/no accuracy | 96 % | 96 % | installer's most common choice (all baselines) |
 | wallbox yes/no accuracy | **74 %** | 73 % | installer's most common choice (all baselines) |
 
-Installer transfer (train on one installer, test on the other), PV kWp MAE where both have PV, model vs band median: 23c108b7->2a8ba8e2: 2.95 vs 3.00; 2a8ba8e2->23c108b7: 2.82 vs 3.15.
+Installer transfer (train on one installer, test on the other), PV kWp MAE where both have PV, model vs band median: 23c108b7->2a8ba8e2: 2.95 vs 3.03; 2a8ba8e2->23c108b7: 2.82 vs 3.12.
 
 ## The one question that matters most: "Is there already PV on the roof?"
 About 12 % of projects are battery-only add-ons to an existing PV system, but the data records existing PV for only
@@ -111,7 +111,7 @@ project is used once answered, once unanswered). Offer types: new PV system / ba
 
 | same 315 locked held-out projects | not answered | planner answers | band median |
 |---|---|---|---|
-| PV kWp MAE, all projects | 2.93 | **2.15** | 3.77 |
+| PV kWp MAE, all projects | 2.93 | **2.15** | 3.85 |
 | PV yes/no accuracy | 88 % | **97 %** | 82 % |
 | battery yes/no accuracy | 88 % | **95 %** | 90 % |
 | offer type correct | 83 % | **95 %** | – |
@@ -141,7 +141,7 @@ the answer is the same for every project and therefore carries no information ab
   a project with a retrofit and a new-system option must not teach both answers for one home). The evaluation reports, next to the
   error against the lowest-numbered option, the error against the **nearest option** (`*_nearest_option` metrics). On the locked test
   set: PV size MAE 2.48 → 2.45 kWp, battery within one step 54 → 56 %, P10–P90 coverage 80 → 82 %, every yes/no number unchanged
-  (add-ons "no new PV" stays 77 %); top-3 within ±1.5 kWp 70 → 67 % is the one number that drops (engine/RESULTS.md, "All offer
+  (add-ons "no new PV" stays 77 %); top-3 within ±1.5 kWp 69 → 66 % is the one number that drops (engine/RESULTS.md, "All offer
   options"). Using the highest instead of the lowest option as the evaluation row changes 142 of 1,587 labels and moves PV MAE by
   ≤ 0.02 kWp.
 - **Consumption below 1,500 kWh is rejected** (HTTP 422): the data has 21 placeholder entries at 0–1 kWh and nothing can be sized from them.

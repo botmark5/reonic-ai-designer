@@ -16,9 +16,9 @@ homeowners**. The four criteria weigh equally: technical depth, user fit, busine
 | 2 | The problem | Planners "spend hours on every single design"; "the first credible offer often wins". The judgement exists in past offers; nobody uses it. | quotes = brief p. 3, 5 | business impact |
 | 3 | What we built | One engine, three doors: voice call → planner → homeowner link; the reality check as the fourth screen. The engine decides every size; Claude never picks one. | – | user fit, execution |
 | 4 | How it decides | One chain, not three guesses: heat pump rule → PV yes/no + size → battery (sees the PV) → wallbox; new-vs-add-on first; catalogue snapping; physics. | 1,994 options, 1,593 projects, 2 installers, 20 hand-checked | technical depth |
-| 5 | Not a black box | Range (82 % coverage), reasons, 5 similar homes, one smaller + one larger alternative (top-3 holds the expert's PV within 1.5 kWp for 67 % of new systems, on screen), every override validated, deterministic. | pitch-facts §6, RESULTS round 3 | user fit (planner) |
-| 6 | Measured on 315 homes | Protocol + three bars: whole-project solar error 2.93 vs 3.77 kWp (−22 %); add-ons "no new solar" 77 vs 6 %; PV yes/no 88 vs 82 %. | pitch-facts §2, §5 (all without the solar answer) | technical depth |
-| 7 | The honest half | New systems: 2.42 vs 2.62 kWp (level, edge of CV noise); within ±1.5 kWp 40 vs 43 % (below); coverage 82 %; top-3 67 % (new systems); battery size 2.45 vs 2.71 kWh (all homes), within one size 54 vs 46 % (new systems); transfer 2.91/2.79 vs 3.00/3.15. Ceiling 2.47–2.57 across every learner. | pitch-facts §2, §4–7 | technical depth |
+| 5 | Not a black box | Range (82 % coverage), reasons, 5 similar homes, one smaller + one larger alternative (top-3 holds the expert's PV within 1.5 kWp for 66 % of new systems, on screen), every override validated, deterministic. | pitch-facts §6, RESULTS round 3 | user fit (planner) |
+| 6 | Measured on 315 homes | Protocol + three bars: whole-project solar error 2.93 vs 3.85 kWp (−24 %); add-ons "no new solar" 77 vs 6 %; PV yes/no 88 vs 82 %. | pitch-facts §2, §5 (all without the solar answer) | technical depth |
+| 7 | The honest half | New systems: 2.45 vs 2.64 kWp (slightly better, small margin); within ±1.5 kWp 40 vs 43 % (below); coverage 82 %; top-3 66 % (new systems); battery size 2.45 vs 2.71 kWh (all homes), within one size 54 vs 46 % (new systems); transfer 2.91/2.79 vs 3.00/3.15. Ceiling 2.47–2.57 across every learner. | pitch-facts §2, §4–7 | technical depth |
 | 8 | What the data taught us | New vs add-on is the decision that matters; consumption does most of the work and the solar question would be worth most (what-if 2.93 → 2.15); experts do not size for maximum return (2.77 vs 2.49) and size batteries by PV; small homes get a full system (about 7–8 kWp + battery) on purpose, like the experts (median 7.2 kWp for 1,500–2,500 kWh, n = 109). | RESULTS "Three strongest findings", round 2, "Physics flags calibrated" | technical depth, originality |
 | 9 | Known limits | Wallbox 72 vs 73 %; battery yes/no 88 vs 90 %; 450 W assumption; two installers; placeholder prices; minutes saved and win rate not measured. Biggest lever = new inputs (roof, the solar question). | README Known limits, pitch-facts "Don't say" | honesty (all four) |
 | 10 | Value | 29 s call → link (6 clicks); 4.6 s call end → shared offer; 0.5 s per design. Installer / homeowner / Reonic columns. | pitch-facts §8 | business impact |
@@ -40,11 +40,11 @@ homeowners**. The four criteria weigh equally: technical depth, user fit, busine
    similar homes the installer already built, and one smaller and one larger size. An override is checked against 40
    similar homes."
 6. **Measured.** "Every number here comes from 315 homes the engine never saw, split by customer, against the best of three
-   rules of thumb. Over all homes the whole-project solar error is 22 % lower, because the engine recognises add-on sales:
+   rules of thumb. Over all homes the whole-project solar error is 24 % lower, because the engine recognises add-on sales:
    no new solar for 77 % of add-on homes, where rules manage 6 %."
 7. **Honest half.** "On new systems we are on par with the best rule, 2.42 against 2.62 kWp, inside the noise. On exact
    size, within 1.5 kWp, we are below the rule. The gains are the yes/no decisions, the ranges that hold the expert's
-   choice 82 % of the time, and the alternatives: the expert's size is among our three options for 67 % of new systems."
+   choice 82 % of the time, and the alternatives: the expert's size is among our three options for 66 % of new systems."
 8. **Findings.** "Four things experts do that no textbook says." Read the four tiles. For the 2.15 kWp: "if the planner
    answers the solar question; in our test that answer comes from the expert offer, so it is a what-if, not an accuracy."
 9. **Limits.** "Wallbox is a coin flip without EV information. We never propose 'no battery' for a new system, because
@@ -52,7 +52,7 @@ homeowners**. The four criteria weigh equally: technical depth, user fit, busine
 10. **Value.** "From the start of a call to the homeowner link: 29 seconds and 6 clicks. The planner's review comes on top.
     Junior planners design like the installer's own history; homeowners see sizes from homes like theirs."
 11. **Close (last 20 s).** "One engine for the planner, the homeowner and the phone call: a reviewed draft in half a
-    second, every size explained, 22 % less solar error than the best rule of thumb. Measured on 315 homes it never saw."
+    second, every size explained, 24 % less solar error than the best rule of thumb. Measured on 315 homes it never saw."
 
 ## Rules for the deck (from `docs/pitch-facts.md`)
 - Never "X % accurate" without the metric and the comparison. Never "beats the experts" or "matches the experts".
@@ -63,7 +63,7 @@ homeowners**. The four criteria weigh equally: technical depth, user fit, busine
 ## Still to do before the pitch
 - Mark: export the deck (Share → Export) once the numbers are frozen at 11:00; put the PDF as `docs/pitch.pdf` or link it in the README.
 - Slide 6 chart, if a chart image is preferred to the painted bars: `docs/deck/out/1_pv_error_new_vs_addons.png`
-  ("22% less PV error than the best rule; on par with it on new systems": all homes 2.93 vs 3.77, new 2.42 vs 2.62,
+  ("24% less PV error than the best rule; on par with it on new systems": all homes 2.93 vs 3.85, new 2.45 vs 2.64,
   add-ons 2.15 vs 4.06), optionally with `5_add_on_sales.png` (77 vs 6, 69 vs 69, 74 vs 77). Both are on data-v1 as `deck_<name>`.
   `3_existing_pv_question.png` is the what-if (answered mode): slide 8 only, never slide 6.
 - Rehearse twice with the runbook; the deck takes 2:30 without the demo, 5:00 with slides 1–3 and 6–11 around it.
