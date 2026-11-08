@@ -7,13 +7,25 @@ The engine decides every size. Claude only turns planner text into input changes
 ```
 python -m venv .venv
 .venv\Scripts\python -m pip install -r engine/requirements.txt
-# data: data/raw/<installer>/*.csv (never committed)
-.venv\Scripts\python -m engine.train                          # evaluate + train -> engine/artifacts/
-.venv\Scripts\uvicorn engine.api:app --reload --port 8000     # API; try it at http://localhost:8000/docs
-.venv\Scripts\python -m pytest engine/tests -q                # 111 tests, no data or API key needed
+.venv\Scripts\python -m pytest engine/tests -q                # ~390 tests, no data or API key needed
 ```
+The Reonic data and everything derived from it are **never in git** (`data/raw/`, `engine/artifacts/`). To reproduce the
+numbers below you need three files from the private GitHub release `data-v1` of this repo (team members only):
+```
+gh release download data-v1 -p expert_designs.parquet -p catalogue.json -p test_ids.json -D engine/artifacts
+.venv\Scripts\python -m engine.train                          # evaluate on the locked test set + train -> engine/artifacts/
+.venv\Scripts\uvicorn engine.api:app --reload --port 8000     # API; try it at http://localhost:8000/docs
+```
+- `expert_designs.parquet` + `catalogue.json` = the expert designs parsed from the raw offers (`python -m engine.labels`
+  rebuilds them from `data/raw/<installer>/*.csv`). **Without them `engine.train` falls back to an older interim parser and
+  gives different numbers.**
+- `test_ids.json` = the 315 locked held-out project ids (hashed ids only). Without it `engine.train` draws a new split and the
+  metrics differ from the ones below.
+- `python -m engine.ablation` / `python -m engine.error_analysis` regenerate `RESULTS.md` tables.
+
 Claude (optional): put `ANTHROPIC_API_KEY=...` in `engine/.env` (gitignored). Without a key, `/refine` uses a
 keyword parser and `/explain` a template, so the demo always works. `GET /health` shows `"claude": true/false`.
+The first Claude structured-output call takes ~25 s (schema compilation); the engine warms it up at start-up, later calls take ~2 s.
 
 If `engine/artifacts/design_model.joblib` is missing, the API trains a model on first start (~30 s).
 
@@ -34,7 +46,7 @@ If `engine/artifacts/design_model.joblib` is missing, the API trains a model on 
 0. **Offer type:** no new PV → battery retrofit / wallbox only / other (classifier); the optional answer
    "Is there already PV on the roof?" is the strongest input for this.
 1. **Heat pump = customer option:** if the home heats with gas/oil and the installer sells heat pumps, a heat pump is
-   OFFERED (heat demand / 2,450 h, snapped to a catalogue size) but not included by default; the customer chooses based
+   OFFERED (heat demand / 2,450 h, snapped to a size the installer sold: 5.5 / 7.5 / 8 / 10.5 / 12.5 kW) but not included by default; the customer chooses based
    on budget and needs. `/design` returns `options.heatpump` with the full design **with and without** it (PV/battery
    re-sized, extra investment, extra yearly savings, lifetime benefit, autarky). Choose it with `locks.heatpump_kw = kw`
    (or `/refine` "the customer wants a heat pump"). Never offered if a heat pump already exists.
@@ -95,21 +107,33 @@ About 12 % of projects are battery-only add-ons to an existing PV system, but th
 (`home.has_existing_pv`: true / false / null, or `existing_pv_kwp`, 0 = none) and learns both modes (every training
 project is used once answered, once unanswered). Offer types: new PV system / battery retrofit / wallbox only / other.
 
-| same 323 held-out projects | not answered | planner answers | band median |
+| same 315 locked held-out projects | not answered | planner answers | band median |
 |---|---|---|---|
-| PV kWp MAE, all projects | 2.89 | **2.26** | 3.91 |
-| PV yes/no accuracy | 90 % | **100 %** | 81 % |
-| battery yes/no accuracy | 89 % | **96 %** | 89 % |
-| offer type correct | 84 % | **97 %** | – |
+| PV kWp MAE, all projects | 2.94 | **2.19** | 3.77 |
+| PV yes/no accuracy | 88 % | **97 %** | 82 % |
+| battery yes/no accuracy | 88 % | **95 %** | 90 % |
+| offer type correct | 83 % | **95 %** | – |
 
-The answered column assumes the planner answers correctly and that a battery-only offer means PV is already there
-(we derive the answer from the offer type). It shows what the question is worth, not a guarantee.
+**Read the "planner answers" column as a what-if, not as a measured accuracy.** In the test set the answer is
+*derived from the expert offer itself* (battery-only offer = "PV already there", new system = "no PV yet"); a real planner
+would know this from the site visit, but here it leaks the label. The column shows what the question is worth if answered
+correctly. Our headline claims use the **not answered** column (and, for new full systems, the segment tables above, where
+the answer is the same for every project and therefore carries no information about sizes).
 
 ## Known limitations (be honest in the pitch)
 - **Labels are interim** (my parser) until engine/labels lands; PV for installer 2a8ba8e2 is panel count × an assumed 450 W.
 - **PV size is barely predictable beyond consumption bands** (CV: 2.60 vs 2.69 kWp). The data has no roof size/orientation, which probably drives the expert choice.
 - **PV size is scored three ways.** Over ALL projects (an unwanted PV system counts as an error) the model wins clearly. Scored only on projects where the expert installed PV, it loses to the band median: wrong "no PV" answers (battery-only retrofits are hard to tell apart) cost a whole system there, while the baseline says "PV" for almost everyone and is never penalised for retrofits. Size alone (both have PV) the model wins. The yes/no cut-off is learned out-of-fold on training data by kWp cost (currently 0.6). Ratio (kWp/MWh) and residual (vs kWh/1000) targets were tested and were not better (CV MAE 2.63-2.69 vs 2.60 kWp).
 - **Wallbox ≈ coin flip** without EV information. **Heat pump** is offered (not chosen) for gas/oil homes; experts added one in 11 of 24 cases.
+- **A new PV system always gets a battery.** The learned cut-off is 0 because 96 % of new systems in the data have one; "no battery"
+  only comes from the planner (lock), a wallbox-only order or the retrofit path.
+- **Minimum input = installer + yearly consumption** (gives roughly the band-median baseline). Blanking one input at a time on the
+  locked test set: price, the "default 4,500 kWh" flag and the offer date each move PV yes/no by 3–5 points; EV, heating and load
+  profile by < 1 point; removing the consumption costs 0.9 kWp of PV MAE. The answer to "Is there already PV on the roof?" is worth
+  the most (PV yes/no 88 → 97 %).
+- **Which offer option is "the expert design"** (we take the lowest option number): using the highest option instead changes 142 of
+  1,587 labels and moves PV MAE by ≤ 0.02 kWp and battery MAE by ≤ 0.16 kWh on the locked test set.
+- **Consumption below 1,500 kWh is rejected** (HTTP 422): the data has 21 placeholder entries at 0–1 kWh and nothing can be sized from them.
 - **Time trend:** new projects use a date capped at the 90th percentile of training dates (~Mar 2026), because the last month is an unusual batch of battery-only retrofits.
 - **Economics use placeholder prices.**
 

@@ -225,14 +225,15 @@ def test_api_design_contract(client):
     ({"installer": "nope", "home": {"annual_kwh": 4500}}, 422),
     ({"installer": "instA", "home": {}}, 422),
     ({"installer": "instA", "home": {"annual_kwh": -5}}, 422),
-    ({"installer": "instA", "home": {"annual_kwh": 0}}, 200),          # zero demand: answered, with an error flag
+    ({"installer": "instA", "home": {"annual_kwh": 0}}, 422),          # zero demand: cannot be sized (audit I9)
+    ({"installer": "instA", "home": {"annual_kwh": 900}}, 422),        # below 1,500 kWh: placeholder entry
     ({"installer": "instA", "home": {"annual_kwh": 200000}, "locks": {"pv_kwp": 100, "battery_kwh": 100}}, 200),
 ])
 def test_api_design_edge_cases(client, payload, status):
     r = client.post("/design", json=payload)
     assert r.status_code == status
-    if payload["home"].get("annual_kwh") == 0:
-        assert any(f["code"] == "DEMAND_ZERO" for f in r.json()["physics"]["flags"])
+    if status == 422 and payload["installer"] == "instA" and "annual_kwh" in payload["home"] and payload["home"]["annual_kwh"] >= 0:
+        assert "1500" in str(r.json()["detail"])
 
 
 def test_api_validate(client):

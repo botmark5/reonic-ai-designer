@@ -19,7 +19,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import warnings
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Literal, Optional
 
@@ -30,7 +32,7 @@ import secrets
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from engine import llm, physics
 from engine.evaluate import ARTIFACTS, build_eval_table, inputs_from_labels, load_inputs
@@ -45,8 +47,20 @@ MODEL_VERSION = "v1"
 # ---------------------------------------------------------------------------
 # Request models (field names = docs/api.md; extra optional fields are marked)
 # ---------------------------------------------------------------------------
+MIN_DEMAND_KWH = 1500      # below this the entry is a placeholder (21 projects at 0-1 kWh in the data): nothing can be sized
+
+
 class Home(BaseModel):
-    annual_kwh: float = Field(ge=0, description="yearly household electricity demand (without EV / new heat pump)")
+    annual_kwh: float = Field(ge=0, description=f"yearly household electricity demand (without EV / new heat pump), >= {MIN_DEMAND_KWH}")
+    # "the planner left the tool's default 4,500 kWh" (web sends it; the model learned that default = consumption unknown)
+    demand_is_default: Optional[bool] = Field(None, description="true only when annual_kwh was left at the dataset default")
+
+    @field_validator("annual_kwh")
+    @classmethod
+    def _demand_sizeable(cls, v: float) -> float:
+        if v < MIN_DEMAND_KWH:
+            raise ValueError(f"annual_kwh {v:g} is below {MIN_DEMAND_KWH} kWh: a home cannot be sized from it (check the input)")
+        return v
     price_eur_kwh: Optional[float] = Field(None, gt=0, le=2)
     load_profile: Optional[str] = "H0"
     has_ev: bool = False
@@ -169,7 +183,16 @@ def require_key(x_engine_key: Optional[str] = Header(None)):
         raise HTTPException(401, "Missing or wrong X-Engine-Key header.")
 
 
-app = FastAPI(title="Reonic AI Designer engine", version=MODEL_VERSION)
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Warm up: the first Claude structured-output call takes ~25 s (schema compilation), later ones ~2 s.
+    One cheap call at start-up so the first /refine in a demo is fast. Never blocks start-up."""
+    if llm.claude_available():
+        threading.Thread(target=lambda: llm.refine("warm-up, no changes", {}), daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Reonic AI Designer engine", version=MODEL_VERSION, lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=os.environ.get("ENGINE_CORS_ORIGINS", "*").split(","),
                    allow_methods=["*"], allow_headers=["*"])
 
@@ -187,13 +210,14 @@ def installers():
     return {i: model.catalogue_.get(i, {}) for i in model.installers_}
 
 
-def _evaluate_design(home: dict, d: dict):
-    """Physics + economics for a proposed design."""
+def _evaluate_design(home: dict, d: dict, installer: str | None = None):
+    """Physics + economics for a proposed design (heat pump checks use the installer's own sizes)."""
     system = physics.System(pv_kwp=d["pv"]["kwp"] or 0.0, battery_kwh=d["battery"]["kwh"] or 0.0,
                             heatpump_kw=d["heatpump"]["kw"] or 0.0, wallbox=d["wallbox"]["include"])
     ph_home = home_to_physics(home)
     sim = physics.simulate(ph_home, system)
-    return sim, physics.sanity_flags(ph_home, system, sim), physics.economics(ph_home, system, sim)
+    sizes = get_model().heatpump_sizes(installer) if installer else physics.HP_CATALOGUE_KW
+    return sim, physics.sanity_flags(ph_home, system, sim, hp_catalogue=sizes), physics.economics(ph_home, system, sim)
 
 
 def _variant_summary(d: dict, sim, eco) -> dict:
@@ -214,7 +238,7 @@ def heatpump_choice(installer: str, home: dict, locks: dict, base_design: dict, 
     included = bool(base_design["heatpump"]["include"])
     other_locks = {**locks, "heatpump_kw": 0.0 if included else option["kw"]}
     other = model.propose(home, installer, other_locks)["design"]
-    o_sim, _, o_eco = _evaluate_design(home, other)
+    o_sim, _, o_eco = _evaluate_design(home, other, installer)
     if included:
         with_, without = (base_design, base_sim, base_eco), (other, o_sim, o_eco)
     else:
@@ -234,7 +258,7 @@ def design_response(installer: str, home: dict, locks: dict) -> dict:
     _check_installer(model, installer)
     proposal = model.propose(home, installer, locks)
     d = proposal["design"]
-    sim, flags, eco = _evaluate_design(home, d)
+    sim, flags, eco = _evaluate_design(home, d, installer)
     similar = model.similar_homes(home, installer, k=5, heatpump_kw=d["heatpump"]["kw"] or 0.0)
     return _py(dict(
         design=d,
@@ -307,7 +331,10 @@ def project(project_id: str):
         raise HTTPException(404, f"Unknown project {project_id!r}")
     r = row.iloc[0]
     nan = lambda v: None if v is None or (isinstance(v, float) and np.isnan(v)) or v is pd.NaT else v
-    home = dict(annual_kwh=nan(r.annual_kwh) or 0.0, price_eur_kwh=nan(r.price_eur_kwh) if 0 < (r.price_eur_kwh or 0) <= 1 else None,
+    # the data's "left at the default 4,500 kWh" flag travels with the home, exactly as in training / evaluation
+    default_flag = bool(r.demand_is_default) if "demand_is_default" in row.columns and pd.notna(r.demand_is_default) else None
+    home = dict(annual_kwh=nan(r.annual_kwh) or 0.0, demand_is_default=default_flag,
+                price_eur_kwh=nan(r.price_eur_kwh) if 0 < (r.price_eur_kwh or 0) <= 1 else None,
                 load_profile=r.load_profile, has_ev=bool(r.has_ev), ev_km_year=nan(r.ev_km_year), heating=nan(r.heating),
                 heating_demand_kwh=nan(r.heating_demand_kwh), existing_pv_kwp=None, existing_battery_kwh=None,
                 existing_wallbox=bool(r.existing_wallbox),
@@ -316,5 +343,5 @@ def project(project_id: str):
     cols = ["option_number", "is_primary", "pv_kwp", "battery_kwh", "has_wallbox", "heatpump_kw"]
     variants = options[cols].to_dict("records")
     expert = next((v for v in variants if v["is_primary"]), None)
-    ours = design_response(r.installer, home, {}) if home["annual_kwh"] > 0 else None
+    ours = design_response(r.installer, home, {}) if home["annual_kwh"] >= MIN_DEMAND_KWH else None
     return _py(dict(project_id=project_id, installer=r.installer, home=home, expert=expert, variants=variants, ours=ours))

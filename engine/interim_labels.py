@@ -145,9 +145,15 @@ def build_catalogue(labels: pd.DataFrame, min_count: int = 5) -> dict:
             if isinstance(raw, dict):                         # engine/labels v1.1: {size: how often sold}
                 raw = [k for k, n in raw.items() if n >= 3] or list(raw)
             sizes = sorted(float(x) for x in raw if float(x) > 0) or sizes
-        hp = g.loc[g.heatpump_kw > 0, "heatpump_kw"].round().value_counts()
+        # heat pump sizes as sold (5.5 / 7.5 / 8 / 10.5 / 12.5 kW): catalogue.json counts if present, else the labels
+        hp_sizes = m.get("heatpump_kw") if isinstance(m, dict) else None
+        if isinstance(hp_sizes, dict):
+            hp_sizes = sorted(float(k) for k in hp_sizes if float(k) > 0)
+        if not hp_sizes:
+            hp = g.loc[g.heatpump_kw > 0, "heatpump_kw"].round(1).value_counts()
+            hp_sizes = sorted(float(k) for k in hp.index)
         wb = g.wallbox_kw.dropna() if "wallbox_kw" in g else pd.Series(dtype=float)
-        cat[inst] = dict(battery_kwh=sizes, heatpump_kw=sorted(float(k) for k in hp.index),
+        cat[inst] = dict(battery_kwh=sizes, heatpump_kw=hp_sizes,
                          sells_heatpumps=bool(g.has_heatpump.any()),
                          wallbox_kw=float(wb.mode().iloc[0]) if len(wb) else 11.0)
     return cat

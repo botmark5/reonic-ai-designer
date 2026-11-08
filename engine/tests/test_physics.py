@@ -132,7 +132,7 @@ def test_battery_cycles_plausible():
 
 
 # ---------------------------------------------------------------- heat pump
-@pytest.mark.parametrize("demand,expected", [(12000, 5), (17000, 7), (24500, 10), (30000, 12), (60000, 12)])
+@pytest.mark.parametrize("demand,expected", [(12000, 5.5), (17000, 7.5), (20000, 8.0), (24500, 10.5), (30000, 12.5), (60000, 12.5)])
 def test_heatpump_size_snaps_to_catalogue(demand, expected):
     kw, note = heatpump_size_kw(demand)
     assert kw == expected and "kW" in note
@@ -151,7 +151,7 @@ def test_heatpump_size_missing_demand(demand):
 
 def test_heatpump_rule():
     assert heatpump_recommendation("Gas", 20000)["include"] is True
-    assert heatpump_recommendation("Gas", 20000)["kw"] == 7
+    assert heatpump_recommendation("Gas", 20000)["kw"] == 8.0          # 20,000 / 2,450 h = 8.2 kW -> the 8 kW model sold
     assert heatpump_recommendation("Heatpump", 20000)["include"] is False
     assert heatpump_recommendation(None, 20000)["include"] is False
     assert heatpump_recommendation("Oil", 20000, installer_sells_heatpumps=False)["include"] is False

@@ -146,7 +146,7 @@ Hourly synthetic year (8,760 h), deterministic with a fixed seed. Synthetic shap
   hour-to-hour appliance spread (lognormal σ 0.9). `CustomFromEditor`/unknown → H0.
 - EV: km/100 × 18 kWh, charged 18–23 h (option "solar": 10–15 h). Unknown distance → 12,000 km.
 - Heat pump: size = heat demand / 2,450 full-load hours (median of the 13 heat-pump projects of 2a8ba8e2), snapped to
-  5/7/10/12 kW; electricity = heat demand / SCOP 3.5, by heating-degree-day month share + 15 % flat hot water.
+  the installer's sizes (2a8ba8e2 sold 5.5 / 7.5 / 8 / 10.5 / 12.5 kW); electricity = heat demand / SCOP 3.5, by heating-degree-day month share + 15 % flat hot water.
   Only for gas/oil/other non-renewable heating; never if a heat pump exists or the installer sells none.
 - Battery: 90 % usable, 0.5 C, 95 % one-way efficiency, self-consumption-first dispatch.
 - Self-consumption = PV used in the home / PV produced; autarky = PV used in the home / consumption.

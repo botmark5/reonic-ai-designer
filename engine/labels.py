@@ -221,7 +221,8 @@ def main() -> None:
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     designs.to_parquet(ARTIFACTS / "expert_designs.parquet", index=False)
     (ARTIFACTS / "catalogue.json").write_text(json.dumps(catalogue, indent=2))
-    print(f"wrote {len(designs)} rows × {designs.shape[1]} columns → {ARTIFACTS / 'expert_designs.parquet'}")
+    # plain ASCII: a cp1252 Windows console cannot print "x" / "->" as Unicode symbols (UnicodeEncodeError)
+    print(f"wrote {len(designs)} rows x {designs.shape[1]} columns -> {ARTIFACTS / 'expert_designs.parquet'}")
     print(cross_checks(designs, parts))
 
 
