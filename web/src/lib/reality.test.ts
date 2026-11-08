@@ -171,3 +171,20 @@ describe("top3 (issue #57)", () => {
     expect(top3(undefined)).toBeNull();
   });
 });
+
+describe("caseChips", () => {
+  it("labels the two-houses cases and hides the older duplicate of each", async () => {
+    const { caseChips } = await import("./reality");
+    const d = (role: string) => ({ role, why: "", project_id: role });
+    const chips = caseChips([
+      d("two_houses_typical_pv_battery"), d("two_houses_ev_wallbox"), d("two_houses_large_home"),
+      d("typical_pv_battery"), d("heatpump_option"), d("battery_retrofit"), d("experts_disagree"), d("ev_wallbox"),
+    ]);
+    expect(chips.map((c) => c.label)).toEqual(["Typical home", "EV owner", "Large home", "Heat pump case", "Battery retrofit", "Experts disagree"]);
+  });
+  it("keeps the older cases when the engine has no two-houses set yet", async () => {
+    const { caseChips } = await import("./reality");
+    const chips = caseChips([{ role: "typical_pv_battery", why: "", project_id: "a" }, { role: "ev_wallbox", why: "", project_id: "b" }, { role: "new_role", why: "", project_id: "c" }]);
+    expect(chips.map((c) => c.label)).toEqual(["Typical home", "EV owner", "New role"]);
+  });
+});

@@ -234,3 +234,23 @@ export function expertDesign(ours: DesignResponse, variants: ExpertVariant[]): D
     options: undefined,
   };
 }
+
+/** Plain chip labels for the curated cases (engine demo_projects roles). */
+export const ROLE_LABEL: Record<string, string> = {
+  two_houses_typical_pv_battery: "Typical home",
+  two_houses_ev_wallbox: "EV owner",
+  two_houses_large_home: "Large home",
+  typical_pv_battery: "Typical home",
+  ev_wallbox: "EV owner",
+  heatpump_option: "Heat pump case",
+  battery_retrofit: "Battery retrofit",
+  experts_disagree: "Experts disagree",
+};
+
+/** Case chips in engine order; an older case is hidden when its curated two-houses version exists. */
+export function caseChips<T extends { role: string }>(demos: T[]): (T & { label: string })[] {
+  const roles = new Set(demos.map((d) => d.role));
+  return demos
+    .filter((d) => !roles.has(`two_houses_${d.role}`))
+    .map((d) => ({ ...d, label: ROLE_LABEL[d.role] ?? d.role.replace(/^two_houses_/, "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()) }));
+}
