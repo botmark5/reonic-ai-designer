@@ -37,7 +37,7 @@ Expected draft: 9.9 kWp + 10 kWh, no wallbox, 10.5 kW heat pump option (checked 
 
 ### Example cases on /reality, by role
 The two houses show the **shipped engine**, which learned from all past projects including these. Never call them held-out or a test; the held-out numbers are the tiles below the houses (#98, "One past home").
-Values below were read on 2026-11-08 at 06:30 from a local build of main (+ #89, #103) against a local engine with #100 (GET /heldout); production shows them after Cala's `railway up`. Until b-web relabels the new cases, the first three chips may read `two_houses_typical_pv_battery`, `two_houses_ev_wallbox` and `two_houses_large_home`.
+Values below were read overnight on 2026-11-08 from a local build of main (+ #89, #103) against a local engine with #100 (GET /heldout); production shows them after Cala's `railway up`. Until b-web relabels the new cases, the first three chips may read `two_houses_typical_pv_battery`, `two_houses_ev_wallbox` and `two_houses_large_home`.
 
 | button | ours (shipped engine, on screen) | expert | use on stage? |
 |---|---|---|---|
@@ -61,13 +61,13 @@ The price and profile matter: the same 4,500 kWh sent without them gives 9.0 / 1
 Updated as each pick merges. Until a row says **merged**, the click path above is what production shows.
 The 3D house falls back by itself: with no Google 3D tiles (no key, slow or empty), the procedural house shows; when WebGL is missing or fails, the still image `web/public/models/house-fallback.png` shows. Two URL switches (since #78) work on any page with the house: add **`?static=1`** to show the still image without WebGL (use it when the projector stutters), or **`?tiles=0`** to force the procedural house when the real street misbehaves.
 
-| screen | hero moment | status (05:00) | if it misbehaves |
+| screen | hero moment | status (night of 7–8 Nov) | if it misbehaves |
 |---|---|---|---|
-| `/live` | The house assembles while the call runs; "EV in spring" makes the car drive in. | PR #89 open (f-hero; on the 06:10 integration build the /live stage had zero height, reported); the voice side is **merged** (#73: `update_facts` writes each answer to the call live, once HQ attaches the tool to the agent) | Tiles slow or missing: the procedural house assembles instead, automatically. WebGL slow: the fact checklist and draft still fill in; talk over the checklist. |
+| `/live` | The house assembles while the call runs; "EV in spring" makes the car drive in. | PR #89 open (f-hero; on the overnight integration build the /live stage had zero height, reported); the voice side is **merged** (#73: `update_facts` writes each answer to the call live, once HQ attaches the tool to the agent) | Tiles slow or missing: the procedural house assembles instead, automatically. WebGL slow: the fact checklist and draft still fill in; talk over the checklist. |
 | planner | The house stage on top, card ↔ house highlight, old → new on changed cards. | **merged** (#68) | Tiles: hidden today, the procedural house shows (no Google key on production). WebGL fails: the still image shows and the cards work as before. |
 | planner | The real house from Google 3D tiles with panels on the real roof, the **Outside / Inside** and **Sun map** toggles. | **merged** (#78 real street behind `?tiles=1`, #83 sun map on the real roof); shows only with the Google key on production, which is frozen at #88 until the Vercel upgrade | No key, or tiles slow: no toggles, the procedural house shows; `?tiles=0` forces it. Do not mention the real roof then. |
 | `/reality` | Two houses side by side: ours and the expert's. | **merged** (#72), checked locally 04:40 | Tiles slow or missing: procedural houses. WebGL slow: the numbers and the example cases still work; point at those. |
-| `/offer` | **Listen** walks the house through one day. | voice side **merged** (#86: Listen drives the house's day in timed segments; #88 a cached demo clip); /offer A (#103, f-hero) open: works in the 06:10 integration build (Listen moves the clock 10:22 → 20:00) | No audio: the text shows the same words. WebGL slow: the still image shows, the explanation still plays. |
+| `/offer` | **Listen** walks the house through one day. | voice side **merged** (#86: Listen drives the house's day in timed segments; #88 a cached demo clip); /offer A (#103, f-hero) open: works in the overnight integration build (Listen moves the clock 10:22 → 20:00) | No audio: the text shows the same words. WebGL slow: the still image shows, the explanation still plays. |
 
 ## Fallbacks
 | problem | what you see | do | say |

@@ -2,7 +2,7 @@
 Agents: tick tasks here when done (`- [x]`) and commit. Add blockers as "BLOCKED: …" under the task.
 Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 submit.
 
-**Status Sun 07:30 (e-spare, from git and the session statuses):**
+**Status, night of 7–8 Nov (e-spare, from git and the session statuses):**
 - **Production is frozen at #88 (8b20c12)** because Vercel's Hobby build limit is hit. Everything merged after #88 deploys in one go once Mark upgrades Vercel; #92 (skip builds when web/ is unchanged) is open for Mark.
 - **The engine needs `railway up` (Cala)** for #100 (GET /heldout, the three two-houses cases on /reality) and #107 (/eval by_band). Until then /reality shows the older example cases.
 - Open hero PRs: #89 /live A (the house builds during the call), #103 /offer A. Both merge cleanly with main; 320 web tests pass on the combination.
@@ -34,7 +34,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [x] Error analysis by segment/installer (engine/RESULTS.md; /eval `segments`, `by_installer`, `by_band` #107; deck charts)
 - [x] /validate
 - [x] FastAPI deployed on Railway, matches docs/api.md
-  - Sun 07:30: needs `railway up` for #100 and #107 (see status above)
+  - needs `railway up` for #100 and #107 (see status above)
   - engine/api.py runs locally and matches api.md (+ optional additions, see engine/README.md); not deployed yet
   - Sun 00:15 (orchestrator): production uses the fixed Railway URL (#28 closed); live /eval matches RESULTS.md 'shipped' column
     (battery mix #39); EV → wallbox + PV bump and roof cap verified on the live engine. /eval lacks P10–P90 coverage → issue #43
@@ -64,7 +64,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 ## Phase 5 — Pitch and submission
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
   - [x] metric charts (docs/deck/charts.py) · [x] README (root + engine, PR #60: reproducible from the data-v1 release) · [x] pitch facts re-checked for leakage (answered mode = what-if, see engine/RESULTS.md)
-  - [ ] deck (Mark, from docs/pitch-facts.md) · [ ] backup video (v1 recorded Sun 06:10 on a local build of main + #89 + #103: `.status/backup/backup-v1.mp4`, never committed; v2 after the morning deploy) · [ ] judges invited to the repo + submission channel (ask organisers 08:00) · [ ] rehearse ×2 · [ ] freeze 11:00 · [ ] submit 13:30 Munich
+  - [ ] deck (Mark, from docs/pitch-facts.md) · [ ] backup video (v1 recorded overnight on a local build of main + #89 + #103: `.status/backup/backup-v1.mp4`, never committed; v2 after the morning deploy) · [ ] judges invited to the repo + submission channel (ask organisers 08:00) · [ ] rehearse ×2 · [ ] freeze 11:00 · [ ] submit 13:30 Munich
   - metric charts done (docs/deck/charts.py, PR #40/#41) · deck: HQ chat in Claude Slides · pitch-facts, demo runbook, README: e-spare (docs/pitch)
 
 ## Decisions
