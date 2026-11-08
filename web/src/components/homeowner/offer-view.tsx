@@ -11,6 +11,7 @@ import { sizeOf } from "@/lib/diff";
 import { fmtEur, fmtInt, fmtKwp, fmtPct } from "@/lib/format";
 import type { Offer } from "@/lib/offer";
 import type { DesignResponse, Home } from "@/lib/types";
+import { stripVoiceTags } from "@/lib/display-text";
 import { cn } from "@/lib/utils";
 
 function household(h: Home) {
@@ -210,7 +211,7 @@ function ListenButton({ offer }: { offer: Offer }) {
       });
       if (!res.ok) throw new Error();
       const r = (await res.json()) as { text: string; audio_base64: string | null };
-      setText(r.text);
+      setText(stripVoiceTags(r.text));
       if (r.audio_base64) {
         const a = new Audio(`data:audio/mpeg;base64,${r.audio_base64}`);
         audio.current = a;
@@ -227,7 +228,7 @@ function ListenButton({ offer }: { offer: Offer }) {
           body: JSON.stringify({ action: "explain" }),
         });
         if (!res.ok) throw new Error();
-        setText(await res.text());
+        setText(stripVoiceTags(await res.text()));
         setState("text");
       } catch {
         setState("idle");
