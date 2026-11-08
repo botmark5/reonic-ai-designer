@@ -55,12 +55,23 @@ export function nearestFree(placed: PanelSlot[], grid: PanelSlot[], plane: Plane
   return best;
 }
 
-/** Move a panel to a free spot; the row it left closes its gap (the moved panel and `locked` ones stay put). */
+/**
+ * Move a panel to a free spot; the row it left closes its gap (the moved panel and `locked` ones stay put).
+ * Ids are stable through moves (the renderer glides a panel to its new spot instead of swapping it).
+ */
 export function movePanel(placed: PanelSlot[], id: string, to: PanelSlot, locked?: ReadonlySet<string>): PanelSlot[] {
   const from = placed.find((p) => p.id === id);
   if (!from || placed.some((p) => p.id !== id && overlaps(p, to))) return placed;
-  const moved = placed.map((p) => (p.id === id ? { ...to } : p));
-  return closeGap(moved, from, new Set([...(locked ?? []), to.id]));
+  const moved = placed.map((p) => (p.id === id ? { ...to, id } : p));
+  return closeGap(moved, from, new Set([...(locked ?? []), id]));
+}
+
+/** `id`, or `id` with a suffix when a moved panel already carries it. */
+function uniqueId(placed: PanelSlot[], id: string): string {
+  const taken = new Set(placed.map((p) => p.id));
+  let out = id;
+  for (let k = 2; taken.has(out); k++) out = `${id}-${k}`;
+  return out;
 }
 
 /** Add one panel next to `near` (or the first free spot of the main plane), if anything is free. */
@@ -70,16 +81,14 @@ export function addPanel(placed: PanelSlot[], grid: PanelSlot[], near?: PanelSlo
     : [["main", 0, 0], ["garage", 0, 0]];
   for (const [plane, u, v] of tries) {
     const spot = nearestFree(placed, grid, plane, u, v, undefined, true);
-    if (spot) return [...placed, spot];
+    if (spot) return [...placed, { ...spot, id: uniqueId(placed, spot.id) }];
   }
   return placed;
 }
 
-const idAt = (row: string, u: number) => `${row}u${Math.round(u * 1000)}`;
-
 /**
  * Remove a panel and close the gap in its row: the shorter side of the row slides one panel inward (never panels
- * in `locked`), so a removal leaves no hole. Ids follow the position, like the layout's.
+ * in `locked`), so a removal leaves no hole. The sliding panels keep their ids.
  */
 export function removePanel(placed: PanelSlot[], id: string, locked?: ReadonlySet<string>): PanelSlot[] {
   const gone = placed.find((p) => p.id === id);
@@ -101,11 +110,5 @@ function closeGap(rest: PanelSlot[], gone: PanelSlot, locked?: ReadonlySet<strin
   if (!side) return rest;
   const dir = side === left ? 1 : -1;
   const shift = new Set(side.map((p) => p.id));
-  const prefix = /^(.*-r\d+)u-?\d+$/;
-  return rest.map((p) => {
-    if (!shift.has(p.id)) return p;
-    const u = p.u + dir * W;
-    const m = prefix.exec(p.id);
-    return { ...p, u, id: m ? idAt(m[1], u) : p.id };
-  });
+  return rest.map((p) => (shift.has(p.id) ? { ...p, u: p.u + dir * W } : p));
 }

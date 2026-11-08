@@ -46,7 +46,7 @@ describe("panel editing", () => {
   it("the first panel on an empty plane may go anywhere", () => {
     expect(nearestFree(design, grid, "garage", 0, 0, undefined, true)).not.toBeNull();
   });
-  it("removing from the middle of a row closes the gap, ids follow the position", () => {
+  it("removing from the middle of a row closes the gap, the sliding panels keep their ids", () => {
     const row0 = design.filter((p) => Math.abs(p.v - design[0].v) < 1e-6);
     const mid = row0[3];
     const after = removePanel(design, mid.id);
@@ -69,7 +69,14 @@ describe("panel editing", () => {
     expect(after).toHaveLength(14);
     const row = after.filter((p) => Math.abs(p.v - design[0].v) < 1e-6).sort((a, b) => a.u - b.u);
     for (let i = 1; i < row.length; i++) expect(row[i].u - row[i - 1].u).toBeCloseTo(1.154, 3);
-    expect(after.some((p) => p.id === top.id && p.u === top.u)).toBe(true);
+    expect(after.find((p) => p.id === row0[4].id)?.u).toBe(top.u);
     expect(new Set(after.map((p) => p.id)).size).toBe(14);
+  });
+  it("adding onto a spot whose grid id a moved panel carries still gives a unique id", () => {
+    const row0 = design.filter((p) => Math.abs(p.v - design[0].v) < 1e-6).sort((a, b) => a.u - b.u);
+    const top = nearestFree(design, grid, "main", row0[9].u, 99, row0[9].id, true)!;
+    let placed = movePanel(design, row0[9].id, top);
+    for (let k = 0; k < 6; k++) placed = addPanel(placed, grid, null);
+    expect(new Set(placed.map((p) => p.id)).size).toBe(placed.length);
   });
 });
