@@ -455,9 +455,7 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
         <div className="relative order-4 flex min-h-[280px] flex-1 flex-col rounded-lg border border-border bg-surface-1 lg:min-h-0">
           {transcript.length === 0 ? (
             <div className="m-auto flex max-w-xs flex-col items-center gap-3 p-6 text-center text-body-sm text-ink-muted">
-              {mode === "real"
-                ? "The call is running. Each answer lands as a fact above, and the house on the right builds itself."
-                : "When a homeowner calls the voice agent, the conversation appears here and the house builds itself while they talk."}
+              {mode === "real" ? "Listening…" : "No conversation yet"}
             </div>
           ) : (
             <ol ref={transcriptBox} className="m-0 flex min-h-0 flex-1 list-none flex-col gap-3 overflow-y-auto overscroll-contain p-4 md:p-5" aria-live="polite">
@@ -525,10 +523,10 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
               ))}
             </dl>
           ) : (
-            <p className="m-0 text-body-sm text-ink-muted">Appears as soon as the yearly use is known. Every size comes from the engine.</p>
+            <p className="m-0 text-body-sm text-ink-muted">Waiting for the first numbers</p>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="m-0 text-[13px] text-ink-muted">{inInbox ? "In the planner's inbox for review." : "Lands in the planner's inbox when the call ends."}</p>
+            <p className="m-0 text-[13px] text-ink-muted">{inInbox ? "In the planner's inbox for review." : null}</p>
             <div className="flex gap-2">
               {mode === "demo" && draft && !sent && <Button onClick={sendDraft}>End call and send draft</Button>}
               {inInbox && (

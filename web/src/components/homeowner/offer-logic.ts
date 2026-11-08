@@ -116,3 +116,36 @@ export function plainText(s: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+export type OfferPart = "pv" | "battery" | "wallbox" | "heatpump";
+const PART_NAME: Record<OfferPart, string> = { pv: "Solar panels", battery: "Battery", wallbox: "Car charger", heatpump: "Heat pump" };
+const PART_WHAT: Record<OfferPart, string> = {
+  pv: "Makes electricity from the sun on your roof.",
+  battery: "Stores the midday sun for the evening.",
+  wallbox: "Charges your car from your own solar.",
+  heatpump: "Heats your home with electricity instead of gas or oil.",
+};
+const PART_UNIT: Record<OfferPart, string> = { pv: "kWp", battery: "kWh", wallbox: "kW", heatpump: "kW" };
+const list = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs.at(-1)}`);
+
+/**
+ * The plain-words line under the house when the homeowner clicks a part: what it is, its size (from the engine's
+ * design), and whether they can change it (only the installer's allowed values) or the installer set it.
+ */
+export function partLine(part: OfferPart, size: number | null, choices: (number | boolean)[]): string {
+  const sized = size ? `${PART_NAME[part]} · ${size} ${PART_UNIT[part]}` : `${PART_NAME[part]} · not included`;
+  const opts = choices.filter((v) => typeof v === "number") as number[];
+  const can =
+    part === "wallbox"
+      ? choices.length > 1
+        ? "You can choose with or without it below."
+        : "Set by your installer."
+      : part === "heatpump"
+        ? choices.length > 1
+          ? "An option: you can add it below."
+          : "Set by your installer."
+        : opts.length > 1
+          ? `You can choose ${list(opts.map((v) => (v === 0 ? "none" : `${v} ${PART_UNIT[part]}`)))} below.`
+          : "Set by your installer.";
+  return `${sized}. ${PART_WHAT[part]} ${can}`;
+}
