@@ -292,6 +292,8 @@ export interface EvalResponse {
   /** report slice -> predictor -> metrics. "full_designs" = new full systems (the headline), "add_ons" = retrofits,
    *  extensions and wallbox-only sales; also "known_consumption", "full_designs_known_consumption". */
   segments?: Record<string, Record<string, MetricSet>>;
+  /** consumption band ("0-2500", ..., "9000+") -> predictor -> metrics (engine #79; optional until it ships) */
+  by_band?: Record<string, Record<string, MetricSet>>;
   /** same held-out evaluation when the planner answered "Solar already on the roof?" */
   with_existing_pv_answer?: { metrics?: Record<string, MetricSet>; segments?: Record<string, Record<string, MetricSet>> };
   served?: Served;
