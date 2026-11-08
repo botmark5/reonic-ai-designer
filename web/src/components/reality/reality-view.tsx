@@ -9,7 +9,7 @@ import { StatusBadge, type Tone } from "@/components/ui/status-badge";
 import { COMPONENTS, sizeOf } from "@/lib/diff";
 import { fmtInt, fmtKwp, fmtSize, LABEL } from "@/lib/format";
 import type { DemoProject } from "@/lib/heldout";
-import { ADDON_HEADLINES, expertDesign, headlines, headlineSource, trustedCoverage, verdicts, type Headline, type VerdictKind } from "@/lib/reality";
+import { ADDON_HEADLINES, expertDesign, headlines, headlineSource, top3, trustedCoverage, verdicts, type Headline, type VerdictKind } from "@/lib/reality";
 import type { ComponentKey, EvalResponse, ExpertVariant, MetricSet, ProjectResponse } from "@/lib/types";
 import { PREDICTORS } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -142,6 +142,7 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
   const nAddOns = src.addOns ? n(src.addOns[PREDICTORS.model] as MetricSet, "n_projects") : null;
   // Shown only when /eval reports coverage (engine #43). 80 % is not an engine number: a P10–P90 range should hold 90 − 10 = 80 % by definition.
   const cov = trustedCoverage(HM) ?? trustedCoverage(src.overall[PREDICTORS.model]);
+  const top3Pct = top3(HM);
   const addOnCov = src.addOns ? trustedCoverage(src.addOns[PREDICTORS.model]) : null; // null or < 20 homes: no row
   const answered = evalRes.with_existing_pv_answer?.metrics?.[PREDICTORS.model];
   const fmt = (x: number | null, unit: "kWp" | "%") => (x == null ? "–" : unit === "kWp" ? x.toFixed(2) : `${Math.round(x)}`);
@@ -229,7 +230,6 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
                         mode="planner"
                         cameraKey="reality"
                         controls="minimal"
-                        labels
                       />
                     ) : (
                       <div className="aspect-[4/3] w-full animate-pulse rounded-lg border border-border bg-surface-1 motion-reduce:animate-none md:aspect-[16/10]" aria-hidden />
@@ -365,7 +365,7 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
               )}
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fit,minmax(200px,1fr))]">
               {restHeads.map((t) => (
                 <div key={t.key} className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4">
                   <div className="flex flex-wrap-reverse items-start justify-between gap-2">
@@ -381,6 +381,15 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
                   </span>
                 </div>
               ))}
+              {top3Pct != null && (
+                <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4">
+                  <span className="text-[13px] leading-[18px] text-ink-body">Expert solar among our top 3 options</span>
+                  <span className="font-mono text-[26px] leading-8 font-medium tabular">
+                    {Math.round(top3Pct)} <small className="text-[14px] text-ink-muted">%</small>
+                  </span>
+                  <span className="text-[12px] leading-4 text-ink-muted">Within 1.5 kWp of one of the three sizes the planner sees first. No simple rule offers options to compare.</span>
+                </div>
+              )}
               {cov != null && (
                 <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4">
                   <div className="flex flex-wrap-reverse items-start justify-between gap-2">

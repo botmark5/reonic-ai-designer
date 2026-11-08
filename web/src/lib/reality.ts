@@ -179,6 +179,13 @@ export function trustedCoverage(m: Record<string, number | null | undefined> | u
   return c != null && nBoth != null && nBoth >= MIN_COVERAGE_N ? c : null;
 }
 
+/** Share of homes where the expert's PV is within 1.5 kWp of one of our top 3 options (issue #57); same n guard as coverage. */
+export function top3(m: Record<string, number | null | undefined> | undefined): number | null {
+  const v = m?.["pv_top3_within_1.5_pct"];
+  const nBoth = typeof m?.pv_n === "number" ? m.pv_n : null;
+  return typeof v === "number" && nBoth != null && nBoth >= MIN_COVERAGE_N ? v : null;
+}
+
 export function headlines(metrics: Metrics, model = "design_model", defs: HeadlineDef[] = HEADLINES): Headline[] {
   const baselines = Object.keys(metrics).filter((k) => k.startsWith("baseline_"));
   return defs.map((h) => {
