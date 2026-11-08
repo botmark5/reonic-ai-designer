@@ -2,7 +2,6 @@
 import dynamic from "next/dynamic";
 import { useState, useSyncExternalStore } from "react";
 import type { DesignResponse, Home } from "../../lib/types";
-import { cn } from "../../lib/utils";
 import { House3D } from "./House3D";
 import { InsideStage } from "./InsideStage";
 import type { Zone } from "./insideRules";
@@ -87,10 +86,8 @@ export function HouseStage({
   const switcher = view === undefined && overlays && !still && !reveal;
 
   return (
-    // Layout pass-through: the page's className applies here AND on the figure, and this box is a flex column, so a
-    // page that makes the stage fill a flex column (aspect-auto + flex-1) still gets a height. Without one the
-    // figure keeps its own aspect ratio (4:3, 16:10 from md).
-    <div className={cn("relative flex flex-col", className)}>
+    // className goes to the figure only (pages size it via [data-h3d-stage] descendant selectors)
+    <div className="relative">
       {renderStage()}
       {switcher && (
         <div role="group" aria-label="View" data-h3d-ui className="absolute left-3 top-3 z-10 flex gap-1 rounded-full border border-border/80 bg-surface-1/85 p-1 shadow-[0_1px_2px_rgba(16,17,20,0.05)] backdrop-blur-md">
@@ -148,7 +145,7 @@ export function HouseStage({
   return (
     <>
       {inside}
-      <div className={inside ? "hidden" : "contents"}>
+      <div hidden={!!inside}>
     <House3D
       design={design}
       home={home}
