@@ -23,6 +23,7 @@ import pandas as pd
 from engine.evaluate import (ARTIFACTS, BASELINES, build_eval_table, inputs_from_labels, load_inputs, planner_answer,
                              run_evaluation, summary_table)
 from engine.interim_labels import build_catalogue, get_labels
+from engine.eval_bands import compute_by_band
 from engine.model import MODEL_PATH, DesignModel
 
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
@@ -61,6 +62,8 @@ def main(argv=None):
                                    catalogue={k: v["battery_kwh"] for k, v in catalogue.items()}, out_path=None,
                                    test_ids_path=test_ids)
     results["with_existing_pv_answer"] = {k: res_q[k] for k in ("metrics", "by_installer", "segments")}
+    # PV error per consumption band (issue #79, /reality "Where we differ"), without the answer like `metrics`
+    results["by_band"] = compute_by_band(labels, inputs, {k: v["battery_kwh"] for k, v in catalogue.items()}, test_ids)
     (ARTIFACTS / "eval_results.json").write_text(json.dumps(results, indent=2, default=float))
 
     pd.set_option("display.width", 200)

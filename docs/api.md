@@ -57,3 +57,9 @@ Response: { "changes": { "has_ev": true, "ev_km_year": 15000 }, "design": { ...a
   the locked held-out ids and the curated demo cases, ids and text only (details via `/project/{id}`). Reads
   `engine/artifacts/test_ids.json`, `demo_reality.json` (roles prefixed `two_houses_`, listed first) and `demo_projects.json`;
   a missing file is rebuilt from the labels with the same fixed rules. For hosts without the artifacts (Vercel).
+- `GET /eval` adds `by_band` (issue #79): `{ "<band>": { "design_model": {...}, "baseline_kwh_per_1000": {...}, "baseline_band_median": {...},
+  "baseline_kwp_per_mwh": {...} } }`, each predictor block = the same metrics as `metrics` (`n_projects`, `pv_n`, `pv_kwp_mae_when_both_pv`,
+  `has_pv_accuracy`, …) plus `pv_kwp_bias_when_both_pv` = mean(ours − expert) where both chose solar (negative = we size smaller).
+  Bands = yearly consumption `0-3000`, `3000-4500`, `4500-6000`, `6000-9000`, `9000+` (kWh, upper bound inclusive) and
+  `not_entered` (consumption left at the 4,500 kWh default), same as deck chart 2a. Locked test set, without the existing-PV answer.
+  Bands with no test project are omitted. Written by `python -m engine.train` or, without a retrain, `python -m engine.eval_bands`.
