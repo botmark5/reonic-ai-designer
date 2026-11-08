@@ -12,13 +12,16 @@ export function insideKeyOf(c: ComponentKey): InsideKey {
  * option, or the smallest size the engine itself offered (alternatives / range). null = no engine size to say yes with
  * (the planner picks one in the size editor instead). Solar has no yes/no (it is the system).
  */
-export function wantLock(c: ComponentKey, r: DesignResponse, yes: boolean): number | boolean | null {
+export function wantLock(c: ComponentKey, r: DesignResponse, yes: boolean, prev?: DesignResponse | null): number | boolean | null {
   const d = r.design;
   if (c === "pv") return null;
   if (c === "wallbox") return yes;
   if (!yes) return 0;
   const now = sizeOf(d, c);
   if (now) return now;
+  // No, then Yes again: back to the size the engine had chosen before
+  const was = prev ? sizeOf(prev.design, c) : null;
+  if (was) return was;
   if (c === "heatpump") return r.options?.heatpump?.available ? r.options.heatpump.kw : null;
   const offered = [...(d.battery.alternatives ?? []).map((a) => a.kwh), ...(d.battery.range ?? [])].filter((x) => x > 0);
   return offered.length ? Math.min(...offered) : null;

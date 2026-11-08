@@ -23,6 +23,10 @@ describe("wantLock (sizes only from the engine)", () => {
   it("battery yes without a battery takes the smallest size the engine offered", () => {
     expect(wantLock("battery", resp({ battery: null, alts: [10, 5], range: [5, 15] }), true)).toBe(5);
   });
+  it("no, then yes brings back the size from before the change", () => {
+    expect(wantLock("battery", resp({ battery: null, alts: [5, 15] }), true, resp({ battery: 9.2 }))).toBe(9.2);
+    expect(wantLock("heatpump", resp({ hp: null, hpOption: 10.5 }), true, resp({ hp: 8 }))).toBe(8);
+  });
   it("battery yes with no engine size returns null (pick one in the editor)", () => {
     expect(wantLock("battery", resp({ battery: null }), true)).toBeNull();
   });
