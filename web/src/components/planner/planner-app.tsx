@@ -152,6 +152,22 @@ function Workspace({
     if (c) setPicked(null);
   }, []);
   const title = homeTitle(row);
+  // After a change, let the house animate first, then bring the first changed card's value into view (the hero moment:
+  // "PV 10.35 → 11.7 kWp" on the card) if it sits below the fold. Instant with reduced motion; never scrolls up.
+  const changeKey = s.change?.id;
+  const firstChanged = s.change?.diff.changed[0];
+  useEffect(() => {
+    if (!changeKey || !firstChanged) return;
+    const t = setTimeout(() => {
+      const el = document.getElementById(`card-${firstChanged}`);
+      if (!el) return;
+      const overflow = el.getBoundingClientRect().top + 150 - window.innerHeight;
+      if (overflow <= 0) return;
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      window.scrollBy({ top: overflow + 16, behavior: reduce ? "auto" : "smooth" });
+    }, 900);
+    return () => clearTimeout(t);
+  }, [changeKey, firstChanged]);
   const wide = useWide();
 
   async function send() {
@@ -233,6 +249,9 @@ function Workspace({
               highlight={hovered ?? picked}
               onSelect={onStageSelect}
               labels={wide}
+              // the readout and time bar would push the refine box and cards below the fold at 1440 × 900; the same
+              // numbers are in the evidence column
+              controls="minimal"
               className="md:[&_[data-h3d-stage]]:aspect-video"
             />
           </section>

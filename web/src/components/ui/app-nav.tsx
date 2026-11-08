@@ -32,7 +32,8 @@ export function Brand({ logo }: { logo: React.ReactNode }) {
 
 export function AppNav() {
   const path = usePathname();
-  if (isHomeowner(path)) return null;
+  // homeowners never see planner navigation; on /login every link would only lead back here
+  if (isHomeowner(path) || path.startsWith("/login")) return null;
   return (
     <nav aria-label="Main" className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
       {LINKS.map((l) => {
