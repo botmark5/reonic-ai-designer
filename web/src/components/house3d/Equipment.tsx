@@ -45,23 +45,30 @@ function setOpacity(list: THREE.Material[], v: number) {
  * Settles its object in (rises a little, scales from 0.92, fades) when `visible` turns true, and back out when false.
  * Critically damped spring, interruptible. Hidden once fully out; not hit-testable while hidden.
  */
-export function Appear({ object, mount, visible, reduced, intro = true, delay = 0, hitKey, pointer }: {
+export function Appear({ object, mount, visible, reduced, intro = true, delay = 0, ghostFor = 0, hitKey, pointer }: {
   object: THREE.Object3D; mount: Mount; visible: boolean; reduced: boolean; intro?: boolean; delay?: number;
+  /** Seconds it first stands as a translucent ghost before turning solid (the /live heat pump). */
+  ghostFor?: number;
   hitKey: CompKey; pointer: Pointer;
 }) {
   const ref = useRef<THREE.Group>(null);
   const s = useRef<SpringState>({ x: 0, v: 0 });
   const wait = useRef(delay);
+  const ghost = useRef(0);
   const first = useRef(true);
   const mats = useRef<{ of: THREE.Object3D; list: THREE.Material[] } | null>(null);
 
-  useEffect(() => { wait.current = visible ? delay : 0; }, [visible, delay]);
+  useEffect(() => {
+    wait.current = visible ? delay : 0;
+    ghost.current = visible && !first.current ? ghostFor : 0;
+  }, [visible, delay, ghostFor]);
 
   useFrame((_, dt) => {
     const g = ref.current;
     if (!g) return;
     if (mats.current?.of !== object) mats.current = { of: object, list: materialsOf(object) };
-    const target = visible ? 1 : 0;
+    if (ghost.current > 0 && wait.current <= 0) ghost.current -= dt;
+    const target = visible ? (ghost.current > 0 && !reduced ? GHOST : 1) : 0;
     const snap = reduced || (first.current && !intro);
     first.current = false;
     if (snap) { s.current.x = target; s.current.v = 0; }
@@ -76,6 +83,35 @@ export function Appear({ object, mount, visible, reduced, intro = true, delay = 
 
   return (
     <group ref={ref} rotation-y={mount.yaw} visible={false} {...(visible ? handlers(hitKey, pointer) : {})}>
+      <primitive object={object} />
+    </group>
+  );
+}
+
+const GHOST = 0.32;
+
+/**
+ * A layer of the house for the /live build-up: the shell rises out of the board, the roof settles onto it.
+ * Transform only (the layers share materials). Shown from the first frame unless `shown` starts false.
+ */
+export function Layer({ object, shown, kind, reduced }: {
+  object: THREE.Object3D; shown: boolean; kind: "rise" | "settle"; reduced: boolean;
+}) {
+  const ref = useRef<THREE.Group>(null);
+  const s = useRef<SpringState | null>(null);
+  useFrame((_, dt) => {
+    const g = ref.current;
+    if (!g) return;
+    const target = shown ? 1 : 0;
+    if (!s.current || reduced) s.current = { x: target, v: 0 };
+    else stepSpring(s.current, target, dt, kind === "rise" ? SETTLE : LAND);
+    const v = s.current.x;
+    g.visible = v > 0.01;
+    if (kind === "rise") g.scale.y = Math.max(0.001, Math.min(1.02, v));
+    else g.position.y = (1 - v) * 3.2;
+  });
+  return (
+    <group ref={ref}>
       <primitive object={object} />
     </group>
   );

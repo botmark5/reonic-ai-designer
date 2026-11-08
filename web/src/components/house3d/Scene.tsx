@@ -7,13 +7,15 @@ import { AmbientOcclusion } from "./AmbientOcclusion";
 import { CameraRig, type PresetRequest } from "./CameraRig";
 import type { DayStep, FlowNodeId, LiveFlow } from "./energyDay";
 import { EnergyFlow } from "./EnergyFlow";
-import { Appear, Battery, Car, Panels, type Pointer } from "./Equipment";
+import { Appear, Battery, Car, Layer, Panels, type Pointer } from "./Equipment";
 import { batteryModuleCount, buildEquipment } from "./equipmentGeometry";
 import { buildHouse, slotToWorld, type Mount } from "./houseGeometry";
 import type { Palette } from "./palette";
 import type { CompKey, SceneSpec } from "./sceneSpec";
 import { sunDirection, sunLight } from "./sun";
-import { Tooltip } from "./Tooltip";
+import type { Shown } from "./stage";
+import { Label, Tooltip } from "./Tooltip";
+import type { PanelSlot } from "./layout";
 
 export interface SceneProps {
   spec: SceneSpec;
@@ -28,6 +30,14 @@ export interface SceneProps {
   flows: LiveFlow[];
   batteryKwh: number | null;
   flyIn: boolean;
+  /** What is on stage during a /live build-up (everything otherwise). */
+  shown: Shown;
+  /** A build-up is running: the heat pump stands as a ghost first. */
+  building: boolean;
+  /** Always-on labels (PV kWp, battery kWh...) for a projector. */
+  labels: boolean;
+  /** Stages with the same key share one orbit. */
+  cameraKey?: string;
   /** false while the canvas is scrolled out of view: the render loop pauses. */
   inView: boolean;
   onMiss: () => void;
@@ -50,6 +60,7 @@ function dispose(obj: THREE.Object3D) {
   });
 }
 
+const NO_SLOTS: PanelSlot[] = [];
 const facing = (m: Mount) => new THREE.Vector3(Math.sin(m.yaw), 0, Math.cos(m.yaw));
 const UP = new THREE.Vector3(0, 1, 0);
 const SUN_TARGET = new THREE.Vector3(); // per-frame scratch
@@ -137,11 +148,11 @@ function Exposure({ dark }: { dark: boolean }) {
   return null;
 }
 
-function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
+function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn, shown, building, labels: showLabels, cameraKey }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
   const rotationY = THREE.MathUtils.degToRad(180 - spec.roof.azimuthDeg);
   const house = useMemo(() => buildHouse(spec.roof.pitchDeg, palette), [spec.roof.pitchDeg, palette]);
   const equipment = useMemo(() => buildEquipment(palette), [palette]);
-  useEffect(() => () => dispose(house.group), [house]);
+  useEffect(() => () => { for (const part of Object.values(house.parts)) dispose(part); }, [house]);
   useEffect(() => () => Object.values(equipment).forEach(dispose), [equipment]);
 
   const { anchors, frames } = house;
@@ -192,28 +203,45 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
   });
 
   const activeSpec = active ? c[active] : null;
-  const modules = c.battery.visible ? batteryModuleCount(batteryKwh) : 0;
+  // drei's Html labels mounted in the very first commit can lose their root; mount them a frame later
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => requestAnimationFrame(() => setSettled(true)));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const modules = c.battery.visible && shown.battery ? batteryModuleCount(batteryKwh) : 0;
+  const slots = useMemo(() => {
+    const all = spec.layout.slots;
+    if (shown.panels && shown.existingPv) return all;
+    if (!shown.panels && !shown.existingPv) return NO_SLOTS;
+    return shown.existingPv ? all.slice(0, spec.existingPanels) : all.slice(spec.existingPanels);
+  }, [spec.layout.slots, spec.existingPanels, shown.panels, shown.existingPv]);
   const intro = flyIn && !reduced; // first appearance animates only with the fly-in
   // contact shadows re-render only for a few seconds after something on the ground changed
-  const groundKey = `${spec.layout.placed}|${modules}|${c.wallbox.visible}|${c.heatpump.visible}|${spec.roof.pitchDeg}|${palette.surface0}`;
+  const groundKey = `${slots.length}|${modules}|${c.wallbox.visible && shown.car}|${c.heatpump.visible && shown.heatpump}|${shown.shell}|${spec.roof.pitchDeg}|${palette.surface0}`;
+  const labelKeys = (["pv", "battery", "wallbox", "heatpump"] as const).filter((k) =>
+    showLabels && settled && c[k].visible && k !== active && (k === "pv" ? shown.pv : k === "battery" ? shown.battery : k === "wallbox" ? shown.car : shown.heatpump));
 
   return (
     <>
       <group rotation-y={rotationY}>
-        <primitive object={house.group} />
-        <Panels slots={spec.layout.slots} frames={frames} palette={palette} reduced={reduced} intro={intro} pointer={pointer} />
-        <Appear object={equipment.inverter} mount={anchors.inverter} visible={c.inverter.visible} reduced={reduced} intro={intro} delay={0.05} hitKey="inverter" pointer={pointer} />
-        <Appear object={equipment.wallbox} mount={anchors.wallbox} visible={c.wallbox.visible} reduced={reduced} intro={intro} delay={0.05} hitKey="wallbox" pointer={pointer} />
-        <Appear object={equipment.heatpump} mount={anchors.heatpump} visible={c.heatpump.visible} reduced={reduced} intro={intro} delay={0.05} hitKey="heatpump" pointer={pointer} />
+        <primitive object={house.parts.site} />
+        <Layer object={house.parts.shell} shown={shown.shell} kind="rise" reduced={reduced} />
+        <Layer object={house.parts.roof} shown={shown.roof} kind="settle" reduced={reduced} />
+        <Panels slots={slots} frames={frames} palette={palette} reduced={reduced} intro={intro} pointer={pointer} />
+        <Appear object={equipment.inverter} mount={anchors.inverter} visible={c.inverter.visible && shown.inverter} reduced={reduced} intro={intro} delay={0.05} hitKey="inverter" pointer={pointer} />
+        <Appear object={equipment.wallbox} mount={anchors.wallbox} visible={c.wallbox.visible && shown.car} reduced={reduced} intro={intro} delay={0.05} hitKey="wallbox" pointer={pointer} />
+        <Appear object={equipment.heatpump} mount={anchors.heatpump} visible={c.heatpump.visible && shown.heatpump} reduced={reduced} intro={intro} delay={0.05} ghostFor={building ? 0.9 : 0} hitKey="heatpump" pointer={pointer} />
         <Battery mount={anchors.battery} modules={modules} soc={moment.soc} palette={palette} reduced={reduced} intro={intro} pointer={pointer} />
-        <Car object={equipment.car} path={anchors.carPath} visible={c.wallbox.visible} reduced={reduced} intro={intro} pointer={pointer} />
+        <Car object={equipment.car} path={anchors.carPath} visible={c.wallbox.visible && shown.car} reduced={reduced} intro={intro} pointer={pointer} />
         <EnergyFlow flows={flows} nodes={nodes} sunDir={sunLocal} rayTargets={rays} gradientStops={palette.flow} reduced={reduced} />
         <ContactShadows key={groundKey} frames={reduced ? 2 : 200} position={[1.2, 0.012, 2]} scale={38} resolution={512} blur={2.6} far={7} opacity={0.38} color="#1b1d20" />
+        {labelKeys.map((k) => <Label key={k} spec={c[k]} position={labels[k]} />)}
         {activeSpec?.visible && <Tooltip spec={activeSpec} position={labels[activeSpec.key]} />}
       </group>
       <Daylight moment={moment} palette={palette} reduced={reduced} />
       <FitWidth />
-      <CameraRig request={preset} rotationY={rotationY} reduced={reduced} flyIn={flyIn} />
+      <CameraRig request={preset} rotationY={rotationY} reduced={reduced} flyIn={flyIn} syncKey={cameraKey} />
     </>
   );
 }

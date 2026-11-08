@@ -33,8 +33,14 @@ export interface StageLocation {
 export interface StageReveal {
   shell?: boolean;
   roof?: boolean;
-  /** Panels drop in row by row when this turns true. */
+  /** Panels already on the roof (retrofits). Default: with `panels`. */
+  existingPv?: boolean;
+  /** New panels drop in row by row when this turns true. */
   panels?: boolean;
+  /** Inverter on the garage wall. Default: with the first panels (new or existing). */
+  inverter?: boolean;
+  /** Battery modules stack in one by one (≈2.5 kWh each). Default: with `panels`. */
+  battery?: boolean;
   /** The car drives in (only if the design has a wallbox). */
   car?: boolean;
   /** Heat pump appears as a ghost first, then solid (only if the design has one). */

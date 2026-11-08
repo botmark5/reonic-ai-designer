@@ -14,7 +14,8 @@ import { getPalette } from "./palette";
 import { chooseRenderMode, detectEnv, type RenderMode } from "./renderMode";
 import { buildSceneSpec, type CompKey } from "./sceneSpec";
 import { MAY_DAY, type Place } from "./sun";
-import type { House3DMode, RoofInput } from "./types";
+import { revealedFromKey, revealFlows, revealKey } from "./stage";
+import type { House3DMode, RoofInput, StageControls, StageReveal } from "./types";
 
 const Scene = dynamic(() => import("./Scene"), { ssr: false });
 
@@ -31,6 +32,22 @@ export interface House3DProps {
   static?: boolean;
   /** Short camera fly-in on first render (default true; skipped with reduced motion or any input). */
   flyIn?: boolean;
+  /** Emphasise one part from outside (e.g. the planner card under the pointer). */
+  highlight?: CompKey | null;
+  /** The viewer picked a part in the scene or the readout (null: picked nothing / clicked empty space). */
+  onSelect?: (key: CompKey | null) => void;
+  /** Controlled time of day in hours (6–22). Omit and the slider keeps its own time. */
+  timeOfDay?: number;
+  /** The slider or Play moved the time (with timeOfDay controlled, apply it to see it move). */
+  onTimeOfDayChange?: (hours: number) => void;
+  /** /live build-up; omit to show the whole design. */
+  reveal?: StageReveal;
+  /** Always-on labels (PV kWp, battery kWh...) for a projector. */
+  labels?: boolean;
+  /** "full" (default): time bar and readout under the model. "minimal": camera presets only. "none": the model alone. */
+  controls?: StageControls;
+  /** Stages with the same key share one orbit. */
+  cameraKey?: string;
   className?: string;
 }
 
@@ -69,8 +86,6 @@ const pill =
   "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium outline-none transition-[background-color,color,transform] duration-150 " +
   "active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-0";
 const glassPanel = "rounded-lg border border-border/80 bg-surface-1/85 backdrop-blur-md shadow-[0_1px_2px_rgba(16,17,20,0.05)]";
-/** The same material, only from sm (on phones these blocks sit in the flow under the model). */
-const glassPanelSm = "sm:rounded-lg sm:border sm:border-border/80 sm:bg-surface-1/85 sm:backdrop-blur-md sm:shadow-[0_1px_2px_rgba(16,17,20,0.05)]";
 
 const clock = (h: number) => {
   const m = Math.round(h * 60);
@@ -82,7 +97,10 @@ const kw = (x: number) => `${(Math.abs(x) < 0.05 ? 0 : x).toFixed(1)} kW`;
  * The customer's house as an architectural model with the proposed system on it, a modelled sunny day and the
  * energy flowing through it. Planner mode shows exact sizes and "Save image"; homeowner mode uses plain words.
  */
-export function House3D({ design, home, mode, roof, static: forceStatic = false, flyIn = true, className }: House3DProps) {
+export function House3D({
+  design, home, mode, roof, static: forceStatic = false, flyIn = true, highlight = null, onSelect, timeOfDay,
+  onTimeOfDayChange, reveal, labels = false, controls = "full", cameraKey, className,
+}: House3DProps) {
   const theme = useThemeName();
   const reduced = useReducedMotion();
   const [failed, setFailed] = useState(false);
@@ -95,10 +113,21 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
   );
   const day: Day = useMemo(() => simulateDay(dayInputFrom(spec, design.design, home, place)), [spec, design, home, place]);
 
-  const [hour, setHour] = useState(START_HOUR);
+  const controlled = typeof timeOfDay === "number" && Number.isFinite(timeOfDay);
+  const [ownHour, setOwnHour] = useState(START_HOUR);
+  const hour = controlled ? Math.min(DAY_END, Math.max(DAY_START, timeOfDay)) : ownHour;
   const [playing, setPlaying] = useState(false);
+  const latest = useRef({ controlled, onTimeOfDayChange, onSelect });
+  useEffect(() => { latest.current = { controlled, onTimeOfDayChange, onSelect }; });
+  const setHour = useCallback((h: number) => {
+    if (!latest.current.controlled) setOwnHour(h);
+    latest.current.onTimeOfDayChange?.(h);
+  }, []);
+  const canPlay = !controlled || !!onTimeOfDayChange;
   const moment = useMemo(() => sampleDay(day, hour), [day, hour]);
-  const flows = useMemo(() => activeFlows(moment), [moment]);
+  const rk = revealKey(reveal);
+  const shownParts = useMemo(() => revealedFromKey(rk), [rk]);
+  const flows = useMemo(() => revealFlows(activeFlows(moment), shownParts), [moment, shownParts]);
 
   const [preset, setPreset] = useState<PresetRequest>({ preset: "street", n: 0 });
   const [hovered, setHovered] = useState<CompKey | null>(null);
@@ -116,7 +145,13 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
   }, []);
   const three = useRef<RootState | null>(null);
   const shown = (k: CompKey | null) => (k && spec.components[k].visible ? k : null);
-  const active = shown(hovered) ?? shown(selected);
+  const active = shown(hovered) ?? shown(highlight) ?? shown(selected);
+  const selectedRef = useRef<CompKey | null>(null);
+  const select = useCallback((k: CompKey | null) => {
+    selectedRef.current = k;
+    setSelected(k);
+    latest.current.onSelect?.(k);
+  }, []);
 
   // never leave the page with a pointer cursor
   useEffect(() => () => { document.body.style.cursor = ""; }, []);
@@ -145,8 +180,8 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
   const pointer = useMemo<Pointer>(() => ({
     onOver: (k) => { setHovered(k); document.body.style.cursor = "pointer"; },
     onOut: (k) => { setHovered((h) => (h === k ? null : h)); document.body.style.cursor = ""; },
-    onTap: (k) => setSelected((s) => (s === k ? null : k)),
-  }), []);
+    onTap: (k) => select(selectedRef.current === k ? null : k),
+  }), [select]);
 
   const onReady = useCallback((state: RootState) => {
     three.current = state;
@@ -184,7 +219,7 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
       ),
     });
   }
-  if (c.wallbox.visible) rows.push({ key: "car", comp: "wallbox", label: homeowner ? "Car" : "Car (wallbox)", size: c.wallbox.size, value: kw(moment.car) });
+  if (c.wallbox.visible) rows.push({ key: "car", comp: "wallbox", label: "Car", size: c.wallbox.size, value: kw(moment.car) });
   if (c.heatpump.visible) rows.push({ key: "hp", comp: "heatpump", label: "Heat pump", size: c.heatpump.size, value: kw(moment.heatpump) });
   rows.push({ key: "home", label: homeowner ? "Your home" : "Home", value: kw(moment.home - moment.heatpump) });
   const exporting = moment.gridExport > moment.gridImport;
@@ -223,49 +258,78 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
                 moment={moment}
                 flows={flows}
                 batteryKwh={design.design.battery.kwh}
-                flyIn={flyIn}
+                flyIn={flyIn && !reveal}
+                shown={shownParts}
+                building={!!reveal}
+                labels={labels}
+                cameraKey={cameraKey}
                 inView={inView}
-                onMiss={() => setSelected(null)}
+                onMiss={() => { if (selectedRef.current) select(null); }}
                 onReady={onReady}
               />
             </SceneBoundary>
           </div>
         )}
+
+        {/* camera presets: the only control over the model */}
+        {show3d && controls !== "none" && (
+          <div data-h3d-ui className="absolute right-3 top-3 flex items-center gap-1.5">
+            <div role="group" aria-label="Camera view" className={cn("flex gap-1 p-1", glassPanel, "rounded-full")}>
+              {PRESETS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  aria-pressed={preset.preset === p}
+                  onClick={() => setPreset((r) => ({ preset: p, n: r.n + 1 }))}
+                  className={cn(pill, "h-7", preset.preset === p ? "bg-primary text-primary-ink" : "text-ink-body [@media(hover:hover)]:hover:bg-surface-2")}
+                >
+                  {PRESET_LABEL[p]}
+                </button>
+              ))}
+            </div>
+            {mode === "planner" && (
+              <button type="button" onClick={saveImage} className={cn(pill, glassPanel, "hidden rounded-full text-ink sm:inline-flex [@media(hover:hover)]:hover:bg-surface-2")}>
+                Save image
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Phones: controls stack under the model. From sm: they float over it (wrapper becomes display: contents). */}
-      <div data-h3d-ui className="flex flex-col gap-3 border-t border-border p-3 sm:contents">
-        {/* live numbers + legend */}
-        <section
-          aria-label={show3d ? "The system right now" : "The system"}
-          className={cn("sm:absolute sm:left-3 sm:top-3 sm:w-[17.5rem] sm:p-3", glassPanelSm)}
-        >
+      {/* time and live numbers sit under the model, never over it */}
+      {controls === "full" && (
+        <div data-h3d-ui className="flex flex-col gap-2 border-t border-border px-3 pb-2.5 pt-3 sm:px-4">
           {show3d && (
-            <header className="mb-2 flex items-baseline justify-between gap-3">
-              <span className="font-mono text-xl font-medium tabular-nums tracking-tight text-ink">{clock(hour)}</span>
-              <span className="text-xs text-ink-muted">Sunny day in May, modelled</span>
-            </header>
+            <TimeBar
+              day={day}
+              hour={hour}
+              playing={playing}
+              canPlay={canPlay}
+              valueText={valueText}
+              onHour={(h) => { setPlaying(false); setHour(h); }}
+              onTogglePlay={() => setPlaying((p) => !p)}
+            />
           )}
-          <ul className="grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-1">
+          <ul aria-label={show3d ? "The system right now" : "The system"} className="grid grid-cols-2 gap-x-2 sm:flex sm:flex-wrap sm:gap-x-1">
             {rows.map((r) => {
               const body = (
                 <>
                   <span className="flex min-w-0 items-center gap-2">
-                    {r.comp ? <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[r.comp])} /> : <span aria-hidden className="size-2 shrink-0" />}
+                    {r.comp ? <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[r.comp])} /> : <span aria-hidden className="size-2 shrink-0 rounded-full border border-border-strong" />}
                     <span className="truncate text-ink">{r.label}</span>
-                    {r.size && <span className="hidden truncate font-mono text-[12px] text-ink-muted tabular-nums sm:inline">{r.size}</span>}
+                    {r.size && <span className="hidden truncate font-mono text-[12px] text-ink-muted tabular-nums md:inline">{r.size}</span>}
                   </span>
                   {show3d && <span className="shrink-0 font-mono text-[13px] font-medium tabular-nums text-ink">{r.value}</span>}
                 </>
               );
-              const rowCls = "flex h-8 w-full items-center justify-between gap-2 rounded-md px-1.5 text-left text-[13px]";
+              const rowCls = "flex h-8 w-full items-center justify-between gap-3 rounded-md px-2 text-left text-[13px] sm:w-auto";
               return (
                 <li key={r.key}>
                   {r.comp ? (
                     <button
                       type="button"
                       aria-pressed={selected === r.comp}
-                      onClick={() => setSelected((s) => (s === r.comp ? null : r.comp!))}
+                      onClick={() => select(selected === r.comp ? null : r.comp!)}
                       onPointerEnter={(e) => { if (e.pointerType === "mouse") setHovered(r.comp!); }}
                       onPointerLeave={(e) => { if (e.pointerType === "mouse") setHovered(null); }}
                       className={cn(
@@ -288,7 +352,7 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
               tooltip shows it and this stays for screen readers. */}
           <p
             role="status"
-            className={cn("mt-2 text-[13px] leading-[18px] text-ink-body empty:hidden", show3d && "sm:sr-only")}
+            className={cn("px-2 text-[13px] leading-[18px] text-ink-body empty:hidden", show3d && "sm:sr-only")}
           >
             {activeSpec && (
               <>
@@ -299,50 +363,15 @@ export function House3D({ design, home, mode, roof, static: forceStatic = false,
               </>
             )}
           </p>
-        </section>
-
-        {show3d && (
-          <TimeBar
-            day={day}
-            hour={hour}
-            playing={playing}
-            valueText={valueText}
-            onHour={(h) => { setPlaying(false); setHour(h); }}
-            onTogglePlay={() => setPlaying((p) => !p)}
-            className={cn("sm:absolute sm:inset-x-3 sm:bottom-3 sm:px-3 sm:py-2", glassPanelSm)}
-          />
-        )}
-
-        {show3d && (
-          <div className="flex shrink-0 items-center gap-1.5 sm:absolute sm:right-3 sm:top-3">
-            <div role="group" aria-label="Camera view" className={cn("flex gap-1 p-1", glassPanel, "rounded-full")}>
-              {PRESETS.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  aria-pressed={preset.preset === p}
-                  onClick={() => setPreset((r) => ({ preset: p, n: r.n + 1 }))}
-                  className={cn(pill, "h-7", preset.preset === p ? "bg-primary text-primary-ink" : "text-ink-body [@media(hover:hover)]:hover:bg-surface-2")}
-                >
-                  {PRESET_LABEL[p]}
-                </button>
-              ))}
-            </div>
-            {mode === "planner" && (
-              <button type="button" onClick={saveImage} className={cn(pill, glassPanel, "rounded-full text-ink [@media(hover:hover)]:hover:bg-surface-2")}>
-                Save image
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </figure>
   );
 }
 
 /** Time-of-day slider drawn over the day's solar curve (the only colour in the chrome is the energy itself). */
-function TimeBar({ day, hour, playing, valueText, onHour, onTogglePlay, className }: {
-  day: Day; hour: number; playing: boolean; valueText: string;
+function TimeBar({ day, hour, playing, canPlay, valueText, onHour, onTogglePlay, className }: {
+  day: Day; hour: number; playing: boolean; canPlay: boolean; valueText: string;
   onHour: (h: number) => void; onTogglePlay: () => void; className?: string;
 }) {
   const curve = useMemo(() => {
@@ -357,14 +386,18 @@ function TimeBar({ day, hour, playing, valueText, onHour, onTogglePlay, classNam
 
   return (
     <div className={cn("flex items-center gap-3", className)}>
-      <button
+      {canPlay && <button
         type="button"
         onClick={onTogglePlay}
         aria-label={playing ? "Pause the day" : "Play the day"}
         className={cn(pill, "size-8 shrink-0 justify-center bg-surface-2 px-0 text-ink [@media(hover:hover)]:hover:bg-border")}
       >
         {playing ? <Pause className="size-3.5" strokeWidth={2} /> : <Play className="size-3.5 translate-x-px" strokeWidth={2} />}
-      </button>
+      </button>}
+      <div className="w-[4.5rem] shrink-0 sm:w-36">
+        <div className="font-mono text-lg font-medium leading-6 tabular-nums tracking-tight text-ink">{clock(hour)}</div>
+        <div className="hidden text-[11px] leading-4 text-ink-muted sm:block">Sunny day in May, modelled</div>
+      </div>
       <div className="relative min-w-0 flex-1">
         <svg aria-hidden viewBox="0 0 100 20" preserveAspectRatio="none" className="pointer-events-none absolute inset-x-0 -top-1 h-6 w-full">
           <defs>

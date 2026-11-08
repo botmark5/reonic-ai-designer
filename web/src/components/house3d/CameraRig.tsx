@@ -1,7 +1,7 @@
 "use client";
 import { CameraControls, CameraControlsImpl } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import * as THREE from "three";
 
 export type Preset = "street" | "roof" | "garage";
@@ -50,8 +50,57 @@ function look(c: CameraControlsImpl, v: { pos: readonly number[]; target: readon
   return c.setLookAt(p.x, p.y, p.z, t.x, t.y, t.z, animate);
 }
 
-export function CameraRig({ request, rotationY, reduced, flyIn }: {
-  request: PresetRequest; rotationY: number; reduced: boolean; flyIn: boolean;
+/**
+ * Stages with the same sync key share one orbit, in house coordinates (each house may face another way). The one
+ * the viewer last touched leads; the others follow without smoothing, so they never echo back.
+ */
+interface Member { c: CameraControlsImpl; rot: THREE.Matrix4 }
+const groups = new Map<string, { members: Set<Member>; leader: Member | null }>();
+const S = { p: new THREE.Vector3(), t: new THREE.Vector3(), inv: new THREE.Matrix4() };
+
+function follow(from: Member, to: Member) {
+  S.inv.copy(from.rot).invert();
+  from.c.getPosition(S.p, false).applyMatrix4(S.inv).applyMatrix4(to.rot);
+  from.c.getTarget(S.t, false).applyMatrix4(S.inv).applyMatrix4(to.rot);
+  void to.c.setLookAt(S.p.x, S.p.y, S.p.z, S.t.x, S.t.y, S.t.z, false);
+}
+
+function useSync(ref: RefObject<CameraControls | null>, key: string | undefined, rotationY: number) {
+  const me = useRef<Member | null>(null);
+  useEffect(() => {
+    const c = ref.current;
+    if (!c || !key) return;
+    const m: Member = { c, rot: new THREE.Matrix4().makeRotationY(rotationY) };
+    me.current = m;
+    const g = groups.get(key) ?? { members: new Set<Member>(), leader: null };
+    groups.set(key, g);
+    g.members.add(m);
+    const lead = () => { g.leader = m; };
+    const update = () => {
+      if (g.leader !== m) return;
+      for (const o of g.members) if (o !== m) follow(m, o);
+    };
+    c.addEventListener("controlstart", lead);
+    c.addEventListener("update", update);
+    return () => {
+      c.removeEventListener("controlstart", lead);
+      c.removeEventListener("update", update);
+      g.members.delete(m);
+      if (g.leader === m) g.leader = null;
+      if (!g.members.size) groups.delete(key);
+      me.current = null;
+    };
+  }, [ref, key, rotationY]);
+  /** A preset click in this stage leads too. */
+  return () => {
+    const m = me.current;
+    const g = key ? groups.get(key) : undefined;
+    if (m && g) g.leader = m;
+  };
+}
+
+export function CameraRig({ request, rotationY, reduced, flyIn, syncKey }: {
+  request: PresetRequest; rotationY: number; reduced: boolean; flyIn: boolean; syncKey?: string;
 }) {
   const ref = useRef<CameraControls>(null);
   const first = useRef(true);
@@ -59,6 +108,7 @@ export function CameraRig({ request, rotationY, reduced, flyIn }: {
   const lastRot = useRef(rotationY);
   const reducedRef = useRef(reduced);
   const scrollSetup = useRef<{ el: HTMLElement | null; undo: () => void }>({ el: null, undo: () => {} });
+  const lead = useSync(ref, syncKey, rotationY);
 
   useEffect(() => { reducedRef.current = reduced; }, [reduced]);
 
@@ -78,11 +128,13 @@ export function CameraRig({ request, rotationY, reduced, flyIn }: {
       flying.current = true;
       void look(c, VIEWS.street, rot, true).then(() => { flying.current = false; c.smoothTime = SMOOTH; });
     } else {
+      if (!first.current) lead();
       flying.current = false;
       c.smoothTime = SMOOTH;
       void look(c, VIEWS[request.preset], rot, !reducedRef.current && !first.current);
     }
     first.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lead only marks this stage as the leader
   }, [request, rotationY, flyIn]);
 
   // skip the fly-in on any key; a drag or pinch takes over the camera by itself
