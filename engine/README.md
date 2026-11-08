@@ -56,6 +56,8 @@ If `engine/artifacts/design_model.joblib` is missing, the API trains a model on 
 5. **Wallbox:** small classifier on EV features (most wallbox buyers have no EV recorded).
 6. **Locks:** any component the planner fixes is kept, and the later steps adapt to it.
 7. **Reasons:** per-decision SHAP contributions (LightGBM `pred_contrib`) turned into sentences.
+8. **Alternatives:** next to the PV and the battery size, one smaller and one larger size the installer sells, chosen by a size classifier (the most likely size below and above the proposal, with its share). The expert's PV is within 1.5 kWp of one of the 3 PV options in 70 % of held-out homes (single proposal: 40-45 %).
+9. **Plausibility flags** (`physics.flags`, `/validate`): thresholds calibrated on what the experts actually sold (PV yield / consumption p75 = 2.5, p96 = 4.0, p99 = 5.5; battery p98 = 2.0 kWh per kWp), plus the percentile among the 40 most similar past homes. Small homes are sized like the experts size them (homes under 2,000 kWh got a median 6 kWp and a battery in 100 % of cases), so such a design is explained ("most of the yield is fed in"), not called implausible.
 
 ## Results (locked test set: 315 projects never used for training or tuning, split by customer; labels: engine/labels (expert_designs.parquet))
 Every claim is against the BEST of three baselines for that metric: kWh/1000, median per installer x consumption band, and the installer's own kWp-per-MWh ratio (~2).

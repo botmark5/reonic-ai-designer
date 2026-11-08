@@ -131,6 +131,16 @@ HEATING_MONTH_SHARE = np.array([17, 15, 13, 8, 4, 1, 0.5, 0.5, 2.5, 7, 12, 16], 
 HEATING_MONTH_SHARE = HEATING_MONTH_SHARE / HEATING_MONTH_SHARE.sum()
 FOSSIL_HEATING = {"Gas", "Oil", "OtherNonRenewable"}
 
+# Plausibility thresholds, CALIBRATED ON THE EXPERTS' OWN NEW-SYSTEM DESIGNS (training part of the locked split,
+# 1,046 homes, 8 Nov): PV yield / yearly consumption is above 2 in 44 % of expert designs and above 3 in 13 %
+# (p75 = 2.5, p95 = 3.7, p97.5 = 4.4, p99 = 5.4), so the earlier 2x / 3x cut-offs flagged half of what experts sell
+# as "check" and 13 % as "implausible". Small homes are sized this way on purpose (feed-in pays): homes under
+# 2,000 kWh got a median 6 kWp and a battery in 100 % of cases. Battery kWh per kWp of PV: p95 = 1.7, p99 = 2.2.
+PV_RATIO_INFO = 2.5                 # above p75 of expert designs: most of the yield is fed in (information only)
+PV_RATIO_WARN = 4.0                 # above ~p96 of expert designs: unusually large for the consumption
+PV_RATIO_ERROR = 5.5                # above p99: implausible even for these installers
+BATTERY_KWH_PER_KWP_WARN = 2.0      # above ~p98 of expert designs (usual 0.5-1.7)
+
 # Battery
 BATTERY_USABLE_SHARE = 0.90         # usable capacity of the nominal kWh
 BATTERY_C_RATE = 0.5                # max charge/discharge power = 0.5 x capacity per hour
@@ -522,12 +532,18 @@ def sanity_flags(home: Home, system: System, sim: SimResult | None = None, hp_ca
     # PV
     if system.pv_kwp > 0 and sim.load_kwh > 0:
         ratio = system.pv_kwp * sim.specific_yield / sim.load_kwh
-        if ratio > 3:
+        if ratio > PV_RATIO_ERROR:
             flags.append(_flag("pv", "error", "PV_VERY_OVERSIZED",
-                               f"PV produces {ratio:.1f}x the home's consumption: most of it will be fed into the grid."))
-        elif ratio > 2:
+                               f"PV produces {ratio:.1f}x the home's consumption, more than 99 % of the systems the "
+                               "installers' experts sold: most of it will be fed into the grid."))
+        elif ratio > PV_RATIO_WARN:
             flags.append(_flag("pv", "warn", "PV_OVERSIZED",
-                               f"PV produces {ratio:.1f}x the home's consumption: large share goes to the grid."))
+                               f"PV produces {ratio:.1f}x the home's consumption, more than about 95 % of the systems the "
+                               "installers' experts sold: a large share goes to the grid."))
+        elif ratio > PV_RATIO_INFO:
+            flags.append(_flag("pv", "info", "PV_MOSTLY_FED_IN",
+                               f"PV produces {ratio:.1f}x the home's consumption: most of the yield is fed into the grid "
+                               "at the feed-in tariff. Experts size 1 in 4 new systems this way, small homes most of all."))
     if home.roof_max_kwp and system.pv_kwp > home.roof_max_kwp + 1e-6:
         flags.append(_flag("pv", "warn", "ROOF_CAPACITY_EXCEEDED",
                            f"{system.pv_kwp:g} kWp is more than the roof fits ({home.roof_max_kwp:g} kWp)."))
@@ -542,10 +558,10 @@ def sanity_flags(home: Home, system: System, sim: SimResult | None = None, hp_ca
         flags.append(_flag("battery", "warn", "BATTERY_WITHOUT_PV",
                            "Battery without any PV: only useful as an add-on to an existing PV system."))
     total_kwp = system.pv_kwp + (home.existing_pv_kwp or 0)
-    if system.battery_kwh > 0 and total_kwp > 0 and system.battery_kwh > 1.5 * total_kwp:
+    if system.battery_kwh > 0 and total_kwp > 0 and system.battery_kwh > BATTERY_KWH_PER_KWP_WARN * total_kwp:
         flags.append(_flag("battery", "warn", "BATTERY_TOO_BIG_FOR_PV",
                            f"Battery {system.battery_kwh:g} kWh is large for {total_kwp:g} kWp of PV "
-                           f"({system.battery_kwh / total_kwp:.1f} kWh per kWp; usual 0.5-1.5)."))
+                           f"({system.battery_kwh / total_kwp:.1f} kWh per kWp; 95 % of expert systems are within 0.5-1.7)."))
     if system.battery_kwh > 0 and sim.load_kwh > 0:
         daily = sim.load_kwh / DAYS
         if system.battery_kwh * BATTERY_USABLE_SHARE > 1.5 * daily:
