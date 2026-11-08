@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { HouseStage, roofFromSolarResult, type StageLocation, type StageReveal } from "@/components/house3d";
 import { callToLive, factsToHome, heardTurns, nextHeardOrder, pretty, type Facts } from "@/app/live/facts";
 import { revealFromFacts, stagedDesign, stepToward, type LiveReveal } from "@/app/live/stage";
+import { agentLine, type AgentLine, type VoiceStatus } from "@/app/live/agent-status";
 import { COMPONENTS, sizeOf } from "@/lib/diff";
 import { fmtInt, LABEL, UNIT } from "@/lib/format";
 import type { SolarResult } from "@/lib/solar";
@@ -93,6 +94,32 @@ const subscribeWide = (cb: () => void) => {
   return () => m.removeEventListener("change", cb);
 };
 /** Projector labels on the model only where the stage is big enough (lg and up). */
+/** While no call runs: is the voice agent reaching us? GET /api/voice/status every 10 s (d-voice #152). */
+function AgentStatusLine() {
+  const [line, setLine] = useState<AgentLine | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const tick = () =>
+      fetch("/api/voice/status", { cache: "no-store" })
+        .then((r) => (r.ok ? (r.json() as Promise<VoiceStatus>) : null))
+        .catch(() => null)
+        .then((s) => alive && setLine(agentLine(s)));
+    tick();
+    const t = setInterval(tick, 10_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  if (!line) return null;
+  return (
+    <p className="m-0 flex items-start gap-2 text-[13px] leading-[18px] text-ink-muted" aria-live="polite">
+      <span aria-hidden className={cn("mt-[6px] size-1.5 shrink-0 rounded-full", line.tone === "ok" ? "bg-success" : line.tone === "warn" ? "bg-warning" : "bg-border-strong")} />
+      <span className="min-w-0 line-clamp-2">{line.text}</span>
+    </p>
+  );
+}
+
 const useWide = () => useSyncExternalStore(subscribeWide, () => window.matchMedia("(min-width: 1024px)").matches, () => false);
 
 const reducedMotion = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -392,6 +419,7 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
               <span className="text-body-sm text-ink-muted">{mode === "demo" ? "Demo call" : "Site visit call"}</span>
             </div>
             <h1 className="m-0 line-clamp-2 text-[clamp(26px,2.4vw,36px)] text-balance leading-[1.1] font-normal tracking-[-0.02em]">{title}</h1>
+            {mode === "idle" && <AgentStatusLine />}
           </div>
           <Button variant="secondary" onClick={startDemo} className="mt-1 shrink-0">
             {mode !== "demo" ? <Play data-icon="inline-start" strokeWidth={1.5} /> : <RotateCcw data-icon="inline-start" strokeWidth={1.5} />}
