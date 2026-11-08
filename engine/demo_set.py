@@ -153,9 +153,9 @@ def build_reality_set(labels: pd.DataFrame, test_ids_path: Path = TEST_IDS, live
         expert = dict(pv_kwp=_clean(primary.pv_kwp), battery_kwh=_clean(primary.battery_kwh),
                       wallbox=bool(primary.wallbox), heatpump_kw=_clean(primary.heatpump_kw), offer_type=primary.offer_type)
         o = p["ours_held_out"]
-        why = (f"{p['story']}. Expert {expert['pv_kwp'] or 0:g} kWp + {expert['battery_kwh'] or 0:g} kWh"
-               f"{' + wallbox' if expert['wallbox'] else ''}; ours (held out) {o['pv_kwp'] or 0:g} kWp + "
-               f"{o['battery_kwh'] or 0:g} kWh{' + wallbox' if o['wallbox'] else ''}")
+        # no sizes in the text: /reality shows the live design next to it, and the held-out sizes can differ slightly
+        why = (f"{p['story']}. A model that never saw this home also came within {PV_CLOSE_KWP:g} kWp of the expert's "
+               f"solar and about one battery size")
         cases.append({**{k: p[k] for k in ("role", "project_id")}, "why": why, "installer": row.installer,
                       "offer_month": pd.Timestamp(row.offer_date).strftime("%Y-%m") if pd.notna(row.offer_date) else None,
                       "home": {c: _clean(row[c]) for c in INPUT_COLS},
@@ -175,7 +175,8 @@ def live_design(project_id: str) -> dict | None:
     """The design GET /project/{id} returns (calls the API function in-process, no server or key needed)."""
     from engine.api import project
 
-    ours = (project(project_id) or {}).get("ours")
+    # answered=False explicitly: called in-process, the FastAPI Query(False) default object would be truthy
+    ours = (project(project_id, answered=False) or {}).get("ours")
     if not ours:
         return None
     d = ours["design"]
