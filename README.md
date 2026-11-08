@@ -10,6 +10,7 @@ fix any component and the rest adapts; a homeowner view explains the offer in pl
 ## Setup
 - Engine (model + API): `engine/README.md` (venv, `pip install -r engine/requirements.txt`, tests, how to get the locked test set and the expert labels from the private `data-v1` release, `python -m engine.train`, `uvicorn engine.api:app`).
 - Web app: `web/README.md` (`npm install`, `npm run dev`, env vars in `docs/deploy.md`).
+- Using the website, screen by screen (planner, live call, reality check, homeowner offer): `docs/user-guide.md`; the 5-minute demo: `docs/demo-runbook.md`.
 - Raw Reonic data lives in `data/raw/` and is **never committed** (Reonic asked us not to share it); everything derived from it (`engine/artifacts/`) is git-ignored too.
 
 ## Approach (short)
