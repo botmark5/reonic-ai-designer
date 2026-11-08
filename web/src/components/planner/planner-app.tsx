@@ -245,7 +245,7 @@ function Workspace({
               roof={roof3d}
               location={location}
               sunMap={sunMap}
-              editable={!!location}
+              editable
               highlight={hovered ?? picked}
               onSelect={onStageSelect}
               labels={wide}
