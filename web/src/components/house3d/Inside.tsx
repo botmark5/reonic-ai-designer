@@ -21,6 +21,8 @@ export interface InsideProps {
   onDrop: (key: InsideKey, x: number, z: number) => void;
   /** An uploaded floor plan's rooms instead of the generic section. */
   plan?: PlanScene | null;
+  /** false while hidden: no frames are drawn. */
+  active?: boolean;
   onReady?: () => void;
 }
 
@@ -257,7 +259,7 @@ function Item({ k, object, placement, size, reduced, settled, onGrab, onDrop, co
 
 const COLOUR = (p: Palette): Record<InsideKey, string> => ({ battery: p.battery, inverter: p.pv, heatpump: p.heatpump, wallbox: p.wallbox });
 
-export default function Inside({ palette, reduced, keys, placement, sizes, batteryKwh, onDrop, onReady, plan = null }: InsideProps) {
+export default function Inside({ palette, reduced, keys, placement, sizes, batteryKwh, onDrop, onReady, plan = null, active = true }: InsideProps) {
   const room = useMemo(() => (plan ? buildPlan(palette, plan) : buildRoom(palette)), [palette, plan]);
   const geo = plan?.geo ?? GENERIC;
   const bounds: Rect = plan
@@ -291,6 +293,7 @@ export default function Inside({ palette, reduced, keys, placement, sizes, batte
 
   return (
     <Canvas
+      frameloop={active ? "always" : "never"}
       shadows
       dpr={[1, 2]}
       camera={{ fov: 30, near: 0.5, far: 120, position: [1.6, 9.5, 17.5] }}
