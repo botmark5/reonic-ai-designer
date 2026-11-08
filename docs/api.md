@@ -42,6 +42,14 @@ Response: { "changes": { "has_ev": true, "ev_km_year": 15000 }, "design": { ...a
   that this default often means "consumption unknown" (battery retrofits); a typed value is real (`false` / omitted). `/project/{id}`
   sends the flag as recorded in the data.
 - `home.annual_kwh` below 1,500 kWh is rejected with HTTP 422 (placeholder entries; nothing can be sized from them).
-- `battery.range` always contains `battery.kwh`; `battery.alternatives` are the classifier's own top catalogue sizes (shares > 0).
+- `battery.range` always contains `battery.kwh`; `battery.alternatives` are other catalogue sizes with the classifier's shares (> 0); since 8 Nov one smaller and one larger, see below.
 - Heat pump sizes (`options.heatpump.kw`, `heatpump.kw`) come from the installer's catalogue as sold (2a8ba8e2: 5.5 / 7.5 / 8 / 10.5 / 12.5 kW);
   the physics size check uses the same list.
+- `physics.flags` thresholds are calibrated on the experts' own new-system designs (8 Nov, issue #66): PV yield / consumption
+  above 2.5 (p75 of expert designs) = `PV_MOSTLY_FED_IN` (info), above 4.0 (~p96) = `PV_OVERSIZED` (warn), above 5.5 (p99) =
+  `PV_VERY_OVERSIZED` (error); battery above 2.0 kWh per kWp (~p98) = `BATTERY_TOO_BIG_FOR_PV` (warn). On `/design` a
+  `PV_OVERSIZED` warning is downgraded to info when the 40 most similar past homes show the size is typical for that consumption.
+- `GET /project/{id}?answered=true` (optional, default false): builds `ours` with `home.has_existing_pv` set the way the
+  answered-mode evaluation derives it from the expert offer (battery-only / PV extension = yes, new system = no, else null).
+  Response adds `answered` (bool) and `planner_answer` (true / false / null). It is a what-if, never an accuracy (issue #47).
+- `pv.alternatives` and `battery.alternatives` are now a bracket around the proposal: the most likely size the installer sells BELOW it and the most likely size ABOVE it (sorted ascending, each with the classifier's share). When one side has nothing (smallest / largest size, roof cap) the next most likely other size fills in. Same shape as before; locked test: the expert's PV is within 1.5 kWp of one of the 3 options in 70 % of homes (unchanged), and 77 % of proposals get one smaller and one larger option (was 45 %).

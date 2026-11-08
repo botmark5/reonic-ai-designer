@@ -83,6 +83,24 @@ def package_kwp(note: str) -> float:
     return float(m.group(1)) if m else -1.0
 
 
+def bracket_alternatives(sizes, proba, point: float, n: int, key: str, tol: float = 0.05) -> list[dict]:
+    """
+    The most likely size below `point` and the most likely size above it (planner request: "one smaller and one
+    larger option next to the proposal"); if a side is empty, the next most likely other size fills the n slots.
+    Returns [{key: size, "share": probability}] sorted by size; only sizes with a share > 0.
+    """
+    order = [k for k in np.argsort(proba)[::-1] if round(float(proba[k]), 2) > 0 and abs(sizes[k] - point) > tol]
+    below = [k for k in order if sizes[k] < point]
+    above = [k for k in order if sizes[k] > point]
+    picks = ([below[0]] if below else []) + ([above[0]] if above else [])
+    for k in order:
+        if len(picks) >= n:
+            break
+        if k not in picks:
+            picks.append(k)
+    return sorted([{key: float(sizes[k]), "share": round(float(proba[k]), 2)} for k in picks[:n]], key=lambda a: a[key])
+
+
 def snap_pv(kwp: float) -> float:
     return round(round(kwp / MODULE_KWP) * MODULE_KWP, 2) if kwp > 0 else 0.0
 
@@ -417,7 +435,11 @@ class DesignModel:
         return float(max(0.0, np.quantile(score, level)))
 
     def pv_alternatives(self, X: pd.DataFrame, installers, points, caps=None, n: int = 2) -> list[list[dict]]:
-        """For each home: the n most likely OTHER sizes this installer sells (size classifier), with their share."""
+        """
+        For each home: the OTHER sizes this installer sells that the size classifier finds most likely, as a bracket
+        around the proposal: the most likely size BELOW it and the most likely size ABOVE it (sorted ascending, with
+        their share). When one side has nothing (smallest/largest size, roof cap) the next most likely size fills in.
+        """
         clf = getattr(self, "pv_size_clf_", None)
         out = []
         if clf is None:
@@ -431,9 +453,7 @@ class DesignModel:
                 out.append([])
                 continue
             p = p / p.sum()
-            alts = [dict(kwp=float(kwp[k]), share=round(float(p[k]), 2))
-                    for k in np.argsort(p)[::-1] if abs(kwp[k] - p0) > 0.05 and p[k] > 0][:n]
-            out.append(alts)
+            out.append(bracket_alternatives(kwp, p, p0, n, "kwp"))
         return out
 
     def snap_pv_to_catalogue(self, kwp: float, installer: str) -> tuple[float, str | None]:
@@ -703,9 +723,9 @@ class DesignModel:
         shown = float(r.battery_kwh) if r.has_battery else None     # the size actually proposed (after the kWh/kWp mix)
         if shown:                                       # the range always contains the proposed size
             b_lo, b_hi = min(b_lo, shown), max(b_hi, shown)
-        alternatives = [dict(kwh=float(classes[i]), share=round(float(proba[i]), 2))
-                        for i in np.argsort(proba)[::-1][:3] if proba[i] > 0.02]
-        # (the proposed size is not forced into `alternatives`: those are the classifier's own top sizes; the range covers it)
+        # one smaller and one larger catalogue size around the proposal, with the classifier's share for each
+        alternatives = bracket_alternatives(classes, proba, shown if shown else float(classes[best]), 2, "kwh")
+        # (the proposed size is not in `alternatives`: those are the classifier's own other sizes; the range covers it)
         if "battery_kwh" in locks:
             b_reasons, b_conf = [f"Fixed by the planner: {r.battery_kwh:g} kWh." if r.battery_kwh else "Fixed by the planner: no battery."], 1.0
         elif r.has_battery and r.offer_type == "battery_retrofit":

@@ -1,5 +1,5 @@
 "use client";
-import { ContactShadows, Environment, Lightformer, PerformanceMonitor } from "@react-three/drei";
+import { ContactShadows, Environment, Html, Lightformer, PerformanceMonitor } from "@react-three/drei";
 import { Canvas, useFrame, type RootState } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -36,6 +36,8 @@ export interface SceneProps {
   building: boolean;
   /** The design offers a heat pump without including it: shown as a ghost when revealed. */
   hpOption: boolean;
+  /** Its size, for the "option" label. */
+  hpOptionKw?: number | null;
   /** Always-on labels (PV kWp, battery kWh...) for a projector. */
   labels: boolean;
   /** Stages with the same key share one orbit. */
@@ -63,6 +65,7 @@ function dispose(obj: THREE.Object3D) {
 }
 
 const NO_SLOTS: PanelSlot[] = [];
+const num = (x: number) => String(Number(x.toFixed(2)));
 const LABEL_SIDE = { pv: "above", battery: "right", wallbox: "left", heatpump: "left" } as const;
 const facing = (m: Mount) => new THREE.Vector3(Math.sin(m.yaw), 0, Math.cos(m.yaw));
 const UP = new THREE.Vector3(0, 1, 0);
@@ -151,7 +154,7 @@ function Exposure({ dark }: { dark: boolean }) {
   return null;
 }
 
-function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn, shown, building, hpOption, labels: showLabels, cameraKey }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
+function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn, shown, building, hpOption, hpOptionKw, labels: showLabels, cameraKey }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
   const rotationY = THREE.MathUtils.degToRad(180 - spec.roof.azimuthDeg);
   const house = useMemo(() => buildHouse(spec.roof.pitchDeg, palette), [spec.roof.pitchDeg, palette]);
   const equipment = useMemo(() => buildEquipment(palette), [palette]);
@@ -247,7 +250,12 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
         <Car object={equipment.car} path={anchors.carPath} visible={c.wallbox.visible && shown.car} reduced={reduced} intro={intro} pointer={pointer} />
         <EnergyFlow flows={flows} nodes={nodes} sunDir={sunLocal} rayTargets={rays} gradientStops={palette.flow} reduced={reduced} />
         <ContactShadows key={groundKey} frames={reduced ? 2 : 200} position={[1.2, 0.012, 2]} scale={38} resolution={512} blur={2.6} far={7} opacity={0.38} color="#1b1d20" />
+        {/* drei's first Html in a canvas can lose its root under React 19: a placeholder takes that hit */}
+        {settled && <Html position={[0, -50, 0]} style={{ display: "none" }}><span /></Html>}
         {labelKeys.map((k) => <Label key={k} spec={c[k]} position={labelAt[k]} side={LABEL_SIDE[k]} />)}
+        {showLabels && settled && hpOption && !c.heatpump.visible && shown.heatpump && hpOptionKw && (
+          <Label spec={{ ...c.heatpump, title: "Heat pump", size: `option ${num(hpOptionKw)} kW` }} position={labelAt.heatpump} side="left" />
+        )}
         {activeSpec?.visible && <Tooltip spec={activeSpec} position={labels[activeSpec.key]} />}
       </group>
       <Daylight moment={moment} palette={palette} reduced={reduced} />

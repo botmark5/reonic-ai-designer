@@ -21,6 +21,13 @@ import {
   voiceDeps,
   handleUpdateFacts,
   supabaseStore,
+  clearExplainCache,
+  explainKey,
+  numbersAllowed,
+  offerSegmentsTemplate,
+  parseScript,
+  setStaticClips,
+  timeSegments,
 } from "./voice";
 
 // ---------------------------------------------------------------------------
@@ -646,8 +653,80 @@ describe("handlePostCall", () => {
 // ---------------------------------------------------------------------------
 // POST /api/voice/explain
 // ---------------------------------------------------------------------------
+describe("offer timeline", () => {
+  const withBattery = design({ annual_kwh: 5000, has_ev: true, ev_km_year: 15000 }, { ...EMPTY_LOCKS, pv_kwp: 10.8, battery_kwh: 10 });
+  const noBattery = design({ annual_kwh: 3000 }, { ...EMPTY_LOCKS, pv_kwp: 6, battery_kwh: 0 });
+
+  it("template tells the day in order: morning, noon, evening; battery or grid in the evening", () => {
+    const a = offerSegmentsTemplate(withBattery, "en");
+    expect(a.filter((x) => x.moment).map((x) => x.moment)).toEqual(["morning", "noon", "evening"]);
+    expect(a.find((x) => x.moment === "evening")!.text).toContain("battery");
+    expect(offerSegmentsTemplate(noBattery, "en").find((x) => x.moment === "evening")!.text).toContain("grid");
+    expect(offerSegmentsTemplate(withBattery, "de").filter((x) => x.moment).length).toBe(3);
+    for (const d of [withBattery, noBattery]) expect(offerSegmentsTemplate(d, "en").map((x) => x.text).join(" ").split(/\s+/).length).toBeLessThanOrEqual(110);
+  });
+
+  it("estimates timings without audio: in order, no overlap, clock hours 8 / 12.5 / 19", () => {
+    const { segments, duration_s } = timeSegments(offerSegmentsTemplate(withBattery, "en"), null);
+    for (let i = 1; i < segments.length; i++) expect(segments[i].start_s).toBeGreaterThan(segments[i - 1].end_s);
+    expect(segments.map((x) => x.time_of_day_h).filter((h) => h != null)).toEqual([8, 12.5, 19]);
+    expect(duration_s).toBe(segments[segments.length - 1].end_s);
+    expect(duration_s).toBeGreaterThan(20);
+    expect(duration_s).toBeLessThan(60);
+  });
+
+  it("scales the alignment when its length differs from the text", () => {
+    const segs = [{ text: "aaaa", moment: "morning" as const }, { text: "bbbb", moment: "evening" as const }];
+    const al = { characters: [], character_start_times_seconds: Array.from({ length: 18 }, (_, i) => i / 2), character_end_times_seconds: Array.from({ length: 18 }, (_, i) => (i + 1) / 2) };
+    const { segments, duration_s } = timeSegments(segs, al);
+    expect(segments[0].start_s).toBe(0);
+    expect(segments[1].end_s).toBe(9);
+    expect(duration_s).toBe(9);
+    expect(segments[1].start_s).toBeGreaterThan(segments[0].end_s);
+  });
+
+  it("rejects a Claude script with invented numbers, no day story, or bad JSON", () => {
+    const ok = JSON.stringify({ segments: [
+      { text: "We suggest 10.8 kWp and a 10 kWh battery.", moment: "none" },
+      { text: "Morning sun.", moment: "morning" }, { text: "Noon surplus.", moment: "noon" }, { text: "Evening battery.", moment: "evening" },
+    ] });
+    expect(parseScript(ok, withBattery)?.length).toBe(4);
+    expect(parseScript(ok.replace("10.8 kWp", "12 kWp"), withBattery)).toBeNull();
+    expect(parseScript(ok.replace('"noon"', '"none"'), withBattery)).toBeNull();
+    expect(parseScript("Sure! Here you go: not json", withBattery)).toBeNull();
+    expect(parseScript("```json\n" + ok + "\n```", withBattery)?.length).toBe(4);
+  });
+
+  it("allows the engine's numbers in any rounding or separator style", () => {
+    const facts = { pv_kwp: 10.8, battery_kwh: 10, wallbox: true, heatpump_kw: null, heatpump_possible_later: false, yearly_solar_yield_kwh: 10234,
+      share_of_own_power_used_pct: 41, share_of_needs_covered_pct: 69, investment_eur: 23950, first_year_savings_eur: 1890, payback_years: 12.4, reasons: [] };
+    expect(numbersAllowed("10.8 kWp, 10,8 kWp, €23,950 or 24,000 euros, 1.890 €, 69% and 12 years", facts)).toBe(true);
+    expect(numbersAllowed("about 25,000 euros", facts)).toBe(false);
+  });
+});
+
+describe("committed voice clips (voice-cache.json)", () => {
+  it("every clip has its mp3 in public/ and timings in order", async () => {
+    const { existsSync, statSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const clips = (await import("./voice-cache.json")).default as Record<string, { audio_path: string; segments: { start_s: number; end_s: number }[]; duration_s: number }>;
+    for (const [key, c] of Object.entries(clips)) {
+      expect(key).toMatch(/^[0-9a-f]{16}$/);
+      const file = join(process.cwd(), "public", c.audio_path);
+      expect(existsSync(file)).toBe(true);
+      expect(statSync(file).size).toBeGreaterThan(10_000);
+      for (let i = 1; i < c.segments.length; i++) expect(c.segments[i].start_s).toBeGreaterThanOrEqual(c.segments[i - 1].end_s);
+      expect(c.segments[c.segments.length - 1].end_s).toBeLessThanOrEqual(c.duration_s);
+    }
+  });
+});
+
 describe("handleExplain", () => {
   const d0 = design({ annual_kwh: 5000 }, { ...EMPTY_LOCKS, pv_kwp: 10.8, battery_kwh: 10 });
+  beforeEach(() => {
+    clearExplainCache();
+    setStaticClips({});
+  });
 
   it("uses the template without an Anthropic key and keeps it under ~45 s", async () => {
     const res = await handleExplain(post("/api/voice/explain", { design_response: d0 }), deps());
@@ -670,27 +749,71 @@ describe("handleExplain", () => {
     expect(f).not.toHaveBeenCalled();
   });
 
-  it("passes Claude's text through", async () => {
-    const f = vi.fn(async () => Response.json({ content: [{ type: "text", text: "Your roof can carry 10.8 kWp." }] }));
+  const claudeScript = {
+    segments: [
+      { text: "Your roof can carry 10.8 kWp.", moment: "none" },
+      { text: "Mornings start on sunshine.", moment: "morning" },
+      { text: "At noon the battery fills.", moment: "noon" },
+      { text: "Evenings run from the battery.", moment: "evening" },
+      { text: "Your installer will go through the details.", moment: "none" },
+    ],
+  };
+
+  it("passes Claude's script through as timed segments", async () => {
+    const f = vi.fn(async () => Response.json({ content: [{ type: "text", text: JSON.stringify(claudeScript) }] }));
     const res = await handleExplain(
       post("/api/voice/explain", { design_response: d0 }),
       deps({ fetch: f as unknown as typeof fetch, anthropicKey: "ak" }),
     );
-    expect(await res.json()).toMatchObject({ by: "claude", text: "Your roof can carry 10.8 kWp." });
+    const body = await res.json();
+    expect(body).toMatchObject({ by: "claude", timing: "estimated" });
+    expect(body.text).toBe(claudeScript.segments.map((x) => x.text).join(" "));
+    expect(body.segments.map((x: { time_of_day_h: number | null }) => x.time_of_day_h)).toEqual([null, 8, 12.5, 19, null]);
     const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.anthropic.com/v1/messages");
     expect(JSON.parse(String(init.body))).toMatchObject({ model: "claude-sonnet-5-5", thinking: { type: "between_tools" } });
   });
 
-  it("returns audio when TTS is enabled and requested", async () => {
-    const f = vi.fn(async () => new Response(new Uint8Array([1, 2, 3])));
-    const res = await handleExplain(
-      post("/api/voice/explain", { design_response: d0, audio: true }),
-      deps({ fetch: f as unknown as typeof fetch, elevenLabsKey: "el", voiceId: "voice1", ttsEnabled: true }),
-    );
-    const body = await res.json();
-    expect(body.audio_base64).toBe("AQID");
-    expect(String((f.mock.calls[0] as unknown as [string])[0])).toContain("/v1/text-to-speech/voice1");
+  /** ElevenLabs /with-timestamps answer for `text`: 10 characters per second. */
+  const tts = (text: string) => ({
+    audio_base64: "AQID",
+    alignment: {
+      characters: [...text],
+      character_start_times_seconds: [...text].map((_, i) => i / 10),
+      character_end_times_seconds: [...text].map((_, i) => (i + 1) / 10),
+    },
+  });
+
+  it("returns audio with sentence timings from the TTS timestamps, and caches it", async () => {
+    const f = vi.fn(async (_u: string | URL | Request, init?: RequestInit) => Response.json(tts(JSON.parse(String(init?.body)).text)));
+    const d = deps({ fetch: f as unknown as typeof fetch, elevenLabsKey: "el", voiceId: "voice1", ttsEnabled: true });
+    const body = await (await handleExplain(post("/api/voice/explain", { design_response: d0, audio: true }), d)).json();
+    expect(body).toMatchObject({ audio_base64: "AQID", timing: "audio", cached: null });
+    expect(String((f.mock.calls[0] as unknown as [string])[0])).toContain("/v1/text-to-speech/voice1/with-timestamps");
+    const segs = body.segments as { text: string; start_s: number; end_s: number; time_of_day_h: number | null }[];
+    expect(segs[0].start_s).toBe(0);
+    expect(segs[0].end_s).toBe(segs[0].text.length / 10);
+    expect(segs[1].start_s).toBe((segs[0].text.length + 1) / 10);
+    expect(segs.map((x) => x.time_of_day_h).filter((h) => h != null)).toEqual([8, 12.5, 19]);
+    expect(body.duration_s).toBe(body.text.length / 10);
+    const again = await (await handleExplain(post("/api/voice/explain", { design_response: d0, audio: true }), d)).json();
+    expect(again).toMatchObject({ audio_base64: "AQID", cached: "memory" });
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves a committed clip without calling Claude or ElevenLabs", async () => {
+    const key = explainKey(d0, "en", "voice1");
+    setStaticClips({
+      [key]: { text: "Hi.", by: "claude", language: "en", segments: [{ text: "Hi.", moment: null, start_s: 0, end_s: 0.5, time_of_day_h: null }], duration_s: 0.5, timing: "audio", audio_path: "/voice/demo.mp3" },
+    });
+    const f = vi.fn(async (u: string | URL | Request) => {
+      if (String(u) === "http://x/voice/demo.mp3") return new Response(new Uint8Array([9, 9]));
+      throw new Error(`unexpected ${String(u)}`);
+    });
+    const d = deps({ fetch: f as unknown as typeof fetch, elevenLabsKey: "el", voiceId: "voice1", ttsEnabled: true, anthropicKey: "ak" });
+    const body = await (await handleExplain(post("/api/voice/explain", { design_response: d0, audio: true }), d)).json();
+    expect(body).toMatchObject({ text: "Hi.", cached: "clip", audio_url: "/voice/demo.mp3", audio_base64: "CQk=", cache_key: key });
+    expect(f).toHaveBeenCalledTimes(1);
   });
 
   it("in production only explains stored designs (no client-sent design)", async () => {

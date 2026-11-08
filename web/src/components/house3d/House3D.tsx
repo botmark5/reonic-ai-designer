@@ -262,6 +262,7 @@ export function House3D({
                 shown={shownParts}
                 building={!!reveal}
                 hpOption={!!design.options?.heatpump?.available && !!reveal}
+                hpOptionKw={design.options?.heatpump?.available ? design.options.heatpump.kw : null}
                 labels={labels}
                 cameraKey={cameraKey}
                 inView={inView}

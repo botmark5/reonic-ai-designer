@@ -29,13 +29,13 @@ import numpy as np
 import pandas as pd
 import secrets
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 from engine import llm, physics
-from engine.evaluate import ARTIFACTS, build_eval_table, inputs_from_labels, load_inputs
+from engine.evaluate import ARTIFACTS, build_eval_table, derive_offer_type, inputs_from_labels, load_inputs, planner_answer
 from engine.interim_labels import get_labels
 from engine.model import MODEL_PATH, DesignModel, home_to_physics
 
@@ -220,6 +220,32 @@ def _evaluate_design(home: dict, d: dict, installer: str | None = None):
     return sim, physics.sanity_flags(ph_home, system, sim, hp_catalogue=sizes), physics.economics(ph_home, system, sim)
 
 
+def _contextualise_flags(model: DesignModel, home: dict, installer: str, d: dict, flags: list[dict]) -> list[dict]:
+    """
+    A physics "PV_OVERSIZED" warning is relative to ALL expert systems; small homes legitimately sit above it (experts gave
+    homes under 2,000 kWh a median 6 kWp = 3.7x their consumption). When the 40 most similar past homes of this installer
+    show the size is typical for THIS consumption, the warning becomes information, so the engine never calls its own
+    expert-style proposal implausible (issue #66). Errors (> p99) are never downgraded.
+    """
+    if not any(f["code"] == "PV_OVERSIZED" for f in flags):
+        return flags
+    try:
+        checks = model.validate(home, installer, dict(pv_kwp=d["pv"]["kwp"], battery_kwh=d["battery"]["kwh"],
+                                                     wallbox=d["wallbox"]["include"], heatpump_kw=d["heatpump"]["kw"]))
+    except Exception:            # validation is a bonus: never break /design because of it
+        return flags
+    pv_check = next((c for c in checks if c.get("component") == "pv" and c.get("code") == "PV_TYPICAL"), None)
+    if pv_check is None:
+        return flags
+    out = []
+    for f in flags:
+        if f["code"] == "PV_OVERSIZED":
+            f = {**f, "level": "info", "message": f["message"].rstrip(".") +
+                 f". Still typical for homes with this consumption at this installer ({pv_check['message'].rstrip('.')})."}
+        out.append(f)
+    return out
+
+
 def _variant_summary(d: dict, sim, eco) -> dict:
     return dict(pv_kwp=d["pv"]["kwp"], battery_kwh=d["battery"]["kwh"], heatpump_kw=d["heatpump"]["kw"],
                 capex_total_eur=round(eco["capex_total_eur"]), savings_first_year_eur=round(eco["savings_first_year_eur"]),
@@ -259,6 +285,7 @@ def design_response(installer: str, home: dict, locks: dict) -> dict:
     proposal = model.propose(home, installer, locks)
     d = proposal["design"]
     sim, flags, eco = _evaluate_design(home, d, installer)
+    flags = _contextualise_flags(model, home, installer, d, flags)
     similar = model.similar_homes(home, installer, k=5, heatpump_kw=d["heatpump"]["kw"] or 0.0)
     return _py(dict(
         design=d,
@@ -324,7 +351,10 @@ def eval_results():
 
 
 @app.get("/project/{project_id}", dependencies=[Depends(require_key)])
-def project(project_id: str):
+def project(project_id: str,
+            answered: bool = Query(False, description="true = the planner answered 'Solar already on the roof?'; the answer is "
+                                                      "derived from the expert offer (battery-only = yes, new system = no), "
+                                                      "so this is a what-if, never an accuracy (issue #47)")):
     inputs, labels = get_projects()
     row = inputs[inputs.project_id == project_id]
     if row.empty:
@@ -343,5 +373,16 @@ def project(project_id: str):
     cols = ["option_number", "is_primary", "pv_kwp", "battery_kwh", "has_wallbox", "heatpump_kw"]
     variants = options[cols].to_dict("records")
     expert = next((v for v in variants if v["is_primary"]), None)
+    # the planner's answer to "Solar already on the roof?", exactly as the answered-mode evaluation derives it
+    # (evaluate.planner_answer): yes for battery retrofits / PV extensions, no for new systems, unknown otherwise
+    answer = None
+    if answered and not options.empty:
+        primary = options[options.is_primary.astype(bool)] if options.is_primary.astype(bool).any() else options.head(1)
+        if "offer_type" not in primary.columns:
+            primary = primary.assign(offer_type=derive_offer_type(primary))
+        a = planner_answer(primary).iloc[0]
+        answer = None if pd.isna(a) else bool(a)
+        home["has_existing_pv"] = answer
     ours = design_response(r.installer, home, {}) if home["annual_kwh"] >= MIN_DEMAND_KWH else None
-    return _py(dict(project_id=project_id, installer=r.installer, home=home, expert=expert, variants=variants, ours=ours))
+    return _py(dict(project_id=project_id, installer=r.installer, home=home, expert=expert, variants=variants, ours=ours,
+                    answered=bool(answered), planner_answer=answer))

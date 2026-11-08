@@ -59,6 +59,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
   - metric charts done (docs/deck/charts.py, PR #40/#41) · deck: HQ chat in Claude Slides · pitch-facts, demo runbook, README: e-spare (docs/pitch)
 
 ## Decisions
+- Sun 04:40 · Engine: physics plausibility flags are calibrated on expert practice (PV yield/consumption info > 2.5, warn > 4.0, error > 5.5; battery warn > 2.0 kWh/kWp) and a PV warning is downgraded when similar homes show the size is typical; small homes keep the expert-style 6-7 kWp + battery (#66). `/project?answered=true` = what-if with the planner's answer (#47). PV/battery alternatives = one smaller + one larger size with shares.
 - Sun 00:05 · Vercel stays on Hobby: PRs touching web/ are merged by botmark5; engine-only merges by Cala are skipped on Vercel (#35)
 - Sat 23:45 · Web: Google Solar roof (max kWp, azimuth, pitch) fills home.roof_* once per design with an address; planner can edit or remove; /reality headline = new full systems when /eval reports that slice, add-ons separate
 - Sat 20:30 · Web: engine called only from server routes (key never in the browser); offline estimate after 4 s (design) or on any engine error, 15 s cooldown, "Offline estimate" badge

@@ -214,9 +214,15 @@ def test_flags_clean_design_has_no_warnings():
 
 
 def test_flags_fire():
-    assert "PV_OVERSIZED" in codes(sanity_flags(Home(4500), System(11, 0)))
-    assert "PV_VERY_OVERSIZED" in codes(sanity_flags(Home(2000), System(15, 0)))
+    assert "PV_OVERSIZED" in codes(sanity_flags(Home(4500), System(20, 0)))         # 4.2x: above ~p96 of expert designs
+    assert "PV_VERY_OVERSIZED" in codes(sanity_flags(Home(2000), System(15, 0)))    # 7.1x
+    # calibrated on expert practice: a 4,500 kWh home with 11 kWp (2.3x) and a 1,600 kWh home with the experts' own
+    # 6-7 kWp (3.6-4.2x) are what these installers sell, so neither is "implausible" (issue #66)
+    assert not {"PV_OVERSIZED", "PV_VERY_OVERSIZED"} & codes(sanity_flags(Home(4500), System(11, 0)))
+    assert "PV_MOSTLY_FED_IN" in codes(sanity_flags(Home(4500), System(13, 0)))
+    assert "PV_VERY_OVERSIZED" not in codes(sanity_flags(Home(1600), System(7.2, 9.2)))
     assert "BATTERY_TOO_BIG_FOR_PV" in codes(sanity_flags(Home(4500), System(5, 15)))
+    assert "BATTERY_TOO_BIG_FOR_PV" not in codes(sanity_flags(Home(4500), System(6, 10)))   # 1.7 kWh/kWp: p95 of experts
     assert "BATTERY_WITHOUT_PV" in codes(sanity_flags(Home(4500), System(0, 10)))
     assert "BATTERY_WITHOUT_PV" not in codes(sanity_flags(Home(4500, existing_pv_kwp=8), System(0, 10)))
     assert "BATTERY_EXCEEDS_DAILY_USE" in codes(sanity_flags(Home(2000), System(20, 25)))

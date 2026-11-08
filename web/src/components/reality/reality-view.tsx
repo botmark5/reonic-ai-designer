@@ -13,7 +13,7 @@ import { ADDON_HEADLINES, expertDesign, headlines, headlineSource, top3, trusted
 import type { ComponentKey, EvalResponse, ExpertVariant, MetricSet, ProjectResponse } from "@/lib/types";
 import { PREDICTORS } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { bandRows, transferRows } from "@/lib/deviation";
+import { bandRows, installerOrder, transferRows } from "@/lib/deviation";
 
 const DOT: Record<ComponentKey, string> = { pv: "bg-comp-pv", battery: "bg-comp-battery", wallbox: "bg-comp-wallbox", heatpump: "bg-comp-heatpump" };
 const TONE: Record<VerdictKind, Tone> = { match: "success", range: "success", close: "success", option: "success", off: "warning", missing: "critical", extra: "critical" };
@@ -155,7 +155,7 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
   const cov = trustedCoverage(HM) ?? trustedCoverage(src.overall[PREDICTORS.model]);
   const top3Pct = top3(HM);
   const bands = bandRows(evalRes.by_band);
-  const transfers = transferRows(evalRes.transfer);
+  const transfers = transferRows(evalRes.transfer, PREDICTORS.model, PREDICTORS.bandMedian, installerOrder(evalRes.by_installer, PREDICTORS.model));
   const addOnCov = src.addOns ? trustedCoverage(src.addOns[PREDICTORS.model]) : null; // null or < 20 homes: no row
   const answered = evalRes.with_existing_pv_answer?.metrics?.[PREDICTORS.model];
   const fmt = (x: number | null, unit: "kWp" | "%") => (x == null ? "–" : unit === "kWp" ? x.toFixed(2) : `${Math.round(x)}`);

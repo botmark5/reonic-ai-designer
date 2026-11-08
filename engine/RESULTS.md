@@ -138,6 +138,22 @@ input, used as a cap) and the existing-PV question (PV yes/no 90 → 100 %). Ins
 not by consumption. External registries (Marktstammdatenregister) hold installed sizes without household data, so they
 could only serve as a plausibility check, not as training labels.
 
+## Physics flags calibrated on expert practice (8 Nov, issue #66; training part of the locked split, new systems, n = 1,046)
+
+What the experts actually sold, so that the plausibility flags measure "unusual for these installers", not a textbook rule:
+
+| quantity | p50 | p75 | p90 | p95 | p97.5 | p99 | flag thresholds now |
+|---|---|---|---|---|---|---|---|
+| PV yield / yearly consumption (950 kWh per kWp, incl. EV) | 1.82 | 2.47 | 3.18 | 3.67 | 4.38 | 5.42 | info > 2.5 · warn > 4.0 · error > 5.5 (was warn > 2, error > 3: flagged 44 % / 13 % of expert designs) |
+| battery kWh per kWp of PV | 0.97 | – | – | 1.7 | – | 2.22 | warn > 2.0 (was 1.5) |
+| battery usable kWh / daily consumption (days) | 0.61 | 0.82 | 1.09 | 1.31 | – | 1.84 | info > 1.5 (unchanged) |
+
+By consumption band (new systems): homes under 2,000 kWh (n = 13) got a median 6.0 kWp (p10 5.85) and a battery in 100 % of
+cases (median 6 kWh); 2,000–2,500 kWh (n = 39): 7.65 kWp, battery 97 %; 2,500–3,000 kWh (n = 63): 7.2 kWp, battery 90 %.
+Only 40 of 1,046 new systems have no battery (38 at installer A; median consumption 4,250 kWh, no EV): "no battery" in a new
+system is a 4 % expert choice without a visible pattern in the inputs, which is why the learned cut-off is "always a battery"
+and the engine proposes none only for add-on orders or on the planner's lock.
+
 ## Error analysis (locked test set, shipped model)
 
 ## Mode: not answered

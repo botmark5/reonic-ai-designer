@@ -53,6 +53,8 @@ export interface EngineClient {
   /** Streamed plain-text explanation. */
   explain(req: ExplainRequest): Promise<{ stream: ReadableStream<Uint8Array>; served: Served }>;
   eval(): Promise<EvalResponse>;
+  /** Held-out test ids and the curated demo cases (engine #94), for hosts without engine/artifacts. Throws when absent. */
+  heldout(): Promise<{ test_project_ids?: string[]; demo_projects?: { role: string; why: string; project_id: string }[] }>;
   /** Real held-out projects only: throws on an unknown id or when the engine is unreachable (an invented project would mislead). */
   project(id: string, opts?: { answered?: boolean }): Promise<ProjectResponse>;
 }
@@ -168,6 +170,7 @@ export const engine: EngineClient = {
     return { stream: r.stream, served: r.served };
   },
   eval: () => withFallback(() => getJson<EvalResponse>("/eval", TIMEOUTS.eval), () => MOCK_EVAL),
+  heldout: () => getJson("/heldout", TIMEOUTS.eval),
   project: async (id, opts) => {
     if (!engineUrl()) throw new EngineError(503, "Engine not configured: held-out projects need the live engine.");
     const t0 = Date.now();
