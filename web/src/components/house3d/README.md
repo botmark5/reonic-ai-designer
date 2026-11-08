@@ -94,3 +94,12 @@ same props. Props not yet supported by a renderer are accepted and ignored. Full
 - Sun map (`sunMap` prop, or the "Sun map" button when omitted): d-voice's `/api/solar/layers` image draped on every
   tile surface by a world-position shader patch (chained with the tiles fade shader), fetched for the panels' centre
   so both line up; legend top-left. Procedural house: no sun map (the flux is real data for the real roof).
+
+### Inside (view="inside", or the Outside / Inside switch when `view` is omitted)
+- A section model: basement (sunk), garage, outside wall. The planner drags battery, inverter, heat pump and wallbox
+  along the wall; allowed zones tint in the part's colour while dragging; a drop snaps to the nearest free slot or
+  springs back with the reason ("The heat pump needs outside air."). Rules: `insideRules.ts` (pure, tested).
+- Accessible twin: a zone picker per part under the model (disabled options = not allowed), live status line.
+- `onZonesChange(zones)` reports the planner's choice. Labels sit on the floor in front of each part (hidden < sm).
+- kWp sizes keep two decimals (11.25, not 11.3). Offered-only heat pump gets an "option N kW" label.
+- drei `Html` under React 19: the first instance in a canvas can lose its root; both scenes mount a hidden placeholder first.

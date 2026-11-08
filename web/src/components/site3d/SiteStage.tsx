@@ -163,7 +163,7 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
         )}
         {/* legend: what the colours mean, only while the map shows */}
         {sunOn && sunHere && (
-          <div data-h3d-ui className="absolute left-2 top-2 rounded-lg border border-border/80 bg-surface-1/90 px-3 py-2 backdrop-blur-md">
+          <div data-h3d-ui className="absolute bottom-9 left-2 rounded-lg border border-border/80 bg-surface-1/90 px-3 py-2 backdrop-blur-md">
             <p className="text-[12px] font-medium text-ink">Sunshine per year</p>
             <div aria-hidden className="mt-1.5 h-2 w-40 rounded-full" style={{ background: `linear-gradient(90deg, ${sunHere.palette.join(", ")})` }} />
             <p className="mt-1 flex justify-between font-mono text-[11px] tabular-nums text-ink-muted">

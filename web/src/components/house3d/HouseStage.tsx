@@ -3,6 +3,8 @@ import dynamic from "next/dynamic";
 import { useState, useSyncExternalStore } from "react";
 import type { DesignResponse, Home } from "../../lib/types";
 import { House3D } from "./House3D";
+import { InsideStage } from "./InsideStage";
+import type { Zone } from "./insideRules";
 import { revealedFromKey, revealKey, stageRoof, staticWanted, tilesWanted } from "./stage";
 import type {
   ComponentKey, House3DMode, RoofInput, StageControls, StageLocation, StagePanel, StageReveal, StageView,
@@ -20,8 +22,10 @@ export interface HouseStageProps {
    * or on any tile problem, the procedural house. /reality never passes one.
    */
   location?: StageLocation;
-  /** Outside (default) or the abstract inside diorama. */
+  /** Outside or the inside diorama. Omit and the stage shows its own Outside / Inside switch. */
   view?: StageView;
+  /** Inside: the planner moved a part to another zone. */
+  onZonesChange?: (zones: Partial<Record<ComponentKey, Zone>>) => void;
   /** Drape the annual sunshine map on the roof. */
   sunMap?: boolean;
   /** Build-up for /live. Omit to show the whole design at once. */
@@ -63,7 +67,7 @@ const TILES_FLAG = process.env.NEXT_PUBLIC_HOUSE_TILES;
  * Props that a renderer does not support yet are accepted and ignored, so pages can wire them now.
  */
 export function HouseStage({
-  design, home, mode = "homeowner", roof, location, view = "outside", sunMap, reveal, highlight, onSelect, cameraKey, timeOfDay,
+  design, home, mode = "homeowner", roof, location, view, onZonesChange, sunMap, reveal, highlight, onSelect, cameraKey, timeOfDay,
   onTimeOfDayChange, labels, controls, static: forceStatic, flyIn, className,
 }: HouseStageProps) {
   const wanted = useSyncExternalStore(noop, () => tilesWanted(window.location.search, TILES_FLAG), () => false);
@@ -72,8 +76,48 @@ export function HouseStage({
   const at = location && Number.isFinite(location.lat) && Number.isFinite(location.lng) ? `${location.lat},${location.lng}` : null;
   // the address the real outside failed for (or the viewer switched away from): procedural until the address changes
   const [off, setOff] = useState<string | null>(null);
-  const tiles = wanted && !!TILES_KEY && !!at && view === "outside" && !still && off !== at;
+  const [ownView, setOwnView] = useState<StageView>("outside");
+  const shownView = view ?? ownView;
+  const tiles = wanted && !!TILES_KEY && !!at && shownView === "outside" && !still && off !== at;
+  const switcher = view === undefined && controls !== "none" && !still && !reveal;
 
+  return (
+    <div className="relative">
+      {renderStage()}
+      {switcher && (
+        <div role="group" aria-label="View" data-h3d-ui className="absolute left-3 top-3 z-10 flex gap-1 rounded-full border border-border/80 bg-surface-1/85 p-1 shadow-[0_1px_2px_rgba(16,17,20,0.05)] backdrop-blur-md">
+          {(["outside", "inside"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={shownView === v}
+              onClick={() => setOwnView(v)}
+              className={
+                "inline-flex h-7 items-center rounded-full px-3 text-[13px] font-medium outline-none transition-[background-color,color,transform] duration-150 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-focus " +
+                (shownView === v ? "bg-primary text-primary-ink" : "text-ink-body [@media(hover:hover)]:hover:bg-surface-2")
+              }
+            >
+              {v === "outside" ? "Outside" : "Inside"}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  function renderStage() {
+  if (shownView === "inside") {
+    return (
+      <InsideStage
+        design={design}
+        home={home}
+        mode={mode}
+        controls={controls === undefined || controls === "full"}
+        onZonesChange={onZonesChange}
+        className={className}
+      />
+    );
+  }
   if (tiles && location) {
     return (
       <SiteStage
@@ -112,4 +156,5 @@ export function HouseStage({
       className={className}
     />
   );
+  }
 }
