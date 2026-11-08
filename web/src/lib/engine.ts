@@ -57,6 +57,8 @@ export interface EngineClient {
   heldout(): Promise<{ test_project_ids?: string[]; demo_projects?: { role: string; why: string; project_id: string }[] }>;
   /** Real held-out projects only: throws on an unknown id or when the engine is unreachable (an invented project would mislead). */
   project(id: string, opts?: { answered?: boolean }): Promise<ProjectResponse>;
+  /** What each installer sells (GET /installers, keyed by installer id). Throws when the engine is unreachable. */
+  installers(): Promise<Record<string, { battery_kwh?: number[] }>>;
 }
 
 export class EngineError extends Error {
@@ -171,6 +173,7 @@ export const engine: EngineClient = {
   },
   eval: () => withFallback(() => getJson<EvalResponse>("/eval", TIMEOUTS.eval), () => MOCK_EVAL),
   heldout: () => getJson("/heldout", TIMEOUTS.eval),
+  installers: () => getJson("/installers", TIMEOUTS.health),
   project: async (id, opts) => {
     if (!engineUrl()) throw new EngineError(503, "Engine not configured: held-out projects need the live engine.");
     const t0 = Date.now();

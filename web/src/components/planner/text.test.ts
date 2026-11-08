@@ -48,3 +48,12 @@ describe("altLabel", () => {
     expect(altLabel(10.35, { kwp: 11.25, share: 0.31 }).label).toBe("Larger 11.25 kWp");
   });
 });
+
+describe("otherSizes", () => {
+  it("lists the installer's catalogue sizes not already offered, ascending, without zero or junk", async () => {
+    const { otherSizes } = await import("./text");
+    expect(otherSizes([0, 7, 10, 14], [30, 5, 7, 10, 14, 15, 0, -1, Number.NaN, 20])).toEqual([5, 15, 20, 30]);
+    expect(otherSizes([0, 10], undefined)).toEqual([]);
+    expect(otherSizes([0, 9.2], [9.2000001, 25])).toEqual([25]);
+  });
+});
