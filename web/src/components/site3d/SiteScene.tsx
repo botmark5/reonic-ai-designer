@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { LAND, stepSpring, type SpringState } from "../house3d/spring";
-import { dropOrder, panelPose, quantile, segmentHeights, toScene, type PanelPose, type Placement, type SunFrame } from "./geo";
+import { dropOrder, faceRaise, panelPose, panelView, quantile, segmentHeights, toScene, type PanelPose, type Placement, type SunFrame } from "./geo";
 
 const DRACO = "https://www.gstatic.com/draco/versioned/decoders/1.5.7/";
 /** Germany's geoid sits ≈ 36–50 m above the ellipsoid; Google gives roof heights above sea level. A first guess only: rays refine it. */
@@ -20,6 +20,7 @@ const LIFT = 0.35; // panel above the plane: photogrammetry roofs are lumpy, a p
 const DROP = 2.2;
 const ROW_STAGGER = 0.07;
 const VIEW = new THREE.Vector3(30, 52, 42); // camera offset from the roof: south-east, high enough to clear garden trees
+const VIEW_TURN = 0.4; // radians off the panels' facing direction
 
 export interface SiteSceneProps {
   apiKey: string;
@@ -37,7 +38,12 @@ export interface SiteSceneProps {
   onAttribution: (text: string) => void;
 }
 
-interface Heights { roof: number; segments: Map<number, number> }
+interface Heights {
+  roof: number;
+  segments: Map<number, number>;
+  /** The photogrammetry surface under each panel (placement order); NaN where a ray found nothing. */
+  panels: number[];
+}
 
 type SunUniforms = Record<"uSunMap" | "uSunAmt" | "uSunC" | "uSunR" | "uSunU" | "uSunS", THREE.IUniform>;
 
@@ -125,7 +131,9 @@ function Tiles({ apiKey, placement, sunUniforms, onFirstTiles, onError, onAttrib
       const { offset, heights } = segmentHeights(segments, hits, GEOID_M);
       // coarse tiles are chords far below the real surface: wait for detail before trusting the rays
       if (Math.abs(offset - GEOID_M) > PLAUSIBLE_M) return;
-      cb.current.onHeights({ roof: Math.max(...heights.values()), segments: heights });
+      // and right under each panel: a plane a little too low would bury panels in the mesh
+      const panels = cb.current.placement.panels.map((p) => { const [x, z] = toScene(p.x_m, p.y_m); return hitY(x, z); });
+      cb.current.onHeights({ roof: Math.max(...heights.values()), segments: heights, panels });
     };
     const onModel = (e: { scene?: THREE.Object3D }) => {
       if (e.scene) patchSun(e.scene, sunUniforms.current);
@@ -177,9 +185,15 @@ function RoofPanels({ placement, heights, on, reduced }: { placement: Placement;
   const poses = useMemo<PanelPose[]>(() => placement.panels.map((p) => {
     const seg = placement.segments.find((s) => s.index === p.segment_index);
     const y = heights.segments.get(p.segment_index) ?? heights.roof;
-    return seg
+    const pose = seg
       ? panelPose(p, seg, y, placement.panel_size)
       : { ...panelPose(p, { pitch_deg: 0, azimuth_deg: 180, center: { lat: 0, lng: 0, x_m: p.x_m, y_m: p.y_m } }, y, placement.panel_size) };
+    return pose;
+  }).map((pose, i, all) => {
+    // one raise per roof face onto the photogrammetry (coplanar panels, none buried)
+    const seg = placement.panels[i].segment_index;
+    const idx = placement.panels.flatMap((p, j) => (p.segment_index === seg ? [j] : []));
+    return { ...pose, y: pose.y + faceRaise(idx.map((j) => all[j].y), idx.map((j) => heights.panels[j])) };
   }), [placement, heights]);
   const order = useMemo(() => dropOrder(poses, placement.panels.map((p) => p.segment_index)), [poses, placement.panels]);
   const drops = useRef<Drop[]>([]);
@@ -249,7 +263,7 @@ function RoofPanels({ placement, heights, on, reduced }: { placement: Placement;
 }
 
 /** Camera: starts at a first guess of the roof height, then glides to the measured roof. */
-function Rig({ target }: { target: THREE.Vector3 }) {
+function Rig({ target, offset }: { target: THREE.Vector3; offset: THREE.Vector3 }) {
   const ref = useRef<CameraControls>(null);
   const placed = useRef(false);
   useEffect(() => {
@@ -260,9 +274,10 @@ function Rig({ target }: { target: THREE.Vector3 }) {
       void c.moveTo(target.x, target.y, target.z, true);
       return;
     }
-    const p = target.clone().add(VIEW);
+    const p = target.clone().add(offset);
     void c.setLookAt(p.x, p.y, p.z, target.x, target.y, target.z, false);
     placed.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the first view only; later the viewer's angle wins
   }, [target]);
   return (
     <CameraControls
@@ -319,16 +334,28 @@ export default function SiteScene({ apiKey, placement, sun, sunOn, panelsOn, red
     return new THREE.Vector3(0, (h ?? 500) + GEOID_M, 0);
   }, [placement]);
   const [heights, setHeights] = useState<Heights | null>(null);
-  const target = useMemo(() => (heights ? new THREE.Vector3(0, heights.roof, 0) : guess), [heights, guess]);
+  // look at the new panels, from the side they face (a roof seen edge-on hides them)
+  const view = useMemo(() => panelView(placement), [placement]);
+  const offset = useMemo(() => {
+    if (!view.facing) return VIEW;
+    const r = Math.hypot(VIEW.x, VIEW.z);
+    const a = Math.atan2(view.facing[0], view.facing[1]) + VIEW_TURN; // a little off-axis, so the house reads in 3D
+    return new THREE.Vector3(Math.sin(a) * r, VIEW.y, Math.cos(a) * r);
+  }, [view]);
+  const target = useMemo(
+    () => new THREE.Vector3(view.centre[0], heights ? heights.roof : guess.y, view.centre[1]),
+    [heights, guess, view],
+  );
   const onHeights = (h: Heights) => {
     // ignore tiny refinements: they would only jitter the camera
-    setHeights((prev) => (prev && Math.abs(prev.roof - h.roof) < 0.3 && prev.segments.size === h.segments.size ? prev : h));
+    setHeights((prev) => (prev && Math.abs(prev.roof - h.roof) < 0.3 && prev.segments.size === h.segments.size
+      && prev.panels.length === h.panels.length && prev.panels.every((y, i) => (Number.isNaN(y) && Number.isNaN(h.panels[i])) || Math.abs(y - h.panels[i]) < 0.3) ? prev : h));
   };
 
   return (
     <Canvas
       dpr={[1, 1.5]}
-      camera={{ fov: 30, near: 1, far: 20000, position: guess.clone().add(VIEW).toArray() }}
+      camera={{ fov: 30, near: 1, far: 20000, position: guess.clone().add(offset).toArray() }}
       gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
       onCreated={({ gl }) => { gl.toneMapping = THREE.NeutralToneMapping; }}
       style={{ touchAction: "pan-y" }}
@@ -339,7 +366,7 @@ export default function SiteScene({ apiKey, placement, sun, sunOn, panelsOn, red
       <Tiles apiKey={apiKey} placement={placement} sunUniforms={sunUniforms} onFirstTiles={onFirstTiles} onError={onError} onAttribution={onAttribution} onHeights={onHeights} />
       {heights && <RoofPanels placement={placement} heights={heights} on={panelsOn} reduced={reduced} />}
       {heights && pvLabel && panelsOn && (
-        <Html position={[0, heights.roof + 4.5, 0]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+        <Html position={[view.centre[0], heights.roof + 6.5, view.centre[1]]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
           <div aria-hidden className="flex w-max items-center gap-2 rounded-full border border-border bg-surface-1/95 py-1.5 pl-2.5 pr-3.5 text-ink shadow-[0_8px_24px_rgba(16,17,20,0.16)] backdrop-blur-sm">
             <span className="size-2.5 rounded-full bg-comp-pv" />
             <span className="text-base font-semibold">Solar</span>
@@ -347,7 +374,7 @@ export default function SiteScene({ apiKey, placement, sun, sunOn, panelsOn, red
           </div>
         </Html>
       )}
-      <Rig target={target} />
+      <Rig target={target} offset={offset} />
     </Canvas>
   );
 }
