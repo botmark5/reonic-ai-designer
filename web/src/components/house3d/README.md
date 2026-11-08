@@ -112,3 +112,14 @@ same props. Props not yet supported by a renderer are accepted and ignored. Full
   spills to the garage), Remove (or Delete / Backspace), Reset. Escape lets go. Camera orbit pauses while dragging.
 - Placement only: M is the engine's panel count and never changes. `onPanelsChange(panels)` reports
   `{id, segment (0 main, 1 garage), u, v, portrait}`; Reset sends []. Off during a reveal. Rules: `panelEdit.ts`.
+
+## Generated building (`?house=glb`)
+
+An AI-generated house (a GLB from Tripo, Meshy or a CC0 model) can replace the procedural walls and roof: put the file at
+`web/public/models/house.glb`, open any page with the house with `?house=glb` (or set `NEXT_PUBLIC_HOUSE_GLB=1`). The site,
+the panels, the battery, wallbox, heat pump, flows and labels stay procedural, so the engine's design is drawn exactly as
+before; the panels sit on a procedural roof plane at the model's pitch. `GlbHouse.tsx` fits the model to the footprint
+(uniform scale to `targetLengthM` along x, centred, on the ground); tune `GLB_HOUSE` in `glbFit.ts` once per model
+(rotation so the main roof faces +z, pitch, offset): the dev console prints the model's bounding box on load. While the
+file downloads, and if it fails, the procedural building shows. `?house=procedural` forces the built one. Keep the GLB
+under about 3 MB (`npx @gltf-transform/cli optimize house.glb house.glb --texture-compress webp`).
