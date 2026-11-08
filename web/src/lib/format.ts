@@ -1,11 +1,12 @@
 import type { ComponentKey } from "./types";
 
 const int = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-const one = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const kwp = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
 const upTo1 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 
 export const fmtInt = (n: number) => int.format(Math.round(n));
-export const fmtKwp = (n: number) => one.format(n);
+/** kWp with the precision packages need (0.45 kWp panels: 11.25, 8.55), never fewer than one decimal. */
+export const fmtKwp = (n: number) => kwp.format(n);
 export const fmtPct = (share: number) => int.format(Math.round(share * 100));
 export const fmtEur = (n: number) => `€${int.format(Math.round(n))}`;
 export const fmtNum = (n: number) => upTo1.format(n);
