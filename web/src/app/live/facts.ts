@@ -35,8 +35,12 @@ export function factsToHome(f: Facts): Home {
   };
 }
 
-/** Keys of d-voice's calls.facts that are bookkeeping, not part of the engine Home. */
-const NOT_HOME = new Set(["stated", "voice", "assumptions", "updated_fields", "facts_updated_at", "solar", "solar_for", "conversation_id"]);
+/** The engine Home fields (lib/types Home). calls.facts also carries bookkeeping and the caller's display answers. */
+const HOME_KEYS: readonly (keyof Home)[] = [
+  "annual_kwh", "price_eur_kwh", "load_profile", "has_ev", "ev_km_year", "existing_pv_kwp", "existing_battery_kwh", "heating",
+  "heating_demand_kwh", "roof_type", "house_sqm", "inhabitants", "has_existing_pv", "demand_is_default", "existing_wallbox",
+  "orientation_deg", "tilt_deg", "offer_date", "roof_max_kwp", "roof_azimuth", "roof_pitch",
+];
 
 export interface LiveCallState {
   /** What the caller said (chips). */
@@ -67,7 +71,7 @@ export function callToLive(row: { customer_name: string | null; address: string 
     const facts = { ...(raw as Facts), customer_name: (raw.customer_name as string) ?? row.customer_name, address };
     return { facts, home: factsToHome(facts), ready: facts.annual_kwh != null || facts.monthly_bill_eur != null, location, updatedAt };
   }
-  const home = Object.fromEntries(Object.entries(raw).filter(([k]) => !NOT_HOME.has(k))) as unknown as Home;
+  const home = Object.fromEntries(HOME_KEYS.filter((k) => k in raw).map((k) => [k, raw[k]])) as unknown as Home;
   const estimate = voice.annual_kwh == null && typeof home.annual_kwh === "number" && home.annual_kwh > 0 ? home.annual_kwh : null;
   const facts: Facts = { ...voice, customer_name: row.customer_name ?? voice.customer_name ?? null, address, annual_kwh_estimate: estimate };
   return { facts, home, ready: typeof home.annual_kwh === "number" && home.annual_kwh > 0, location, updatedAt };

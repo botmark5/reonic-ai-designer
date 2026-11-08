@@ -331,10 +331,10 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
   const target = useMemo(() => revealFromFacts(facts, shownDraft, mode !== "idle"), [factsKey, shownDraft, mode]); // eslint-disable-line react-hooks/exhaustive-deps
   const reveal = useStagedReveal(target);
   const staged = useMemo(() => stagedDesign(shownDraft, reveal), [shownDraft, reveal]);
-  // c-3d's build-up keys; existing solar is on the roof as soon as the house stands (it comes from the home's facts);
+  // c-3d's build-up keys; the bare house always stands (idle = waiting for a call, never the still with panels); existing solar is on the roof as soon as the house stands (it comes from the home's facts);
   // the inverter follows the first panels (c-3d default)
   const stageReveal = useMemo<StageReveal>(
-    () => ({ shell: reveal.shell, roof: reveal.shell, warm: reveal.warm, existingPv: reveal.shell, panels: reveal.panels, battery: reveal.battery, car: reveal.car, heatpump: reveal.heatpump }),
+    () => ({ shell: true, roof: true, warm: reveal.warm, existingPv: reveal.shell, panels: reveal.panels, battery: reveal.battery, car: reveal.car, heatpump: reveal.heatpump }),
     [reveal],
   );
 
@@ -386,7 +386,7 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
               )}
               <span className="text-body-sm text-ink-muted">{mode === "demo" ? "Demo call" : "Site visit call"}</span>
             </div>
-            <h1 className="m-0 line-clamp-2 text-[clamp(26px,2.6vw,40px)] lg:truncate leading-[1.1] font-normal tracking-[-0.02em]">{title}</h1>
+            <h1 className="m-0 line-clamp-2 text-[clamp(26px,2.4vw,36px)] text-balance leading-[1.1] font-normal tracking-[-0.02em]">{title}</h1>
           </div>
           <Button variant="secondary" onClick={startDemo} className="mt-1 shrink-0">
             {mode !== "demo" ? <Play data-icon="inline-start" strokeWidth={1.5} /> : <RotateCcw data-icon="inline-start" strokeWidth={1.5} />}
@@ -434,7 +434,7 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
                   <li
                     key={i}
                     className={cn(
-                      "max-w-[88%] rounded-lg px-4 py-2.5 animate-in fade-in slide-in-from-bottom-1 duration-300 motion-reduce:animate-none",
+                      "relative max-w-[88%] rounded-lg px-4 py-2.5 animate-in fade-in slide-in-from-bottom-1 duration-300 motion-reduce:animate-none",
                       customer ? "self-end bg-surface-2 text-ink" : "self-start text-ink-body",
                     )}
                   >
@@ -464,13 +464,15 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
           controls="minimal"
           labels={wide}
           flyIn={false}
-          className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:[&_[data-h3d-stage]]:aspect-auto lg:[&_[data-h3d-stage]]:min-h-0 lg:[&_[data-h3d-stage]]:flex-1"
+          // Full height on lg, sized on the stage itself (any renderer: model, street, inside), not through wrappers:
+          // viewport − nav 57 − main padding 48 − gap 12 − draft card 188 − border 2
+          className="lg:[&_[data-h3d-stage]]:aspect-auto lg:[&_[data-h3d-stage]]:h-[max(320px,calc(100dvh-307px))]"
         />
 
         <div
           aria-labelledby="draft-t"
           className={cn(
-            "flex shrink-0 flex-col gap-3 rounded-lg border bg-surface-1 px-4 py-3.5 md:px-5",
+            "flex shrink-0 flex-col justify-between gap-3 rounded-lg border bg-surface-1 px-4 py-3.5 md:px-5 lg:h-[188px]",
             shownDraft
               ? "border-[1.5px] border-transparent [background:linear-gradient(var(--surface-1),var(--surface-1))_padding-box,linear-gradient(90deg,var(--ai-amber),var(--ai-orange),var(--ai-salmon))_border-box]"
               : "border-border",

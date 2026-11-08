@@ -148,6 +148,11 @@ describe("callToLive: a calls row from update_facts → chips, engine home, loca
     expect(l.home).toMatchObject({ annual_kwh: 4250, inhabitants: 4, has_ev: true, heating: "Gas", orientation_deg: 214, tilt_deg: 32 });
     for (const k of ["stated", "voice", "assumptions", "updated_fields", "facts_updated_at", "solar", "conversation_id"]) expect(l.home).not.toHaveProperty(k);
   });
+  it("the caller's display answers d-voice also writes at the top level never reach the engine", () => {
+    const l = callToLive({ ...row, facts: { ...row.facts, customer_name: "Anna Weber", household: 4, monthly_bill_eur: 120, roof_direction: "south", heating_age_years: 15 } });
+    for (const k of ["customer_name", "household", "monthly_bill_eur", "roof_direction", "heating_age_years"]) expect(l.home).not.toHaveProperty(k);
+    expect(l.home.annual_kwh).toBe(4250);
+  });
   it("ready to draft once the derived home has a yearly use", () => {
     expect(callToLive(row).ready).toBe(true);
     expect(callToLive({ ...row, facts: { voice: { customer_name: "A" } } }).ready).toBe(false);
