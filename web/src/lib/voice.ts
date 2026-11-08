@@ -243,7 +243,7 @@ function displayFacts(f: VoiceFacts) {
 }
 
 /** Enough to size a system without inventing the household's use. */
-function hasUsageFacts(raw: Record<string, unknown>): boolean {
+export function hasUsageFacts(raw: Record<string, unknown>): boolean {
   return [raw.annual_kwh, raw.monthly_bill_eur].some((v) => (parsePositive(v) ?? 0) > 0) || parseHousehold(raw.household) != null;
 }
 
@@ -490,7 +490,7 @@ export function voiceDeps(defer: VoiceDeps["defer"]): VoiceDeps {
 }
 
 /** Resolve to the value, or null on timeout / error (logged without details that could hold secrets). */
-async function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T | null> {
+export async function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<null>((resolve) => {
     timer = setTimeout(() => {
@@ -518,6 +518,16 @@ export interface DraftResult {
   pending: boolean;
 }
 
+/** Google's roof fills the orientation and tilt the caller did not state (create_design and /intake alike). */
+export function applyGoogleRoof(home: Home, solar: SolarResult | null, assumptions: string[]): void {
+  const roof = solar ? roofFromSolar(solar) : null;
+  if (roof && (home.orientation_deg == null || home.tilt_deg == null)) {
+    if (home.orientation_deg == null) home.orientation_deg = roof.orientation_deg;
+    if (home.tilt_deg == null) home.tilt_deg = roof.tilt_deg;
+    assumptions.push(`Roof orientation ${home.orientation_deg}° and tilt ${home.tilt_deg}° from Google Solar (largest roof face where not stated).`);
+  }
+}
+
 export async function createDraftFromFacts(
   raw: unknown,
   deps: VoiceDeps,
@@ -531,12 +541,7 @@ export async function createDraftFromFacts(
   if (facts.address) {
     solar = storedSolar // update_facts already looked this roof up
       ?? (await withTimeout(deps.solar(facts.address), Math.min(SOLAR_BUDGET_MS, opts.budgetMs * 0.36), "solar"));
-    const roof = solar ? roofFromSolar(solar) : null;
-    if (roof && (home.orientation_deg == null || home.tilt_deg == null)) {
-      if (home.orientation_deg == null) home.orientation_deg = roof.orientation_deg;
-      if (home.tilt_deg == null) home.tilt_deg = roof.tilt_deg;
-      assumptions.push(`Roof orientation ${home.orientation_deg}° and tilt ${home.tilt_deg}° from Google Solar (largest roof face where not stated).`);
-    }
+    applyGoogleRoof(home, solar, assumptions);
   }
 
   const req: DesignRequest = { installer: deps.installer, home, locks: EMPTY_LOCKS };
