@@ -99,8 +99,18 @@ function useSync(ref: RefObject<CameraControls | null>, key: string | undefined,
   };
 }
 
-export function CameraRig({ request, rotationY, reduced, flyIn, syncKey }: {
+/** Zoom to one part: its point in house coordinates and how far the camera stands from it. */
+export interface CameraFocus {
+  /** Changes when the part or its position changes. */
+  key: string;
+  target: readonly [number, number, number];
+  dist: number;
+}
+
+export function CameraRig({ request, rotationY, reduced, flyIn, syncKey, focus = null }: {
   request: PresetRequest; rotationY: number; reduced: boolean; flyIn: boolean; syncKey?: string;
+  /** Glide to this part (keeping the viewing angle); back to the preset when it clears. */
+  focus?: CameraFocus | null;
 }) {
   const ref = useRef<CameraControls>(null);
   const first = useRef(true);
@@ -136,6 +146,36 @@ export function CameraRig({ request, rotationY, reduced, flyIn, syncKey }: {
     first.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- lead only marks this stage as the leader
   }, [request, rotationY, flyIn]);
+
+  // click to focus: glide to the part from the current viewing angle; let go: back to the active preset
+  const focused = useRef(false);
+  const focusRef = useRef(focus);
+  useEffect(() => { focusRef.current = focus; });
+  const presetRef = useRef(request);
+  useEffect(() => { presetRef.current = request; }, [request]);
+  const focusKey = focus?.key ?? null;
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    const rot = new THREE.Matrix4().makeRotationY(rotationY);
+    const f = focusRef.current;
+    if (f) {
+      lead();
+      flying.current = false;
+      c.smoothTime = SMOOTH;
+      const t = new THREE.Vector3(f.target[0], f.target[1], f.target[2]).applyMatrix4(rot);
+      const dir = c.getPosition(new THREE.Vector3(), true).sub(c.getTarget(new THREE.Vector3(), true)).normalize();
+      if (dir.y < 0.3) { dir.y = 0.3; dir.normalize(); } // never from below or flat on the ground
+      const p = t.clone().addScaledVector(dir, f.dist);
+      void c.setLookAt(p.x, p.y, p.z, t.x, t.y, t.z, !reducedRef.current);
+      focused.current = true;
+    } else if (focused.current) {
+      focused.current = false;
+      lead();
+      void look(c, VIEWS[presetRef.current.preset], rot, !reducedRef.current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-aim only when the focused part changes
+  }, [focusKey]);
 
   // skip the fly-in on any key; a drag or pinch takes over the camera by itself
   useEffect(() => {

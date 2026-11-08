@@ -44,6 +44,8 @@ export interface SceneProps {
   cameraKey?: string;
   /** Planner panel editing (null: off). */
   panelEdit?: PanelEditing | null;
+  /** The part the camera zooms to (click to focus); null: the preset view. */
+  focus?: CompKey | null;
   /** false while the canvas is scrolled out of view: the render loop pauses. */
   inView: boolean;
   onMiss: () => void;
@@ -156,7 +158,7 @@ function Exposure({ dark }: { dark: boolean }) {
   return null;
 }
 
-function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn, shown, building, hpOption, hpOptionKw, labels: showLabels, cameraKey, panelEdit }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
+function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn, shown, building, hpOption, hpOptionKw, labels: showLabels, cameraKey, panelEdit, focus = null }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
   const rotationY = THREE.MathUtils.degToRad(180 - spec.roof.azimuthDeg);
   const house = useMemo(() => buildHouse(spec.roof.pitchDeg, palette), [spec.roof.pitchDeg, palette]);
   const equipment = useMemo(() => buildEquipment(palette), [palette]);
@@ -198,6 +200,22 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
     };
     return { nodes, rays, labels };
   }, [spec.layout.slots, frames, anchors]);
+  // click to focus: the part's centre and a camera distance that frames it (the car comes with the wallbox)
+  const cameraFocus = useMemo(() => {
+    if (!focus) return null;
+    // aim between the part and its info card, so both stay in frame
+    const mid = (k: CompKey, at: THREE.Vector3) => at.clone().lerp(labels[k], 0.5);
+    const at: Record<CompKey, [THREE.Vector3, number]> = {
+      pv: [mid("pv", nodes.panels), 17],
+      inverter: [mid("inverter", nodes.inverter), 8.5],
+      battery: [mid("battery", nodes.battery), 9.5],
+      wallbox: [mid("wallbox", nodes.wallbox).lerp(nodes.car, 0.3), 12],
+      heatpump: [mid("heatpump", nodes.heatpump), 9.5],
+    };
+    const [p, dist] = at[focus];
+    const target = [p.x, p.y, p.z] as const;
+    return { key: `${focus}:${target.map((x) => x.toFixed(1)).join(",")}`, target, dist };
+  }, [focus, nodes, labels]);
 
   // the sun stays put in the world; express its direction in house coordinates (for the rays)
   const sunLocal = useMemo(() => sunDirection(moment.sun).applyAxisAngle(UP, -rotationY), [moment.sun, rotationY]);
@@ -265,7 +283,7 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
       </group>
       <Daylight moment={moment} palette={palette} reduced={reduced} />
       <FitWidth />
-      <CameraRig request={preset} rotationY={rotationY} reduced={reduced} flyIn={flyIn} syncKey={cameraKey} />
+      <CameraRig request={preset} rotationY={rotationY} reduced={reduced} flyIn={flyIn} syncKey={cameraKey} focus={cameraFocus} />
     </>
   );
 }

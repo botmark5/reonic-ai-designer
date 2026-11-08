@@ -35,8 +35,13 @@ export interface HouseStageProps {
   reveal?: StageReveal;
   /** Emphasise one part (e.g. the card the planner hovers). */
   highlight?: ComponentKey | null;
-  /** The viewer clicked a part in the scene (null: clicked empty space). */
+  /** The viewer clicked a part in the scene (null: clicked empty space / Esc). */
   onSelect?: (key: ComponentKey | null) => void;
+  /**
+   * The part the camera zooms to and features (controlled). Omit and a click on a part focuses it by itself; null:
+   * the preset view. Clicking a part, Esc and clicking empty space report through `onSelect`.
+   */
+  focus?: ComponentKey | null;
   /** Stages with the same key share one orbit (e.g. two houses side by side on /reality). */
   cameraKey?: string;
   /** Controlled time of day in hours (6–22). Omit for the built-in slider; with it, the slider follows. */
@@ -73,7 +78,7 @@ const FADE_MS = 500;
  * Props that a renderer does not support yet are accepted and ignored, so pages can wire them now.
  */
 export function HouseStage({
-  design, home, mode = "homeowner", roof, location, view, zones, onZonesChange, sunMap, reveal, highlight, onSelect, cameraKey, timeOfDay,
+  design, home, mode = "homeowner", roof, location, view, zones, onZonesChange, sunMap, reveal, highlight, onSelect, focus, cameraKey, timeOfDay,
   onTimeOfDayChange, labels, controls, editable, onPanelsChange, static: forceStatic, flyIn, className,
 }: HouseStageProps) {
   const wanted = useSyncExternalStore(noop, () => tilesWanted(window.location.search, TILES_FLAG), () => false);
@@ -149,6 +154,7 @@ export function HouseStage({
       reveal={reveal}
       highlight={highlight}
       onSelect={onSelect}
+      focus={focus}
       cameraKey={cameraKey}
       editable={editable}
       onPanelsChange={onPanelsChange}
