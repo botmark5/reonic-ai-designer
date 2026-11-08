@@ -68,3 +68,14 @@ lines temporarily hidden, screenshot the model area at 1600×1000 and replace th
 outside (behind `?tiles=1` / `NEXT_PUBLIC_HOUSE_TILES=1`, needs `location`) and the inside diorama land behind the
 same props. Props not yet supported by a renderer are accepted and ignored. Full prop list: `HouseStage.tsx`.
 `/reality` never passes `location` (Reonic projects have no address; we never geocode Reonic data).
+
+### Live today (procedural house)
+- `reveal`: shell rises out of the board → roof settles → existing PV / new panels drop row by row → inverter (with
+  the first panels) and battery modules stack in → car drives in with the wallbox → heat pump stands as a ghost for
+  0.9 s, then solid. Energy only flows through parts already on stage. Omit `reveal` for the whole design at once.
+- `highlight` / `onSelect`: emphasise a part from outside (tooltip + readout row); clicks in the scene or the
+  readout report the picked part (null on empty space).
+- `cameraKey`: stages with the same key share one orbit in house coordinates; whichever the viewer touched leads.
+- `timeOfDay` / `onTimeOfDayChange`: controlled time; Play is hidden when controlled without a change handler.
+- `labels`: always-on projector labels (Solar kWp, Battery kWh, Wallbox kW, Heat pump kW).
+- `controls`: "full" (time bar + readout UNDER the model), "minimal" (camera presets), "none".

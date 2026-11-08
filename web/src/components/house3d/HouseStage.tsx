@@ -54,7 +54,8 @@ export interface HouseStageProps {
  * Props that a renderer does not support yet are accepted and ignored, so pages can wire them now.
  */
 export function HouseStage({
-  design, home, mode = "homeowner", roof, location, static: forceStatic, flyIn, className,
+  design, home, mode = "homeowner", roof, location, reveal, highlight, onSelect, cameraKey, timeOfDay,
+  onTimeOfDayChange, labels, controls, static: forceStatic, flyIn, className,
 }: HouseStageProps) {
   return (
     <House3D
@@ -62,6 +63,14 @@ export function HouseStage({
       home={home}
       mode={mode}
       roof={stageRoof(roof, location)}
+      reveal={reveal}
+      highlight={highlight}
+      onSelect={onSelect}
+      cameraKey={cameraKey}
+      timeOfDay={timeOfDay}
+      onTimeOfDayChange={onTimeOfDayChange}
+      labels={labels}
+      controls={controls}
       static={forceStatic}
       flyIn={flyIn}
       className={className}

@@ -30,3 +30,24 @@ export function Tooltip({ spec, position }: { spec: CompSpec; position: THREE.Ve
     </Html>
   );
 }
+
+const SHORT: Record<CompSpec["key"], string> = {
+  pv: "Solar", inverter: "Inverter", battery: "Battery", wallbox: "Wallbox", heatpump: "Heat pump",
+};
+
+/** Always-on label for a projector: name and size, big enough to read from the back of the room. */
+export function Label({ spec, position }: { spec: CompSpec; position: THREE.Vector3 }) {
+  const size = spec.size?.split(" (")[0];
+  return (
+    <Html position={position} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+      <div
+        aria-hidden
+        className="flex w-max -translate-y-1/2 items-center gap-2 rounded-full border border-border bg-surface-1/95 py-1.5 pl-2.5 pr-3.5 text-ink shadow-[0_8px_24px_rgba(16,17,20,0.12)] backdrop-blur-sm"
+      >
+        <span aria-hidden className={`size-2.5 shrink-0 rounded-full ${DOT[spec.key]}`} />
+        <span className="text-base font-semibold">{SHORT[spec.key]}</span>
+        {size && <span className="font-mono text-base font-medium tabular-nums text-ink-body">{size}</span>}
+      </div>
+    </Html>
+  );
+}

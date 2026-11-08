@@ -54,6 +54,8 @@ export interface Anchors {
 
 export interface BuiltHouse {
   group: THREE.Group;
+  /** Layers for the build-up: site (board, paving, trees), shell (walls, windows, doors), roof. */
+  parts: { site: THREE.Group; shell: THREE.Group; roof: THREE.Group };
   frames: { main: PlaneFrame; garage: PlaneFrame };
   anchors: Anchors;
 }
@@ -181,13 +183,12 @@ function windowAt(g: THREE.Group, m: Mats, face: "s" | "n" | "e" | "w", along: n
   add(new THREE.BoxGeometry(w + 0.3, 0.06, 0.18), m.plinth, out + 0.06, -h / 2 - 0.1); // sill
 }
 
-/** Architectural-model tree: a slim stem and a smooth crown. */
+/** Architectural-model tree: a low cone on a short stem (stays under the eaves, never hides the house). */
 function tree(g: THREE.Group, m: Mats, x: number, z: number, s: number) {
-  const trunk = mesh(new THREE.CylinderGeometry(0.07 * s, 0.09 * s, 2.2 * s, 10), m.trunk);
-  trunk.position.set(x, 1.1 * s, z);
-  const crown = mesh(new THREE.SphereGeometry(1.35 * s, 24, 16), m.tree);
-  crown.position.set(x, 3.0 * s, z);
-  crown.scale.set(1, 1.08, 1);
+  const trunk = mesh(new THREE.CylinderGeometry(0.06 * s, 0.08 * s, 0.6 * s, 10), m.trunk);
+  trunk.position.set(x, 0.3 * s, z);
+  const crown = mesh(new THREE.ConeGeometry(1.0 * s, 2.3 * s, 32, 1), m.tree);
+  crown.position.set(x, 0.5 * s + 1.15 * s, z);
   g.add(trunk, crown);
 }
 
@@ -223,13 +224,21 @@ export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
   const m = materials(palette);
   const g = new THREE.Group();
   g.name = "house";
+  // three layers so /live can build the model up: the site, the walls, the roof
+  const site = new THREE.Group();
+  const shell = new THREE.Group();
+  const top = new THREE.Group();
+  site.name = "site";
+  shell.name = "shell";
+  top.name = "roof";
+  g.add(site, shell, top);
   const { length: L, depth: D, eaveHeight: H, eaveOverhang: oh } = HOUSE;
   const tanP = Math.tan(rad(pitchDeg));
   const ridgeH = H + (D / 2) * tanP;
   const [mainPlane, garagePlane] = roofPlanes(pitchDeg);
 
   // Base board, street, paving
-  board(g, m);
+  board(site, m);
   const driveLen = STREET_Z - 1.7 - FRONT_Z;
   const drive = mesh(new THREE.BoxGeometry(HOUSE.garage.width + 0.6, 0.03, driveLen), m.paving, false, true);
   drive.position.set(GARAGE_CX, 0.015, FRONT_Z + driveLen / 2);
@@ -237,7 +246,7 @@ export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
   path.position.set(1.2, 0.015, FRONT_Z + driveLen / 2);
   const terrace = mesh(new THREE.BoxGeometry(5.5, 0.05, 3), m.paving, false, true);
   terrace.position.set(-3.2, 0.025, FRONT_Z + 1.5);
-  g.add(drive, path, terrace);
+  site.add(drive, path, terrace);
 
   // Walls: pentagon cross-section extruded along x
   const section = new THREE.Shape();
@@ -250,42 +259,42 @@ export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
   const wallsGeo = new THREE.ExtrudeGeometry(section, { depth: L, bevelEnabled: false });
   wallsGeo.rotateY(Math.PI / 2); // local z → world x, local x → world -z (symmetric section)
   wallsGeo.translate(-L / 2, 0, 0);
-  g.add(mesh(wallsGeo, m.wall));
-  g.add(box(L + 0.06, 0.45, D + 0.06, m.plinth, 0, 0.225, 0));
+  shell.add(mesh(wallsGeo, m.wall));
+  shell.add(box(L + 0.06, 0.45, D + 0.06, m.plinth, 0, 0.225, 0));
 
   // Roof planes
   const mainFrame = frameFor(mainPlane, 1, pitchDeg, new THREE.Vector3(0, H - oh * tanP, D / 2 + oh));
   const northFrame = frameFor({ ...mainPlane }, -1, pitchDeg, new THREE.Vector3(0, H - oh * tanP, -D / 2 - oh));
   for (const f of [mainFrame, northFrame]) {
     const slope = f.plane.slope;
-    g.add(onPlane(f, f.plane.width, HOUSE.roofThickness, slope, 0, slope / 2, -HOUSE.roofThickness / 2, m.roof));
+    top.add(onPlane(f, f.plane.width, HOUSE.roofThickness, slope, 0, slope / 2, -HOUSE.roofThickness / 2, m.roof));
     // concrete-tile banding
     // eave fascia
-    g.add(onPlane(f, f.plane.width + 0.04, 0.3, 0.06, 0, 0.03, -0.12, m.roofEdge));
+    top.add(onPlane(f, f.plane.width + 0.04, 0.3, 0.06, 0, 0.03, -0.12, m.roofEdge));
     // verge boards along the gable edges
-    for (const side of [-1, 1]) g.add(onPlane(f, 0.08, 0.32, slope, side * (f.plane.width / 2), slope / 2, -0.05, m.roofEdge));
+    for (const side of [-1, 1]) top.add(onPlane(f, 0.08, 0.32, slope, side * (f.plane.width / 2), slope / 2, -0.05, m.roofEdge));
   }
-  g.add(box(mainPlane.width + 0.04, 0.16, 0.36, m.roofEdge, 0, ridgeH + 0.02, 0)); // ridge cap
+  top.add(box(mainPlane.width + 0.04, 0.16, 0.36, m.roofEdge, 0, ridgeH + 0.02, 0)); // ridge cap
 
   // Chimney on the north plane (keeps the south plane free for panels)
-  g.add(box(0.6, 2.4, 0.6, m.plinth, -2.6, ridgeH - 0.6, -1.6));
-  g.add(box(0.72, 0.1, 0.72, m.roofEdge, -2.6, ridgeH + 0.65, -1.6));
+  top.add(box(0.6, 2.4, 0.6, m.plinth, -2.6, ridgeH - 0.6, -1.6));
+  top.add(box(0.72, 0.1, 0.72, m.roofEdge, -2.6, ridgeH + 0.65, -1.6));
 
   // South facade: door, windows (ground floor, upper floor)
-  g.add(box(1.1, 2.15, 0.1, m.door, 1.2, 1.08 + 0.45, FRONT_Z + 0.03));
-  g.add(box(1.4, 0.08, 0.9, m.trim, 1.2, 2.75, FRONT_Z + 0.45)); // canopy
-  for (const x of [-4.4, -2.0]) windowAt(g, m, "s", x, 1.75, 1.5, 1.4);
-  windowAt(g, m, "s", 3.6, 1.75, 1.0, 1.2);
-  for (const x of [-4.4, -1.6, 1.2, 3.8]) windowAt(g, m, "s", x, 4.15, 1.1, 1.25);
+  shell.add(box(1.1, 2.15, 0.1, m.door, 1.2, 1.08 + 0.45, FRONT_Z + 0.03));
+  shell.add(box(1.4, 0.08, 0.9, m.trim, 1.2, 2.75, FRONT_Z + 0.45)); // canopy
+  for (const x of [-4.4, -2.0]) windowAt(shell, m, "s", x, 1.75, 1.5, 1.4);
+  windowAt(shell, m, "s", 3.6, 1.75, 1.0, 1.2);
+  for (const x of [-4.4, -1.6, 1.2, 3.8]) windowAt(shell, m, "s", x, 4.15, 1.1, 1.25);
   // Gables and north
   for (const z of [-2, 2]) {
-    windowAt(g, m, "w", z, 1.75, 1.1, 1.3);
-    windowAt(g, m, "w", z, 4.15, 1.0, 1.2);
+    windowAt(shell, m, "w", z, 1.75, 1.1, 1.3);
+    windowAt(shell, m, "w", z, 4.15, 1.0, 1.2);
   }
-  windowAt(g, m, "e", -3.4, 4.15, 1.0, 1.2); // behind the garage roof line
-  windowAt(g, m, "w", 0, H + 1.0, 0.7, 0.8);
-  windowAt(g, m, "e", 0, H + 1.0, 0.7, 0.8);
-  for (const x of [-3.5, 0, 3.5]) windowAt(g, m, "n", x, 4.15, 1.0, 1.2);
+  windowAt(shell, m, "e", -3.4, 4.15, 1.0, 1.2); // behind the garage roof line
+  windowAt(shell, m, "w", 0, H + 1.0, 0.7, 0.8);
+  windowAt(shell, m, "e", 0, H + 1.0, 0.7, 0.8);
+  for (const x of [-3.5, 0, 3.5]) windowAt(shell, m, "n", x, 4.15, 1.0, 1.2);
 
   // Garage: trapezoid section (higher at the back) extruded along x
   const G = HOUSE.garage;
@@ -300,21 +309,21 @@ export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
   const gGeo = new THREE.ExtrudeGeometry(gs, { depth: G.width, bevelEnabled: false });
   gGeo.rotateY(Math.PI / 2);
   gGeo.translate(GARAGE_X0, 0, 0);
-  g.add(mesh(gGeo, m.wall));
-  g.add(box(G.width + 0.04, 0.45, G.depth + 0.04, m.plinth, GARAGE_CX, 0.225, FRONT_Z - G.depth / 2));
+  shell.add(mesh(gGeo, m.wall));
+  shell.add(box(G.width + 0.04, 0.45, G.depth + 0.04, m.plinth, GARAGE_CX, 0.225, FRONT_Z - G.depth / 2));
   const garageFrame = frameFor(garagePlane, 1, G.pitchDeg, new THREE.Vector3(GARAGE_CX, G.height - G.overhang * gTan, FRONT_Z + G.overhang));
-  g.add(onPlane(garageFrame, garagePlane.width, 0.2, garagePlane.slope, 0, garagePlane.slope / 2, -0.1, m.roofEdge));
-  g.add(onPlane(garageFrame, garagePlane.width + 0.04, 0.26, 0.06, 0, 0.03, -0.1, m.roofEdge));
+  top.add(onPlane(garageFrame, garagePlane.width, 0.2, garagePlane.slope, 0, garagePlane.slope / 2, -0.1, m.roofEdge));
+  top.add(onPlane(garageFrame, garagePlane.width + 0.04, 0.26, 0.06, 0, 0.03, -0.1, m.roofEdge));
   // Sectional garage door with grooves
-  g.add(box(2.6, 2.2, 0.08, m.garageDoor, GARAGE_CX - 0.3, 1.1, FRONT_Z + 0.04));
-  for (let y = 0.55; y < 2.2; y += 0.55) g.add(box(2.6, 0.03, 0.1, m.plinth, GARAGE_CX - 0.3, y, FRONT_Z + 0.05));
+  shell.add(box(2.6, 2.2, 0.08, m.garageDoor, GARAGE_CX - 0.3, 1.1, FRONT_Z + 0.04));
+  for (let y = 0.55; y < 2.2; y += 0.55) shell.add(box(2.6, 0.03, 0.1, m.plinth, GARAGE_CX - 0.3, y, FRONT_Z + 0.05));
 
   // Garden
-  tree(g, m, -10.5, -4, 1.15);
-  tree(g, m, -11.2, 7.5, 0.9);
-  tree(g, m, 4, -9.8, 1.05);
+  tree(site, m, -10.5, -4, 1.15);
+  tree(site, m, -11.2, 7.5, 0.9);
+  tree(site, m, 4, -9.8, 1.05);
   // Grid connection cabinet at the street
-  g.add(box(0.7, 1.1, 0.35, m.plinth, 3.6, 0.55, STREET_Z - 2.4));
+  site.add(box(0.7, 1.1, 0.35, m.plinth, 3.6, 0.55, STREET_Z - 2.4));
 
   const gEast = GARAGE_X0 + G.width;
   const anchors: Anchors = {
@@ -333,5 +342,5 @@ export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
     house: new THREE.Vector3(1.2, 2.2, FRONT_Z),
   };
 
-  return { group: g, frames: { main: mainFrame, garage: garageFrame }, anchors };
+  return { group: g, parts: { site, shell, roof: top }, frames: { main: mainFrame, garage: garageFrame }, anchors };
 }
