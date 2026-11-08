@@ -5,7 +5,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 **Status, night of 7–8 Nov (e-spare, from git and the session statuses):**
 - **Production is frozen at #88 (8b20c12)** because Vercel's Hobby build limit is hit. Everything merged after #88 deploys in one go once Mark upgrades Vercel; #92 (skip builds when web/ is unchanged) is open for Mark.
 - **The engine needs `railway up` (Cala)** for #100 (GET /heldout, the three two-houses cases on /reality) and #107 (/eval by_band). Until then /reality shows the older example cases.
-- Open hero PRs: #89 /live A (the house builds during the call), #103 /offer A. Both merge cleanly with main; 320 web tests pass on the combination.
+- Open hero PRs: #89 /live A (the house builds during the call), #103 /offer A. Both merge cleanly with main; 331 web tests pass on the combination (main 30ec419 alone: 292 web, 407 engine).
 
 ## Phase 0 — Setup
 - [x] Mark: private repo + invite Cala; push starter kit

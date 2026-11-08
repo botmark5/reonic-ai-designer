@@ -25,10 +25,10 @@ In Reonic's words, planners "spend hours on every single design", and "the first
 ## How we meet Reonic's criteria
 
 ### 1. Technical depth: reproducing expert decisions on unseen projects
-- **Protocol.** 315 held-out homes, split by customer, never used for training or tuning. For every metric we compare with the best of three rules of thumb (kWh ÷ 1,000, the installer's median per consumption band, the installer's kWp per MWh).
+- **Protocol.** 315 held-out homes, split by customer, never used for training; model choices were made by cross-validation on the training part. For every metric we compare with the best of three rules of thumb (kWh ÷ 1,000, the installer's median per consumption band, the installer's kWp per MWh).
 - **All homes.** Whole-project PV error 2.94 kWp against 3.77 for the best rule (22 % lower). The engine recognises add-on sales from the planner's inputs: on 62 add-on homes it proposes no new solar for 77 %, where rules of thumb manage 6 %. PV yes/no is right for 88 % against 82 %.
 - **New systems (253 homes).** PV error 2.50 kWp against 2.62: on par with the best rule, inside cross-validation noise. Every learner, hybrid and tuned variant we tried lands at 2.47–2.57 kWp. We hit the ceiling of what these inputs explain; the rest is roof size and customer wishes, which the data does not hold.
-- **Calibrated ranges.** The expert's PV falls inside the engine's P10–P90 range for 79–81 % of new full systems, against a target of 80 %.
+- **Calibrated ranges.** The expert's PV falls inside the engine's P10–P90 range for 79–81 % of new full systems, against a target of 80 %. Next to its proposal the engine offers one smaller and one larger alternative; for 67 % of new systems the expert's PV is within 1.5 kWp of one of these three options.
 - **Battery.** Size error where both chose a battery is 2.45 kWh against 2.71, and the size is within one catalogue step for 54 % of homes against 51 %. Installers size the battery by PV, not by consumption, and the chain reproduces that.
 - **Transfer.** Trained on one installer and tested on the other, PV size error is 2.91 against 3.00 kWp and 2.79 against 3.15 kWp. The margins are small and rest on one pair of installers.
 - **Where it is not better.** PV within ±1.5 kWp: 40 % against 43 %. Battery yes/no over all homes: 88 % against 90 %. Wallbox yes/no: 72 % against 73 %, close to a coin flip without EV information.
@@ -46,7 +46,7 @@ In Reonic's words, planners "spend hours on every single design", and "the first
 
 ### 4. Execution and demo
 - The demo runs end to end on production: phone call → draft in the inbox → "buying an EV next year" → design adapts → compared with the real expert design and the metrics across 315 held-out homes → homeowner link.
-- 393 engine tests and 176 web tests.
+- 407 engine tests and 292 web tests (main on the night of 7–8 Nov; re-count at the 11:00 freeze).
 - The engine evaluation is reproducible from the repository, given Reonic's data.
 
 ## Best use of ElevenLabs
