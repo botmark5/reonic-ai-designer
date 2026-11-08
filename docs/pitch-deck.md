@@ -68,4 +68,4 @@ homeowners**. The four criteria weigh equally: technical depth, user fit, busine
   `3_existing_pv_question.png` is the what-if (answered mode): slide 8 only, never slide 6.
 - Rehearse twice with the runbook; the deck takes 2:30 without the demo, 5:00 with slides 1–3 and 6–11 around it.
 - If engine PR #82 is on production, slide 8's fourth tile ("small homes get a full system on purpose") can also be shown
-  live: a 1,600 kWh home gets 7.65 kWp + 9.2 kWh and the flags say "most of the yield is fed in", not "implausible".
+  live (hybrid engine): a 1,600 kWh home gets 7.2 kWp + 5 kWh and the flags say "most of the yield is fed in", not "implausible".
