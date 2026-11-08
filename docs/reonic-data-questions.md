@@ -10,8 +10,9 @@ does not contain. These are the questions, ordered by expected gain.
 2. **Roof data of past projects.** Address or coordinates (or roof area, orientation, pitch) per project would let us
    look up roof capacity with the Google Solar API, as the live form already does, and learn "large roof → larger
    system" instead of only capping. *Ask:* is the address / geo position available, or a roof-planning export?
-3. **Which offer option was signed.** Today we assume the lowest option number. *Ask:* is the signed option (or the
-   option the planner marked as recommended) stored?
+3. **Which offer option was signed.** *Answered by Niklas (Reonic) on 8 Nov:* not in the export, and there is no reliable
+   proxy (option numbers only count up; a gap is a deleted option, not a rejection); every option is a valid planner's
+   design. Done: the engine now trains on every option and also scores against the nearest option (PR #127).
 4. **Existing PV on the roof.** Recorded for only ~5 % of battery-only offers; answering it lifts PV yes/no from 90 % to
    100 % on our test set. *Ask:* is it stored elsewhere (e.g. site-visit form), or can it be made a required field?
 5. **Customer budget or financing.** Planners balance designs against what the homeowner can afford. *Ask:* is a budget,

@@ -12,6 +12,10 @@ Verified on the data 2026-11-07 (profiling + `engine/labels.py`). Extraction rul
 
 ## Facts checked in the data
 - Every project has `first_signed_at` → the data is **won offers only**. Which option was signed is not recorded.
+  **Reonic's answer (Niklas, 8 Nov 2026, asked by Darius):** no signed flag in the export; no reliable proxy either, option numbers
+  just count up as options are created (planners add variants or copy and keep editing), so neither the lowest nor the highest is
+  reliably the main or final design; gaps are deleted options and mean nothing; treat every option as a valid planner's design
+  (most projects have one option; multi-option projects are often near-identical).
 - **Numeric columns in the parts file are shifted.** On BatteryStorage rows `inverter_power_kw` holds the battery capacity
   in Wh (filled on 100% of battery rows). On Inverter rows `battery_capacity_kwh` holds inverter power in W.
   `wb_charging_speed_kw`, `heatpump_nominal_power_kw`, `module_watt_peak` are in W.
@@ -29,8 +33,12 @@ Verified on the data 2026-11-07 (profiling + `engine/labels.py`). Extraction rul
 - 41 customers have two projects (2a8) → group train/test splits by customer as well as project.
 
 ## Labelling decisions (approved by Mark 2026-11-07; details and examples in docs/labels-rules.md)
-- Primary label = lowest option_number among the project's full new-system designs (lowest overall if none). All variants kept:
-  per-project min/max PV and battery = the acceptable range for evaluation and the homeowner's choices.
+- Primary label (the evaluation row) = lowest option_number among the project's full new-system designs (lowest overall if none).
+  It is a representative row, not the signed option (none is marked, see above). **Training uses every option for the sizes** since
+  8 Nov (`evaluate.build_train_table`, exact duplicates dropped; 1,536 rows from 1,272 training projects); the yes/no decisions
+  (new PV / add-on, battery, wallbox) still learn from the first full design only (`is_primary`), see engine/RESULTS.md. All variants kept:
+  per-project min/max PV and battery = the acceptable range for evaluation and the homeowner's choices; `pv_options` /
+  `battery_options` = the distinct sizes, scored by the `*_nearest_option` metrics (error against the closest option).
 - `offer_type`: new_system 1,624 · battery_retrofit 232 · wallbox_only 75 · no_components 25 · heatpump_only 21 · pv_extension 17
   options. Main model and evaluation use `is_full_design` (= new_system) and not `is_outlier`.
 - PV kWp, in order: module lines (qty × planning W) → 23c package kWp → 2a8 per-panel count (Substructure qty) × 450 W →

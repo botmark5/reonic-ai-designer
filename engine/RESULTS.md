@@ -29,6 +29,63 @@ battery-only offer = yes, new system = no, wallbox-only/other = unknown). It is 
    expert labels but moves PV MAE by ≤ 0.02 kWp and battery MAE by ≤ 0.16 kWh; the conformal P10–P90 PV range contains the expert's size in
    79–81 % of new full systems (target 80 %); two trainings give identical predictions (fixed seeds).
 
+## All offer options as training rows (Reonic's answer, 8 Nov)
+
+Darius asked Reonic which option of a multi-option project the customer signed. Niklas (Reonic): no signed flag in the export, no
+reliable proxy (option numbers only count up; a gap is a deleted option), and **every option is a valid planner's design**. The engine
+had been training on one row per project (lowest option number). Four variants on the locked test set (315 projects, 61 with 2+
+options, 1,272 training projects = 1,536 option rows), scored **both ways**: against the first option (the primary row, as before)
+and against the **nearest option** of the project (the honest view once no option is "the" signed one).
+
+- **A current** (deployed until 8 Nov): one row per project, the first full design.
+- **B all options everywhere**: every option is a training row for everything.
+- **C hybrid (shipped)**: yes/no decisions (new PV, offer type, battery, wallbox, cut-offs) learn from the first full design only;
+  sizes, ranges, packages and alternatives learn from every option. A project with a retrofit *and* a new-system option otherwise
+  teaches "new PV" and "no new PV" for the same home, which is what cost B five points on add-ons.
+- **R best rule**: band-median baseline.
+
+| all projects, not answered | A current | B all options | **C hybrid** | R best rule |
+|---|---|---|---|---|
+| PV kWp MAE, all projects | 2.94 | 2.91 | **2.93** | 3.77 |
+| PV kWp MAE, size only | 2.48 | 2.43 | **2.45** | 2.64 |
+| PV within ±1.5 kWp | 40 % | 41 % | **40 %** | 43 % |
+| PV in expert variants ±1 kWp | 42 % | 43 % | **43 %** | 30 % |
+| battery kWh MAE, size only | 2.45 | 2.44 | **2.42** | 2.71 |
+| battery within 1 step | 54 % | 56 % | **56 %** | 51 % |
+| PV yes/no | 87.6 % | 87.3 % | **87.6 %** | 81.6 % |
+| battery yes/no | 87.6 % | 88.9 % | **87.6 %** | 89.8 % |
+| wallbox yes/no | 71.7 % | 71.4 % | **71.7 %** | 72.7 % |
+| offer type | 83.2 % | 83.5 % | **83.2 %** | – |
+| P10–P90 contains expert PV | 80 % | 82 % | **82 %** | – |
+| top-3 within ±1.5 kWp | 70 % | 67 % | **67 %** | – |
+| nearest option: PV kWp MAE, size only | 2.45 | 2.39 | **2.41** | 2.60 |
+| nearest option: PV within ±1.5 kWp | 45 % | 47 % | **47 %** | 45 % |
+| nearest option: battery kWh MAE, size only | 2.41 | 2.39 | **2.36** | 2.61 |
+| nearest option: battery within 1 step | 58 % | 59 % | **59 %** | 53 % |
+
+| add-ons (62 held-out retrofits / wallbox-only), not answered | A current | B all options | **C hybrid** | R best rule |
+|---|---|---|---|---|
+| "no new PV" (PV yes/no) | 77 % | 73 % | **77 %** | 6 % |
+| battery kWh MAE, size only | 0.69 | 0.75 | **0.64** | 1.21 |
+| battery within 1 step | 74 % | 74 % | **74 %** | 77 % |
+
+| full designs (253), answered | A current | B all options | **C hybrid** | R best rule |
+|---|---|---|---|---|
+| PV kWp MAE, size only | 2.49 | 2.47 | **2.47** | 2.62 |
+| PV within ±1.5 kWp | 45 % | 45 % | **45 %** | 43 % |
+| battery kWh MAE, size only | 2.64 | 2.60 | **2.60** | 2.97 |
+| battery within 1 step | 54 % | 55 % | **55 %** | 46 % |
+| P10–P90 contains expert PV | 79 % | 81 % | **81 %** | – |
+| nearest option: PV kWp MAE, size only | 2.46 | 2.43 | **2.43** | 2.57 |
+| nearest option: battery within 1 step | 55 % | 56 % | **56 %** | 49 % |
+
+Reading: C keeps every yes/no number of A (the decisions are learned from the same rows) and takes the size gains of B. The one
+number that moves down is top-3 within ±1.5 kWp (70 → 67 %, 6 of 230 homes): the proposal moves with the new size model and the two
+alternatives next to it do not fully follow; training the alternatives on the first option only does not bring it back (68 %), so
+the consistent choice (alternatives from every option, all of them real sizes) is kept. The nearest-option rows are the honest size
+metrics now; both views are in `eval_results.json` (`*_nearest_option`). Exact duplicate options are dropped so a copied option does not
+count twice.
+
 ## Before/after per improvement (locked test set)
 
 315 held-out projects (engine/artifacts/test_ids.json, grouped by customer), truth = engine/labels.
