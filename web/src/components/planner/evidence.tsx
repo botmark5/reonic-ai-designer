@@ -112,9 +112,8 @@ export function SimilarHomes({ response }: { response: DesignResponse }) {
           <tbody className="font-mono text-data tabular">
             {rows.map((h) => (
               <tr key={h.project_id} className="border-b border-surface-2 last:border-0">
-                <td className="py-[7px] text-left" title={`Project ${h.project_id} · similarity ${Math.round(h.similarity * 100)}%`}>
-                  #{h.project_id.slice(0, 4)}
-                  <span className="ml-1.5 text-ink-muted">{Math.round(h.similarity * 100)}%</span>
+                <td className="py-[7px] text-left font-sans" title={`Past project ${h.project_id}`}>
+                  {Math.round(h.similarity * 100)} % similar
                 </td>
                 <td className="py-[7px] text-right">{fmtInt(h.annual_kwh)}</td>
                 <td className="py-[7px] text-right">{h.pv_kwp ? fmtKwp(h.pv_kwp) : "–"}</td>

@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { fmtRelative } from "@/lib/format";
 import type { DesignRow } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { homeTitle } from "./text";
 
 const STATUS: Record<DesignRow["status"], string> = { draft: "Draft", review: "Ready to send", sent: "Sent to homeowner" };
 
@@ -92,7 +93,7 @@ export function Inbox({
                   )}
                 >
                   <span className="flex w-full items-baseline justify-between gap-2">
-                    <span className={cn("truncate text-body-sm", active ? "font-semibold" : "font-medium")}>{r.customer_name ?? "Unnamed home"}</span>
+                    <span className={cn("truncate text-body-sm", active ? "font-semibold" : "font-medium")}>{homeTitle(r)}</span>
                     <span className="shrink-0 font-mono text-[12px] text-ink-muted tabular">{fmtRelative(r.created_at, now)}</span>
                   </span>
                   {fresh ? (

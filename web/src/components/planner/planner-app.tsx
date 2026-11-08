@@ -3,20 +3,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { House3D, roofFromSolarResult } from "@/components/house3d";
+import { HouseStage, roofFromSolarResult, type ComponentKey as StageKey, type StageLocation } from "@/components/house3d";
 import { Button } from "@/components/ui/button";
 import { ServedBadge } from "@/components/ui/served-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { COMPONENTS } from "@/lib/diff";
+import { Segmented } from "@/components/ui/field";
+import { COMPONENTS, sizeOf } from "@/lib/diff";
 import { roofInputsFromSolar } from "@/lib/roof";
 import type { SolarResult } from "@/lib/solar";
 import type { DesignRow } from "@/lib/supabase";
-import { OFFER_TYPE_LABEL, type OfferType } from "@/lib/types";
+import { OFFER_TYPE_LABEL, type ComponentKey, type OfferType } from "@/lib/types";
 import { HomeForm } from "./home-form";
 import { Inbox } from "./inbox";
 import { PhysicsTiles, SimilarHomes, WhyThisDesign } from "./evidence";
 import { RefineBox } from "./refine-box";
 import { SystemCard } from "./system-card";
+import { homeTitle } from "./text";
 import { usePlanner } from "./use-planner";
 
 export function PlannerApp({ designs, initial }: { designs: DesignRow[]; initial: DesignRow }) {
@@ -37,7 +39,7 @@ export function PlannerApp({ designs, initial }: { designs: DesignRow[]; initial
           if (known.current.has(row.id)) continue;
           known.current.add(row.id);
           if (row.source === "voice")
-            toast("New design from a call", { description: row.customer_name ?? "Unnamed home", action: { label: "Open", onClick: () => selectRef.current?.(row) } });
+            toast("New design from a call", { description: homeTitle(row), action: { label: "Open", onClick: () => selectRef.current?.(row) } });
         }
         setRows(list);
       } catch {}
@@ -114,6 +116,30 @@ function Workspace({
     return () => ctrl.abort();
   }, [row.address, applyRoof]);
   const roof3d = useMemo(() => roofFromSolarResult(solar), [solar]);
+  // Only a real address the planner has (geocoded by /api/solar) puts the house on the map; never Reonic project data.
+  const location = useMemo<StageLocation | undefined>(
+    () =>
+      solar && Number.isFinite(solar.lat) && Number.isFinite(solar.lng)
+        ? { lat: solar.lat as number, lng: solar.lng as number, address: row.address ?? undefined }
+        : undefined,
+    [solar, row.address],
+  );
+  const [view, setView] = useState<"outside" | "inside">("outside");
+  const [sunMap, setSunMap] = useState(false);
+
+  // Card ↔ house: hovering a card highlights its part on the house; clicking a part on the house points at its card.
+  const [hovered, setHovered] = useState<ComponentKey | null>(null);
+  const [picked, setPicked] = useState<ComponentKey | null>(null);
+  const onStageSelect = useCallback((key: StageKey | null) => {
+    const c: ComponentKey | null = key === "inverter" ? "pv" : key;
+    setPicked(c);
+    if (c) document.getElementById(`card-${c}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, []);
+  const onCardHover = useCallback((c: ComponentKey | null) => {
+    setHovered(c);
+    if (c) setPicked(null);
+  }, []);
+  const title = homeTitle(row);
 
   async function send() {
     const res = await p.share();
@@ -141,7 +167,9 @@ function Workspace({
               {lockedCount > 0 && <StatusBadge tone="neutral">{lockedCount === 1 ? "1 choice by you" : `${lockedCount} choices by you`}</StatusBadge>}
               <ServedBadge served={r?.served} />
             </div>
-            <h1 className="m-0 truncate text-h1">{row.customer_name ?? "Unnamed home"}</h1>
+            <h1 className="m-0 truncate text-h1" title={row.address && row.address !== title ? `${title} · ${row.address}` : title}>
+              {title}
+            </h1>
             <p className="m-0 text-body-sm text-ink-muted">
               {offerType && OFFER_TYPE_LABEL[offerType] ? <span className="font-medium text-ink-body">{OFFER_TYPE_LABEL[offerType]} · </span> : null}
               Proposed from this installer&apos;s past offers
@@ -158,7 +186,7 @@ function Workspace({
             <Button
               onClick={() => {
                 p.setStatus("review");
-                toast.success("Design saved as the offer", { description: `${row.customer_name ?? "This home"} is ready to send.` });
+                toast.success("Design saved as the offer", { description: `${title} is ready to send.` });
               }}
               disabled={!r || s.row.status !== "draft"}
             >
@@ -166,6 +194,48 @@ function Workspace({
             </Button>
           </div>
         </div>
+
+        {r ? (
+          <section aria-label="The system on the house" className="flex flex-col gap-2">
+            {location && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Segmented
+                  label="View"
+                  value={view}
+                  onChange={setView}
+                  options={[
+                    { value: "outside", label: "Outside" },
+                    { value: "inside", label: "Inside" },
+                  ]}
+                />
+                <button
+                  type="button"
+                  aria-pressed={sunMap}
+                  onClick={() => setSunMap((v) => !v)}
+                  className={`h-9 cursor-pointer rounded-pill border px-3.5 text-body-sm transition-colors ${sunMap ? "border-comp-pv bg-[color-mix(in_srgb,var(--comp-pv)_14%,var(--surface-1))] font-medium text-ink" : "border-border bg-surface-1 text-ink-body hover:text-ink"}`}
+                >
+                  Sun map
+                </button>
+              </div>
+            )}
+            <HouseStage
+              design={r}
+              home={s.home}
+              mode="planner"
+              roof={roof3d}
+              location={location}
+              view={view}
+              sunMap={sunMap}
+              editable={!!location}
+              highlight={hovered ?? picked}
+              onSelect={onStageSelect}
+              labels
+              className="md:[&_[data-h3d-stage]]:aspect-video"
+            />
+          </section>
+        ) : (
+          <div className="aspect-[4/3] w-full animate-pulse rounded-lg border border-border bg-surface-1 motion-reduce:animate-none md:aspect-video" aria-hidden />
+        )}
 
         <RefineBox home={s.home} locks={s.locks} onResult={p.applyRefine} onStart={() => p.setRefining(true)} onEnd={() => p.setRefining(false)} showExamples={!s.change} />
 
@@ -199,15 +269,13 @@ function Workspace({
                 changeId={s.change?.id ?? 0}
                 busy={s.busy}
                 onLock={(v, reason) => p.setLock(c, v, reason)}
+                before={s.change?.before ? sizeOf(s.change.before, c) : undefined}
+                highlighted={picked === c}
+                onHover={onCardHover}
               />
             ))}
           </fieldset>
         ) : null}
-        {r && (
-          <section aria-label="The system on the house" className="mt-2">
-            <House3D design={r} home={s.home} mode="planner" roof={roof3d} />
-          </section>
-        )}
         {!r && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2" aria-busy="true" aria-label="Designing">
             {COMPONENTS.map((c) => (

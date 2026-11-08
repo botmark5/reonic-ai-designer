@@ -10,6 +10,7 @@ import { fmtValue, LABEL, UNIT } from "@/lib/format";
 import type { ComponentKey, DesignResponse, Locks, ValidationFlag } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ConfidenceRange } from "./confidence-range";
+import { cardReasons } from "./text";
 import { LOCK_KEY } from "./use-planner";
 
 const ICON = { pv: SunMedium, battery: BatteryMedium, wallbox: PlugZap, heatpump: Fan } as const;
@@ -89,6 +90,9 @@ export function SystemCard({
   changeId,
   busy,
   onLock,
+  before,
+  highlighted = false,
+  onHover,
 }: {
   component: ComponentKey;
   response: DesignResponse;
@@ -98,6 +102,12 @@ export function SystemCard({
   changeId: number;
   busy: boolean;
   onLock: (value: number | boolean | null, reason?: string | null) => void;
+  /** Size before the last change (null: was not included); shown as "old → new" while the card is marked changed. */
+  before?: number | null;
+  /** The planner points at this part on the house. */
+  highlighted?: boolean;
+  /** Hover / focus on the card: highlight the part on the house (null on leave). */
+  onHover?: (c: ComponentKey | null) => void;
 }) {
   const d = response.design[c];
   const size = sizeOf(response.design, c);
@@ -116,7 +126,10 @@ export function SystemCard({
       : c === "battery"
         ? response.similar_homes.map((h) => h.battery_kwh ?? 0).filter((x) => x > 0)
         : [];
-  const reasons = (c === "heatpump" && !d.include && hpOption?.available ? hpOption.reasons : d.reasons).slice(0, 3).map(strip);
+  const isOption = c === "heatpump" && !d.include && !!hpOption?.available;
+  const { shown: reasons, more: moreReasons } = cardReasons(isOption ? hpOption!.reasons : d.reasons);
+  const [showMore, setShowMore] = useState(false);
+  const was = changed && before !== undefined ? before : undefined;
   // validation against similar homes (percentile) and physics, shown in full on the card, not only as a badge tooltip
   const checks = Array.from(
     new Set(
@@ -129,32 +142,48 @@ export function SystemCard({
 
   return (
     <article
+      id={`card-${c}`}
       className={cn(
-        "relative flex flex-col gap-3.5 rounded-md border bg-surface-1 p-5 transition-[border-color,box-shadow] duration-300",
-        changed ? "border-highlight shadow-[0_0_0_1px_var(--highlight)]" : "border-border",
+        "relative flex scroll-mt-24 flex-col gap-3.5 rounded-md border p-5 transition-[border-color,box-shadow,background-color] duration-300",
+        // the changed card keeps the highlight fill until the next change
+        changed ? "border-highlight bg-[color-mix(in_srgb,var(--highlight)_16%,var(--surface-1))] shadow-[0_0_0_1px_var(--highlight)]" : "border-border bg-surface-1",
+        highlighted && !changed && "border-border-strong shadow-[0_0_0_1px_var(--border-strong)]",
       )}
       aria-busy={busy}
+      onMouseEnter={() => onHover?.(c)}
+      onMouseLeave={() => onHover?.(null)}
+      onFocus={() => onHover?.(c)}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && onHover?.(null)}
     >
       <header className="flex items-center gap-2">
         <Icon className={cn("size-[18px] shrink-0", TEXT_COLOR[c])} strokeWidth={1.5} aria-hidden />
         <h2 className="flex-1 text-h3">{LABEL[c]}</h2>
-        <StatusBadge tone={status.tone} title={status.title}>
-          {status.label}
-        </StatusBadge>
+        {!isOption && (
+          <StatusBadge tone={status.tone} title={status.title}>
+            {status.label}
+          </StatusBadge>
+        )}
       </header>
 
-      <p className={cn("m-0 font-mono text-metric font-medium tabular", size == null && "text-ink-muted")}>
-        {size == null ? (
-          <>
-            None <small className="text-[15px] text-ink-muted">{c === "heatpump" && hpOption?.available ? "now" : ""}</small>
-          </>
+      <p className={cn("m-0 flex flex-wrap items-baseline gap-x-2 font-mono text-metric font-medium tabular", size == null && !isOption && "text-ink-muted")}>
+        {was !== undefined && (
+          <span className="text-[20px] font-normal text-ink-muted" aria-label={`was ${was == null ? "none" : `${fmtValue(c, was)} ${UNIT[c]}`}`}>
+            <s className="decoration-1">{was == null ? "None" : fmtValue(c, was)}</s> →
+          </span>
+        )}
+        {isOption ? (
+          <span className="self-start rounded-pill bg-warning-tint px-3 py-1 font-sans text-[15px] leading-6 font-medium text-warning-text">
+            Option · {fmtValue(c, hpOption!.kw)} {UNIT[c]}
+          </span>
+        ) : size == null ? (
+          <>None</>
         ) : (
-          <>
+          <span>
             <span key={changeId} className={cn("-mx-1 px-1", changed && "animate-value-changed")}>
               {fmtValue(c, shown)}
             </span>{" "}
             <small className="text-[15px] text-ink-muted">{UNIT[c]}</small>
-          </>
+          </span>
         )}
       </p>
 
@@ -170,10 +199,20 @@ export function SystemCard({
 
       {reasons.length > 0 && (
         <ul className="m-0 flex list-disc flex-col gap-1 pl-[18px] text-[13px] leading-[19px] text-ink-body marker:text-ink-muted">
-          {reasons.map((r, i) => (
+          {[...reasons, ...(showMore ? moreReasons : [])].map((r, i) => (
             <li key={i}>{r}</li>
           ))}
         </ul>
+      )}
+      {moreReasons.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowMore((v) => !v)}
+          aria-expanded={showMore}
+          className="-mt-2 self-start cursor-pointer text-[12px] font-medium text-ink-muted underline decoration-border-strong underline-offset-4 hover:text-ink"
+        >
+          {showMore ? "Fewer reasons" : `${moreReasons.length} more ${moreReasons.length === 1 ? "reason" : "reasons"}`}
+        </button>
       )}
 
       {editing ? (
@@ -188,10 +227,10 @@ export function SystemCard({
         />
       ) : (
         <footer className="mt-auto flex flex-wrap gap-2 pt-1">
-          {c === "heatpump" && !d.include && hpOption?.available ? (
-            <Button variant="secondary" size="sm" onClick={() => onLock(hpOption.kw, "added the heat pump option")}>
+          {isOption ? (
+            <Button variant="secondary" size="sm" onClick={() => onLock(hpOption!.kw, "added the heat pump option")}>
               <Plus data-icon="inline-start" strokeWidth={1.5} />
-              Include {hpOption.kw} kW heat pump
+              Include {fmtValue(c, hpOption!.kw)} kW heat pump
             </Button>
           ) : (
             <>
