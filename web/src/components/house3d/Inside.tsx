@@ -115,6 +115,9 @@ function ZoneTint({ zone, active, colour }: { zone: Zone; active: boolean; colou
   );
 }
 
+/** Neighbouring slots (also across a zone border) alternate between a label high on the wall and one on the floor. */
+const labelHigh = (spot: Placement[InsideKey]) => !!spot && (spot.slot + ZONE_ORDER.indexOf(spot.zone)) % 2 === 1;
+
 const PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const HIT = new THREE.Vector3();
 
@@ -183,9 +186,10 @@ function Item({ k, object, placement, size, reduced, settled, onGrab, onDrop, co
       onPointerOut={() => { if (!drag.current) document.body.style.cursor = ""; }}
     >
       <primitive object={object} />
-      {/* label on the floor in front of the part, so neighbours on the same wall never collide */}
+      {/* labels alternate between the floor in front of the part and the wall above it, so neighbours never
+          collide, also on narrow stages (two side by side on /reality) */}
       {settled && (
-        <Html position={[0, -MOUNT_Y[k] + 0.02, 1.0]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+        <Html position={labelHigh(spot) ? [0, WALL_H - 0.25 - MOUNT_Y[k], 0.15] : [0, -MOUNT_Y[k] + 0.02, 0.85]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
           <div className={`hidden w-max flex-col items-center rounded-md sm:flex border border-border bg-surface-1/95 px-2 py-1 text-ink shadow-[0_6px_18px_rgba(16,17,20,0.12)] transition-transform duration-150 ${dragging ? "scale-105" : ""}`}>
             <span className="flex items-center gap-1.5 text-[13px] font-semibold leading-4">
               <span aria-hidden className={`size-2 rounded-full ${DOT[k]}`} />
