@@ -14,6 +14,7 @@ import type { CallRow, DesignRow, TranscriptTurn } from "@/lib/supabase";
 import type { DesignResponse, Home } from "@/lib/types";
 import { EMPTY_LOCKS } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { stripVoiceTags } from "@/lib/display-text";
 
 const DOT: Record<string, string> = { pv: "bg-comp-pv", battery: "bg-comp-battery", wallbox: "bg-comp-wallbox", heatpump: "bg-comp-heatpump" };
 
@@ -278,7 +279,7 @@ export function LiveCall() {
                     )}
                   >
                     <span className="sr-only">{customer ? "Caller: " : "Agent: "}</span>
-                    {customer ? <q className="font-serif not-italic before:content-none after:content-none">{t.text}</q> : t.text}
+                    {customer ? <q className="font-serif not-italic before:content-none after:content-none">{stripVoiceTags(t.text)}</q> : stripVoiceTags(t.text)}
                   </li>
                 );
               })}
