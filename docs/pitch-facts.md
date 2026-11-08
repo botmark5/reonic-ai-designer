@@ -86,8 +86,8 @@ Expert range means the smallest to largest PV across the variants the expert off
 | Trained on installer B only, tested on installer A (PV size where both chose PV) | 2.91 vs 3.00 kWp best rule | `/eval` `transfer["23c108b7->2a8ba8e2"].*.pv_kwp_mae_when_both_pv` | Caveat: small margin, tested on all of A's projects. |
 | Trained on A only, tested on B | 2.79 vs 3.15 kWp | `/eval` `transfer["2a8ba8e2->23c108b7"].*` | Same caveat |
 | Engine beats the best rule in held-out and transfer tests per installer | 4 of 4 | `aggregates.json` `pv_mae_installer_transfer`; deck chart 2b | Safe |
-| PV size error by yearly consumption (both chose PV) | 2.1–2.6 kWp up to 9 MWh; 3.4 kWp above 9 MWh (15 homes) | `aggregates.json` `bands`; deck chart 2a | Safe |
-| Homes left at the 4,500 kWh default ("consumption not entered") | 98 of 315; PV size error 2.71 kWp | `aggregates.json` `bands[unknown]` | Safe |
+| PV size error by yearly consumption (both chose PV, without the answer) | 2.1–2.6 kWp up to 9 MWh; 3.4 kWp above 9 MWh (15 homes) | `aggregates.json` `bands`; deck chart 2a | Safe |
+| Homes left at the 4,500 kWh default ("consumption not entered") | 98 of 315; PV size error 2.54 kWp (without the answer; 2.71 was the answered mode) | `aggregates.json` `bands[unknown]`; deck chart 2a | Safe |
 | Minimum input | installer + yearly consumption already reach the band-median rule; removing the consumption costs 0.9 kWp of PV error; price, the "left at default" flag and the offer date each move PV yes/no by 3–5 points; EV, heating, household profile < 1 point | `engine/README.md` Known limitations (audit input ablation on the locked test set) | Safe: "one number does most of the work; the solar question would do the rest". |
 
 ## 7. What the data can and cannot explain

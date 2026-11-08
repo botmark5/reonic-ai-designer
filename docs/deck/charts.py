@@ -9,6 +9,11 @@ Inputs (all derived, never committed):
   engine.error_analysis.run/seg_table  Cala's per-band breakdown (consumption band); only its aggregate table is used
 Output: docs/deck/out/*.png + *.svg (git-ignored) and docs/deck/out/aggregates.json (numbers behind every bar).
 
+Honesty rule (docs/pitch-facts.md): in the evaluation the answer to "PV already on the roof?" is derived from the
+expert's own offer, so ANSWERED numbers are a what-if, never an accuracy. Accuracy charts use the unanswered mode,
+except new full systems, where every home gets the same answer ("no") and the answered number is fair.
+Chart 3 is the only what-if chart and says so in its title.
+
 Style: Reonic tokens (docs/design/tokens.json). Model = AI orange, comparison = neutral gray (emphasis pattern),
 every bar value-labelled (orange is below 3:1 on the surface, so labels carry the reading), one message per title.
 """
@@ -93,10 +98,10 @@ def save(fig, name: str, files: list[str]):
 
 
 def band_aggregates() -> list[dict]:
-    """PV MAE per consumption band from Cala's error analysis (shipped model, planner answered the existing-PV question)."""
+    """PV MAE per consumption band from Cala's error analysis (locked split, WITHOUT the existing-PV answer)."""
     from engine.error_analysis import run, seg_table
 
-    t = run(True)
+    t = run(False)
     # homes left at the 4,500 kWh default (all fall in the 3-4.5k band) get their own bar: "consumption unknown"
     order = ["<3k", "3-4.5k", "4.5-6k", "6-9k", ">9k", "unknown"]
     t["band"] = pd.Categorical(t.band.astype(str).where(~t.demand_is_default.fillna(False).astype(bool), "unknown"), order)
@@ -113,30 +118,33 @@ def main(argv=None):
     bl, n_test = r["baselines"], r["protocol"]["n_test"]
     cache = OUT / "aggregates.json"
     agg = json.loads(cache.read_text()) if cache.exists() and not args.refresh else {}
-    if not any(b["band"] == "unknown" for b in agg.get("bands", [])):
-        agg["bands"] = band_aggregates()
+    if agg.get("bands_mode") != "unanswered" or not any(b["band"] == "unknown" for b in agg.get("bands", [])):
+        agg["bands"], agg["bands_mode"] = band_aggregates(), "unanswered"
     files: list[str] = []
     note = f"{n_test} held-out real projects"
-    ans = r["with_existing_pv_answer"]  # the planner answered "Is there already PV on the roof?" (the product flow)
-    asked = "planner answered \"PV already on the roof?\""
+    ans = r["with_existing_pv_answer"]  # answer derived from the expert offer: what-if, except for new full systems
+    unasked = "not told whether solar is already on the roof"
+    new_fair = "new systems: every home is a new system, so the planner's \"no solar yet\" carries no size information"
 
-    # 1 — PV size error, model vs best baseline, new systems vs add-on sales
+    # 1 — PV size error, model vs best rule (honest rows: all homes + add-ons unanswered, new systems answered = fair)
     metric = "pv_kwp_mae_all_projects"
-    blocks = [("All projects", ans["metrics"]), ("New systems", ans["segments"]["full_designs"]),
-              ("Add-on sales", ans["segments"]["add_ons"])]
+    blocks = [("All homes", r["metrics"]), ("New systems", ans["segments"]["full_designs"]),
+              ("Add-on sales", r["segments"]["add_ons"])]
     rows = []
     for label, block in blocks:
         bname, bval = best_baseline(block, bl, metric, True)
         rows.append(dict(group=label, model=block[MODEL][metric], baseline=bval, baseline_name=bname,
                          n=int(block[MODEL]["n_projects"])))
     agg["pv_mae_by_segment"] = rows
-    new = rows[1]
-    verdict = "beats" if new["model"] < new["baseline"] else "does not yet beat"
-    fig, ax = _axes(f"New systems: engine {verdict} the best rule of thumb on PV size",
-                    f"PV size error vs the expert, kWp, lower is better (a PV the expert did not sell counts) · {asked} · {note}")
+    allh, new = rows[0], rows[1]
+    gap = 1 - new["model"] / new["baseline"]
+    new_says = "on par with" if abs(gap) < 0.10 else ("below" if gap > 0 else "above")
+    fig, ax = _axes(f"{1 - allh['model'] / allh['baseline']:.0%} less PV error than the best rule; {new_says} it on new systems",
+                    f"PV size error vs the expert, kWp, lower is better (a PV the expert did not sell counts) · all homes and "
+                    f"add-on sales: {unasked} · {new_fair} · {note}")
     grouped_bars(ax, [f"{x['group']}\n{x['n']} projects" for x in rows],
                  [("Engine", [x["model"] for x in rows], C_MODEL),
-                  ("Best baseline", [x["baseline"] for x in rows], C_BASE)], "{:.2f}")
+                  ("Best rule of thumb", [x["baseline"] for x in rows], C_BASE)], "{:.2f}")
     ax.set_ylabel("mean absolute error, kWp")
     save(fig, "1_pv_error_new_vs_addons", files)
 
@@ -146,7 +154,7 @@ def main(argv=None):
     unknown = next(b for b in bands if b["band"] == "unknown")
     fig, ax = _axes(f"PV size is hardest to match for {worst['band']} kWh homes",
                     f"PV size error where engine and expert both chose PV, kWp, by annual consumption · \"not entered\" = "
-                    f"{unknown['n']} homes left at the 4,500 kWh default · {asked} · {note}")
+                    f"{unknown['n']} homes left at the 4,500 kWh default · {unasked} · {note}")
     xs = range(len(bands))
     bars = ax.bar(xs, [b["pv_mae_both"] for b in bands], width=0.55, zorder=2,
                   color=[C_BASE if b["band"] == "unknown" else C_MODEL for b in bands])
@@ -175,13 +183,13 @@ def main(argv=None):
     fig, ax = _axes(f"Works across installers: beats the baseline in {wins} of {len(rows)} tests",
                     f"PV size error where both chose PV, kWp · transfer = trained only on the other installer's projects · without the answer · {note}")
     grouped_bars(ax, [x["group"] for x in rows], [("Engine", [x["model"] for x in rows], C_MODEL),
-                                                  ("Best baseline", [x["baseline"] for x in rows], C_BASE)], "{:.2f}")
+                                                  ("Best rule of thumb", [x["baseline"] for x in rows], C_BASE)], "{:.2f}")
     ax.set_ylabel("mean absolute error, kWp")
     save(fig, "2b_pv_error_installer_transfer", files)
 
     # 3 — asking the planner "Is there already PV on the roof?"
     metric = "pv_kwp_mae_all_projects"
-    segs = [("All projects", r["metrics"], ans["metrics"]),
+    segs = [("All homes", r["metrics"], ans["metrics"]),
             ("New systems", r["segments"]["full_designs"], ans["segments"]["full_designs"]),
             ("Add-on sales", r["segments"]["add_ons"], ans["segments"]["add_ons"])]
     rows = [dict(group=label, before=b[MODEL][metric], after=a[MODEL][metric], n=int(a[MODEL]["n_projects"]))
@@ -189,12 +197,14 @@ def main(argv=None):
     ot_before, ot_after = r["metrics"][MODEL]["offer_type_accuracy"], ans["metrics"][MODEL]["offer_type_accuracy"]
     agg["existing_pv_question"] = {"pv_mae": rows, "offer_type_accuracy": dict(before=ot_before, after=ot_after)}
     cut = 1 - rows[0]["after"] / rows[0]["before"]
-    fig, ax = _axes(f"One question to the planner cuts PV error by {cut:.0%}",
-                    f"Engine PV size error vs the expert, kWp, without vs with the answer to \"Is there already PV on the "
-                    f"roof?\" (a PV the expert did not sell counts) · offer type right {ot_before:.0f}\u00a0% → {ot_after:.0f}\u00a0% · {note}")
+    fig, ax = _axes(f"What-if: if the planner answers one question, PV error falls {cut:.0%}",
+                    f"WHAT-IF, NOT AN ACCURACY: in this test the answer to \"Is there already solar on the roof?\" is taken "
+                    f"from the expert's own offer, so it shows what the question is worth when answered correctly · engine PV "
+                    f"size error vs the expert, kWp (a PV the expert did not sell counts) · offer type right "
+                    f"{ot_before:.0f}\u00a0% → {ot_after:.0f}\u00a0% · {note}")
     grouped_bars(ax, [f"{x['group']}\n{x['n']} projects" for x in rows],
                  [("Without the answer", [x["before"] for x in rows], C_BASE),
-                  ("With the answer", [x["after"] for x in rows], C_MODEL)], "{:.2f}")
+                  ("With a correct answer (what-if)", [x["after"] for x in rows], C_MODEL)], "{:.2f}")
     ax.set_ylabel("mean absolute error, kWp")
     save(fig, "3_existing_pv_question", files)
 
@@ -205,7 +215,7 @@ def main(argv=None):
               ("battery_variant_hit_tolerant_pct", "Battery", "add_ons", "add-on sales")]
     rows = []
     for k, comp, seg, seg_label in groups:
-        block = ans["segments"][seg]
+        block = (ans if seg == "full_designs" else r)["segments"][seg]  # add-ons: without the answer
         _, bval = best_baseline(block, bl, k, False)
         rows.append(dict(metric=k, segment=seg, group=f"{comp}\n{seg_label}", model=block[MODEL][k], baseline=bval))
     agg["variant_hit"] = rows
@@ -214,15 +224,37 @@ def main(argv=None):
         "ahead of" if pv_new["model"] > pv_new["baseline"] else "behind")
     fig, ax = _axes(f"In the expert's own options: {lead} the best rule on new systems",
                     f"Engine size within the expert's variant range (PV ±1 kWp, battery ±1 step), % of projects · "
-                    f"PV new systems {pv_new['model']:.0f}\u00a0% vs {pv_new['baseline']:.0f}\u00a0%, add-on sales far ahead: {pv_add['model']:.0f}\u00a0% vs "
-                    f"{pv_add['baseline']:.0f}\u00a0% · {asked} · {note}")
+                    f"add-on sales: {unasked}; proposing no new PV where none was sold counts as a hit, rules of thumb propose "
+                    f"new PV for almost every home ({pv_add['model']:.0f}\u00a0% vs {pv_add['baseline']:.0f}\u00a0%) · {note}")
     grouped_bars(ax, [x["group"] for x in rows], [("Engine", [x["model"] for x in rows], C_MODEL),
-                                                  ("Best baseline", [x["baseline"] for x in rows], C_BASE)], "{:.0f} %")
+                                                  ("Best rule of thumb", [x["baseline"] for x in rows], C_BASE)], "{:.0f} %")
     ax.set_ylim(0, 100)
     ax.set_ylabel("% of held-out projects")
     save(fig, "4_variant_range_hit", files)
 
+    # 5 — add-on sales WITHOUT the answer: the honest add-on numbers (pitch-facts §5)
+    add = r["segments"]["add_ons"]
+    groups = [("has_pv_accuracy", "Proposes no new solar\nwhere none was sold"),
+              ("has_battery_accuracy", "Battery yes/no\nright"),
+              ("battery_within_one_step_pct", "Battery within one\ncatalogue size")]
+    rows = []
+    for k, label in groups:
+        _, bval = best_baseline(add, bl, k, False)
+        rows.append(dict(metric=k, group=label, model=add[MODEL][k], baseline=bval))
+    agg["add_on_sales"] = {"n": int(add[MODEL]["n_projects"]), "rows": rows}
+    fig, ax = _axes("Add-ons: spots \"no new solar\" unprompted; battery same as rule",
+                    f"{agg['add_on_sales']['n']} held-out add-on sales (no new full system: battery retrofit, wallbox only, "
+                    f"other), % of projects, higher is better · {unasked} · rules of thumb propose new solar for almost "
+                    f"every home · {note}")
+    grouped_bars(ax, [x["group"] for x in rows], [("Engine", [x["model"] for x in rows], C_MODEL),
+                                                  ("Best rule of thumb", [x["baseline"] for x in rows], C_BASE)], "{:.0f} %")
+    ax.set_ylim(0, 100)
+    ax.set_ylabel("% of add-on sales")
+    save(fig, "5_add_on_sales", files)
+
     agg["source"] = {"eval": "engine/artifacts/eval_results.json (= GET /eval)", "n_test": n_test,
+                     "modes": "accuracy charts without the existing-PV answer, except new full systems (fair); "
+                              "chart 3 = what-if (answer taken from the expert offer)",
                      "baselines": {b: BASELINE_LABEL.get(b, b) for b in bl}}
     cache.write_text(json.dumps(agg, indent=2))
     files.append(str(cache.relative_to(ROOT)))

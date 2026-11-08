@@ -53,3 +53,7 @@ Response: { "changes": { "has_ev": true, "ev_km_year": 15000 }, "design": { ...a
   answered-mode evaluation derives it from the expert offer (battery-only / PV extension = yes, new system = no, else null).
   Response adds `answered` (bool) and `planner_answer` (true / false / null). It is a what-if, never an accuracy (issue #47).
 - `pv.alternatives` and `battery.alternatives` are now a bracket around the proposal: the most likely size the installer sells BELOW it and the most likely size ABOVE it (sorted ascending, each with the classifier's share). When one side has nothing (smallest / largest size, roof cap) the next most likely other size fills in. Same shape as before; locked test: the expert's PV is within 1.5 kWp of one of the 3 options in 70 % of homes (unchanged), and 77 % of proposals get one smaller and one larger option (was 45 %).
+- `GET /heldout` (issue #94, same `X-Engine-Key` as `/eval`) → `{ "test_project_ids": ["…"], "demo_projects": [{ "role", "why", "project_id" }] }`:
+  the locked held-out ids and the curated demo cases, ids and text only (details via `/project/{id}`). Reads
+  `engine/artifacts/test_ids.json`, `demo_reality.json` (roles prefixed `two_houses_`, listed first) and `demo_projects.json`;
+  a missing file is rebuilt from the labels with the same fixed rules. For hosts without the artifacts (Vercel).
