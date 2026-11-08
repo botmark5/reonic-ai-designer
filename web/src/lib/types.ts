@@ -318,6 +318,10 @@ export interface ProjectResponse {
   project_id?: string;
   installer?: InstallerId;
   served?: Served;
+  /** engine #47 (PR #82): `ours` was built with the planner's answer to "Solar already on the roof?", derived from the
+   *  expert offer (battery-only = yes, new system = no). A what-if, never an accuracy. */
+  answered?: boolean;
+  planner_answer?: boolean | null;
 }
 
 /** GET /health (no key needed). */

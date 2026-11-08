@@ -25,8 +25,9 @@ const ROLE_LABEL: Record<string, string> = {
   experts_disagree: "Experts disagree",
 };
 
-// engine #47: /project designs a battery retrofit as a new system. The chip comes back when #47 is merged.
-const HIDDEN_ROLES = new Set(["battery_retrofit"]);
+// engine #47 (PR #82): /project?answered=true designs with the planner's existing-solar answer, so the battery-retrofit
+// case can be shown again: unanswered it is a new system, answered it is the expert's battery add-on (a what-if).
+const HIDDEN_ROLES = new Set<string>();
 
 function Verdict({ t, short = false }: { t: Headline; short?: boolean }) {
   if (t.level) return <StatusBadge tone="neutral">{short ? "Level" : "Level with rule"}</StatusBadge>;
@@ -80,18 +81,27 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
   const [project, setProject] = useState<ProjectResponse | null>(null);
   const [errorId, setErrorId] = useState<string | null>(null);
   const [manual, setManual] = useState("");
+  // what-if: the planner answered "Solar already on the roof?" (engine #47). Off by default: the answer is derived from
+  // the expert offer in this test, so it shows what the question is worth, never an accuracy.
+  const [withAnswer, setWithAnswer] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
     const ctrl = new AbortController();
-    fetch(`/api/engine/project/${encodeURIComponent(projectId)}`, { signal: ctrl.signal })
+    fetch(`/api/engine/project/${encodeURIComponent(projectId)}${withAnswer ? "?answered=1" : ""}`, { signal: ctrl.signal })
       .then(async (r) => {
         if (!r.ok) throw new Error();
         setProject({ ...(await r.json()), project_id: projectId });
       })
       .catch(() => !ctrl.signal.aborted && setErrorId(projectId));
     return () => ctrl.abort();
-  }, [projectId]);
+  }, [projectId, withAnswer]);
+  const switchAnswered = (on: boolean) => {
+    if (on === withAnswer) return;
+    setErrorId(null);
+    setProject(null);
+    setWithAnswer(on);
+  };
 
   const go = useCallback(
     (id: string) => {
@@ -112,10 +122,10 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
   const state: "idle" | "loading" | "error" =
     projectId && errorId === projectId ? "error" : projectId && project?.project_id !== projectId ? "loading" : "idle";
   const demo = demos.find((d) => d.project_id === projectId);
-  // engine #47: /project designs without the existing-PV answer. Label the retrofit case until the engine returns
-  // a battery retrofit for it (then this disappears by itself).
+  // the retrofit case without the answer: the engine cannot know the expert only added a battery (engine #47)
   const unanswered =
-    demo?.role === "battery_retrofit" && project?.project_id === projectId && project?.ours?.facts_for_explanation?.offer_type !== "battery_retrofit";
+    !withAnswer && demo?.role === "battery_retrofit" && project?.project_id === projectId && project?.ours?.facts_for_explanation?.offer_type !== "battery_retrofit";
+  const shownAnswer = project?.project_id === projectId && project?.answered ? project.planner_answer : undefined;
   const catalogue = ((evalRes.protocol?.catalogue as Record<string, number[]> | undefined) ?? {})[project?.installer ?? ""] ?? [];
   const ours = project?.ours?.design ?? null;
   const v =
@@ -268,10 +278,35 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
             </table>
           </div>
         )}
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Solar question">
+          <span className="text-[13px] text-ink-muted">“Solar already on the roof?”</span>
+          {([false, true] as const).map((on) => (
+            <button
+              key={String(on)}
+              type="button"
+              onClick={() => switchAnswered(on)}
+              aria-pressed={withAnswer === on}
+              className={cn(
+                "h-7 cursor-pointer rounded-pill border px-2.5 text-[12px] transition-colors",
+                withAnswer === on ? "border-ink bg-ink text-surface-0" : "border-border bg-surface-1 text-ink-body hover:border-border-strong hover:text-ink",
+              )}
+            >
+              {on ? "Planner answered (what-if)" : "Not asked, as recorded"}
+            </button>
+          ))}
+        </div>
         {unanswered && (
           <p className="m-0 rounded-md bg-warning-tint px-3 py-2 text-[13px] leading-5 text-warning-text">
-            Unanswered mode: this design was made without the answer to “Solar already on the roof?”, so the engine cannot know
-            the expert only added a battery (engine #47 fixes this case).
+            Unanswered: this design was made without the answer to “Solar already on the roof?”, so the engine cannot know the
+            expert only added a battery. Switch to “Planner answered” to see the design with the answer.
+          </p>
+        )}
+        {withAnswer && shown && (
+          <p className="m-0 rounded-md bg-surface-2 px-3 py-2 text-[13px] leading-5 text-ink-body">
+            What-if: the planner answered{" "}
+            <b>{shownAnswer == null ? "unknown" : shownAnswer ? "yes, there is solar on the roof" : "no, a new system"}</b>. In this
+            test the answer is taken from the expert&apos;s own offer, so it shows what the question is worth when answered
+            correctly, not an accuracy. That is why the planner form and the voice agent ask it first.
           </p>
         )}
         <p className="m-0 text-[13px] leading-5 text-ink-muted">
