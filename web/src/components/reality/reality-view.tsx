@@ -229,6 +229,7 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
                         home={shown.home}
                         mode="planner"
                         cameraKey="reality"
+                        view="outside"
                         controls="minimal"
                       />
                     ) : (
