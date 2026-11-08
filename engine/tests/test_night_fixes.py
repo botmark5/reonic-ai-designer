@@ -105,3 +105,15 @@ def test_locked_pv_above_roof_cap_stays_inside_its_range_and_no_pv_lock_explains
     d = model.propose({"annual_kwh": 4500, "has_existing_pv": False}, "instA", {"pv_kwp": 0})["design"]
     if not d["battery"]["include"]:
         assert "0%" not in d["battery"]["reasons"][0] and "No battery" in d["battery"]["reasons"][0], d["battery"]
+
+
+# --- #93: heat pump option without heat demand: the size and the text agree -----------------------------------
+def test_heatpump_option_without_demand_has_consistent_text():
+    labels, inputs = make_synthetic(n_per_installer=120, seed=3)
+    model = DesignModel().fit(build_eval_table(labels, inputs))
+    opt = model.heatpump_option({"annual_kwh": 4500, "heating": "Gas"}, "instA")
+    assert opt["available"] and opt["kw"]
+    text = " ".join(opt["reasons"])
+    assert "cannot be calculated" not in text and f"{opt['kw']:g} kW" in text
+    d = model.propose({"annual_kwh": 4500, "heating": "Gas"}, "instA")["design"]["heatpump"]
+    assert "cannot be calculated" not in " ".join(d["reasons"])

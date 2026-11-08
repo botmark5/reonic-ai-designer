@@ -475,9 +475,11 @@ class DesignModel:
         demand = row.get("heating_demand_kwh")
         demand = None if demand is None or pd.isna(demand) else float(demand)
         rec = physics.heatpump_recommendation(row.get("heating"), demand, sells, sizes)
-        if rec["include"] and rec["kw"] is None:          # candidate, but heat demand unknown
+        if rec["include"] and rec["kw"] is None:          # candidate, but heat demand unknown (issue #93: one consistent message)
             rec["kw"] = 10.0 if 10.0 in sizes else nearest(10, sizes)
-            rec["reasons"].append(f"Using the most common size ({rec['kw']:g} kW) until the heat demand is known.")
+            rec["reasons"] = [rec["reasons"][0],
+                              f"Heating demand unknown: offered at {rec['kw']:g} kW, a mid-range size this installer sells. "
+                              "Ask for the yearly gas or oil use to size it exactly (heat demand / 2,450 full-load hours)."]
         # gas/oil homes got a heat pump in ~11 of 24 cases at installer 2a8ba8e2 -> a real choice, not a default
         conf = 0.5 if rec["include"] else 0.95
         return (rec["kw"] or 0.0) if rec["include"] else 0.0, rec["reasons"], conf
