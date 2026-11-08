@@ -27,6 +27,13 @@ export interface SiteStageProps {
   onFallback: (reason: string) => void;
   /** The viewer asked for the model view instead. */
   onModelView?: () => void;
+  /**
+   * Show the "Loading the street…" veil until the first tiles arrive (default true). Off: the stage stays transparent
+   * and empty until then, so the parent can keep the procedural house visible underneath.
+   */
+  veil?: boolean;
+  /** The first tiles of this address are on screen. */
+  onReady?: () => void;
   className?: string;
 }
 
@@ -47,7 +54,7 @@ const fmt = (x: number | null | undefined, unit: string) => (x ? `${Number(x.toF
  * The real street: Google's photorealistic 3D tiles around the address with the engine's panels on the real roof.
  * Anything missing or slow calls `onFallback`. Google's attribution is always visible.
  */
-export function SiteStage({ apiKey, location, design, panelsOn = true, labels = false, sunMap, buttons = true, onFallback, onModelView, className }: SiteStageProps) {
+export function SiteStage({ apiKey, location, design, panelsOn = true, labels = false, sunMap, buttons = true, onFallback, onModelView, veil = true, onReady, className }: SiteStageProps) {
   const reduced = useReducedMotion();
   const d = design.design;
   const kwp = d.pv.include && d.pv.kwp ? d.pv.kwp : 0;
@@ -56,6 +63,8 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
   const at = `${location.lat.toFixed(6)},${location.lng.toFixed(6)}`;
   const [firstAt, setFirstAt] = useState<string | null>(null);
   const first = firstAt === at;
+  // without the veil nothing of ours shows before the first tiles (the parent's house shows through)
+  const shown = first || veil;
   const [attribution, setAttribution] = useState("");
   const fellBack = useRef(false);
   const fallback = useRef(onFallback);
@@ -121,7 +130,7 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
   }, [sunOn, p, sunAt, sun?.at, sunFailed]);
   const sunHere = sun?.at === sunAt ? sun : null;
   return (
-    <figure className={cn("relative isolate w-full overflow-hidden rounded-lg border border-border bg-surface-1", className)}>
+    <figure className={cn("relative isolate w-full overflow-hidden rounded-lg border", shown ? "border-border bg-surface-1" : "border-transparent", className)}>
       <div data-h3d-stage className="relative aspect-[4/3] w-full md:aspect-[16/10]">
         {p && (
           <div
@@ -138,24 +147,24 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
                 panelsOn={panelsOn}
                 reduced={reduced}
                 pvLabel={labels && kwp ? fmt(kwp, "kWp") : null}
-                onFirstTiles={() => setFirstAt(at)}
+                onFirstTiles={() => { setFirstAt(at); onReady?.(); }}
                 onError={fail}
                 onAttribution={setAttribution}
               />
             </Boundary>
           </div>
         )}
-        {!first && (
+        {!first && veil && (
           <div className="absolute inset-0 grid place-items-center">
             <span role="status" className="animate-pulse text-sm text-ink-muted">Loading the street…</span>
           </div>
         )}
         {/* Google's attribution: always visible while the tiles are on screen */}
-        <p className="pointer-events-none absolute bottom-2 left-2 z-10 max-w-[70%] truncate rounded bg-surface-1/80 px-1.5 py-0.5 text-[11px] leading-4 text-ink-body backdrop-blur-sm">
+        {shown && <p className="pointer-events-none absolute bottom-2 left-2 z-10 max-w-[70%] truncate rounded bg-surface-1/80 px-1.5 py-0.5 text-[11px] leading-4 text-ink-body backdrop-blur-sm">
           <span className="font-semibold text-ink">Google</span>
           {attribution.replace(/^Google( · )?/, "") && <span> · {attribution.replace(/^Google( · )?/, "")}</span>}
-        </p>
-        {buttons && (
+        </p>}
+        {buttons && shown && (
           <div data-h3d-ui className="absolute right-3 top-3 flex items-center gap-1.5">
             {sunMap === undefined && sunFailed !== sunAt && (
               <button type="button" aria-pressed={sunOwn} onClick={() => setSunOwn((v) => !v)} className={cn(pillCls, sunOwn && "bg-primary text-primary-ink [@media(hover:hover)]:hover:bg-primary")}>
@@ -176,7 +185,7 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
             </p>
           </div>
         )}
-        {labels && chips.length > 0 && (
+        {labels && shown && chips.length > 0 && (
           <ul data-h3d-legend className="absolute bottom-2 right-2 flex flex-wrap justify-end gap-1.5">
             {chips.map((c) => (
               <li key={c.k} className="flex items-center gap-2 rounded-full border border-border bg-surface-1/95 py-1.5 pl-2.5 pr-3.5 text-ink shadow-[0_8px_24px_rgba(16,17,20,0.12)]">
