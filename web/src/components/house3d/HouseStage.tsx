@@ -68,7 +68,7 @@ const TILES_FLAG = process.env.NEXT_PUBLIC_HOUSE_TILES;
  */
 export function HouseStage({
   design, home, mode = "homeowner", roof, location, view, onZonesChange, sunMap, reveal, highlight, onSelect, cameraKey, timeOfDay,
-  onTimeOfDayChange, labels, controls, static: forceStatic, flyIn, className,
+  onTimeOfDayChange, labels, controls, editable, onPanelsChange, static: forceStatic, flyIn, className,
 }: HouseStageProps) {
   const wanted = useSyncExternalStore(noop, () => tilesWanted(window.location.search, TILES_FLAG), () => false);
   const forcedStill = useSyncExternalStore(noop, () => staticWanted(window.location.search), () => false);
@@ -147,6 +147,8 @@ export function HouseStage({
       highlight={highlight}
       onSelect={onSelect}
       cameraKey={cameraKey}
+      editable={editable}
+      onPanelsChange={onPanelsChange}
       timeOfDay={timeOfDay}
       onTimeOfDayChange={onTimeOfDayChange}
       labels={labels}

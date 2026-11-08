@@ -15,7 +15,10 @@ import { chooseRenderMode, detectEnv, type RenderMode } from "./renderMode";
 import { buildSceneSpec, type CompKey } from "./sceneSpec";
 import { MAY_DAY, type Place } from "./sun";
 import { revealedFromKey, revealFlows, revealKey } from "./stage";
-import type { House3DMode, RoofInput, StageControls, StageReveal } from "./types";
+import { addPanel, fullGrid, movePanel, removePanel } from "./panelEdit";
+import type { PanelSlot } from "./layout";
+import type { PanelEditing } from "./Equipment";
+import type { House3DMode, RoofInput, StageControls, StagePanel, StageReveal } from "./types";
 
 const Scene = dynamic(() => import("./Scene"), { ssr: false });
 
@@ -48,6 +51,9 @@ export interface House3DProps {
   controls?: StageControls;
   /** Stages with the same key share one orbit. */
   cameraKey?: string;
+  /** Planner may move, add and remove panels. Only placement: the engine's kWp never changes. */
+  editable?: boolean;
+  onPanelsChange?: (panels: StagePanel[]) => void;
   className?: string;
 }
 
@@ -99,14 +105,24 @@ const kw = (x: number) => `${(Math.abs(x) < 0.05 ? 0 : x).toFixed(1)} kW`;
  */
 export function House3D({
   design, home, mode, roof, static: forceStatic = false, flyIn = true, highlight = null, onSelect, timeOfDay,
-  onTimeOfDayChange, reveal, labels = false, controls = "full", cameraKey, className,
+  onTimeOfDayChange, reveal, labels = false, controls = "full", cameraKey, editable = false, onPanelsChange, className,
 }: House3DProps) {
   const theme = useThemeName();
   const reduced = useReducedMotion();
   const [failed, setFailed] = useState(false);
   const renderMode = useRenderMode(forceStatic || failed);
   const palette = useMemo(() => getPalette(theme), [theme]);
-  const spec = useMemo(() => buildSceneSpec(design, home, mode, roofPlanes, roof), [design, home, mode, roof]);
+  const baseSpec = useMemo(() => buildSceneSpec(design, home, mode, roofPlanes, roof), [design, home, mode, roof]);
+  // planner edits of where the panels sit; a new design (another layout) starts from the engine's layout again
+  const layoutKey = baseSpec.layout.slots.map((s) => s.id).join(",") + "|" + baseSpec.roof.pitchDeg;
+  const [edited, setEdited] = useState<{ for: string; slots: PanelSlot[] } | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const editedSlots = edited?.for === layoutKey ? edited.slots : null;
+  const spec = useMemo(
+    () => (editedSlots ? { ...baseSpec, layout: { ...baseSpec.layout, slots: editedSlots, placed: editedSlots.length } } : baseSpec),
+    [baseSpec, editedSlots],
+  );
+  const grid = useMemo(() => fullGrid(roofPlanes(baseSpec.roof.pitchDeg)), [baseSpec.roof.pitchDeg]);
   const place: Place = useMemo(
     () => ({ ...MAY_DAY, lat: roof?.latitude ?? MAY_DAY.lat, lon: roof?.longitude ?? MAY_DAY.lon }),
     [roof?.latitude, roof?.longitude],
@@ -200,6 +216,37 @@ export function House3D({
   }, []);
 
   const show3d = renderMode === "3d";
+  const canEdit = editable && mode === "planner" && !reveal && show3d && spec.components.pv.visible;
+  const commit = (slots: PanelSlot[]) => {
+    setEdited({ for: layoutKey, slots });
+    onPanelsChange?.(slots.map((s) => ({ id: s.id, segment: s.plane === "main" ? 0 : 1, u: s.u, v: s.v, portrait: true })));
+  };
+  const pickedSlot = picked ? spec.layout.slots.find((s) => s.id === picked) ?? null : null;
+  const panelEdit: PanelEditing | null = canEdit
+    ? { selected: pickedSlot?.id ?? null, grid, onPick: setPicked, onMove: (id, to) => { commit(movePanel(spec.layout.slots, id, to)); setPicked(to.id); } }
+    : null;
+  // Delete / Backspace removes the picked panel, Escape lets go (not while typing elsewhere)
+  const keys = useRef<(e: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    keys.current = (e) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (e.key === "Escape") setPicked(null);
+      if ((e.key === "Delete" || e.key === "Backspace") && pickedSlot) {
+        e.preventDefault();
+        commit(removePanel(spec.layout.slots, pickedSlot.id));
+        setPicked(null);
+      }
+    };
+  });
+  useEffect(() => {
+    if (!canEdit) return;
+    const on = (e: KeyboardEvent) => keys.current(e);
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, [canEdit]);
+  const enginePanels = baseSpec.layout.requested - baseSpec.existingPanels;
+  const placedPanels = spec.layout.slots.length - baseSpec.existingPanels;
   const c = spec.components;
   const activeSpec = active ? c[active] : null;
   const homeowner = mode === "homeowner";
@@ -265,11 +312,31 @@ export function House3D({
                 hpOptionKw={design.options?.heatpump?.available ? design.options.heatpump.kw : null}
                 labels={labels}
                 cameraKey={cameraKey}
+                panelEdit={panelEdit}
                 inView={inView}
                 onMiss={() => { if (selectedRef.current) select(null); }}
                 onReady={onReady}
               />
             </SceneBoundary>
+          </div>
+        )}
+
+        {/* planner panel editing: placement only, the engine's size stays */}
+        {panelEdit && controls !== "none" && (
+          <div
+            data-h3d-ui
+            role="toolbar"
+            aria-label="Edit panels"
+            className={cn("absolute bottom-3 left-3 flex items-center gap-1 p-1", glassPanel, "rounded-full")}
+          >
+            <span className={cn("px-2.5 font-mono text-[12px] tabular-nums", placedPanels === enginePanels ? "text-ink-body" : "text-warning-text")}>
+              Placed {placedPanels} of {enginePanels}
+            </span>
+            <button type="button" onClick={() => commit(addPanel(spec.layout.slots, grid, pickedSlot))} className={cn(pill, "h-7 text-ink-body [@media(hover:hover)]:hover:bg-surface-2")}>Add</button>
+            <button type="button" disabled={!pickedSlot} onClick={() => { if (pickedSlot) { commit(removePanel(spec.layout.slots, pickedSlot.id)); setPicked(null); } }} className={cn(pill, "h-7 text-ink-body disabled:opacity-40 [@media(hover:hover)]:hover:bg-surface-2")}>Remove</button>
+            {editedSlots && (
+              <button type="button" onClick={() => { setEdited(null); setPicked(null); onPanelsChange?.([]); }} className={cn(pill, "h-7 text-ink-body [@media(hover:hover)]:hover:bg-surface-2")}>Reset</button>
+            )}
           </div>
         )}
 
