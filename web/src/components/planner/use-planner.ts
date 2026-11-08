@@ -1,5 +1,6 @@
 "use client";
 
+import type { AllowedVariant } from "@/lib/allowed";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { diffDesigns, sizeOf, type DesignDiff } from "@/lib/diff";
@@ -225,14 +226,14 @@ export function usePlanner(initial: DesignRow) {
     [save],
   );
 
-  const share = useCallback(async () => {
+  const share = useCallback(async (allowed?: AllowedVariant[]) => {
     const st = stateRef.current;
     if (!st.response) return null;
     try {
       // the link is made from the stored row: wait until the latest change (e.g. a refine) has been saved
       await saves.current.idle();
-      // allowed variants are computed by the server from the engine's alternatives
-      const r = await post<{ token: string; path: string }>("/api/shares", { design_id: st.row.id });
+      // what the homeowner may change: the installer's selection, narrowed again by the server
+      const r = await post<{ token: string; path: string }>("/api/shares", { design_id: st.row.id, ...(allowed ? { allowed } : {}) });
       setS((p) => ({ ...p, row: { ...p.row, status: "sent" } }));
       return r;
     } catch (e) {

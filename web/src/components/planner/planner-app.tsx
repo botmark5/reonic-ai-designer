@@ -14,7 +14,9 @@ import type { DesignRow } from "@/lib/supabase";
 import { OFFER_TYPE_LABEL, type ComponentKey, type OfferType } from "@/lib/types";
 import type { FloorPlan } from "@/lib/floorplan";
 import { FloorPlanUpload } from "./floorplan-upload";
+import type { AllowedVariant } from "@/lib/allowed";
 import { HomeForm, type AddressLookup } from "./home-form";
+import { SendPanel } from "./send-panel";
 import { Inbox } from "./inbox";
 import { PhysicsTiles, SimilarHomes, WhyThisDesign } from "./evidence";
 import { RefineBox } from "./refine-box";
@@ -211,8 +213,11 @@ function Workspace({
   }, [changeKey, firstChanged]);
   const wide = useWide();
 
-  async function send() {
-    const res = await p.share();
+  const [sending, setSending] = useState<"closed" | "open" | "busy">("closed");
+  async function send(allowed: AllowedVariant[]) {
+    setSending("busy");
+    const res = await p.share(allowed);
+    setSending(res ? "closed" : "open");
     if (!res) return;
     const url = `${window.location.origin}${res.path}`;
     await navigator.clipboard?.writeText(url).catch(() => {});
@@ -250,7 +255,7 @@ function Workspace({
             <Button variant="secondary" render={<Link href="/reality" />} nativeButton={false}>
               Compare with expert
             </Button>
-            <Button variant="secondary" onClick={send} disabled={!r}>
+            <Button variant="secondary" onClick={() => setSending((v) => (v === "closed" ? "open" : "closed"))} disabled={!r} aria-expanded={sending !== "closed"}>
               Send to homeowner
             </Button>
             <Button
@@ -264,6 +269,8 @@ function Workspace({
             </Button>
           </div>
         </div>
+
+        {r && sending !== "closed" && <SendPanel design={r} busy={sending === "busy"} onSend={send} onCancel={() => setSending("closed")} />}
 
         {r ? (
           <section aria-label="The system on the house" className="flex flex-col gap-2">
