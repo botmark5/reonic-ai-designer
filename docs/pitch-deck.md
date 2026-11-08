@@ -40,7 +40,7 @@ homeowners**. The four criteria weigh equally: technical depth, user fit, busine
    similar homes the installer already built, and one smaller and one larger size. An override is checked against 40
    similar homes."
 6. **Measured.** "Every number here comes from 315 homes the engine never saw, split by customer, against the best of three
-   rules of thumb. Over all homes the whole-project solar error is 22 % lower, because the engine recognises add-on sales:
+   rules of thumb. Over all homes the whole-project solar error is 24 % lower, because the engine recognises add-on sales:
    no new solar for 77 % of add-on homes, where rules manage 6 %."
 7. **Honest half.** "On new systems we are slightly better than the best rule, 2.45 against 2.64 kWp, a small margin. On exact
    size, within 1.5 kWp, we are below the rule. The gains are the yes/no decisions, the ranges that hold the expert's
@@ -52,7 +52,7 @@ homeowners**. The four criteria weigh equally: technical depth, user fit, busine
 10. **Value.** "From the start of a call to the homeowner link: 29 seconds and 6 clicks. The planner's review comes on top.
     Junior planners design like the installer's own history; homeowners see sizes from homes like theirs."
 11. **Close (last 20 s).** "One engine for the planner, the homeowner and the phone call: a reviewed draft in half a
-    second, every size explained, 22 % less solar error than the best rule of thumb. Measured on 315 homes it never saw."
+    second, every size explained, 24 % less solar error than the best rule of thumb. Measured on 315 homes it never saw."
 
 ## Rules for the deck (from `docs/pitch-facts.md`)
 - Never "X % accurate" without the metric and the comparison. Never "beats the experts" or "matches the experts".
