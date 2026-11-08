@@ -12,6 +12,7 @@ import { fmtEur, fmtInt } from "@/lib/format";
 import type { Offer } from "@/lib/offer";
 import type { DesignResponse, Home } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { listenOnce } from "./listen-once";
 import { captionAt, plainText, timeOfDayAt, variantView, type TimedSegment } from "./offer-logic";
 
 function household(h: Home) {
@@ -402,6 +403,24 @@ function ListenButton({ offer, onHour, onCaption, stopSignal, onStart }: {
     };
   }, []);
 
+  // Start the paid work (script + voice) when the page opens, not on the click: by the time the viewer reaches the
+  // button the clip is ready, and play() runs inside the click (Safari). One request per offer per page load.
+  const loadListen = useCallback(
+    () =>
+      listenOnce<ListenReply>(offer.token, async () => {
+        const res = await fetch(`/api/offer/${offer.token}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "listen" }),
+        });
+        return res.ok ? ((await res.json()) as ListenReply) : null;
+      }),
+    [offer.token],
+  );
+  useEffect(() => {
+    void loadListen();
+  }, [loadListen]);
+
   async function start(r: ListenReply, from = 0) {
     if (from === 0) onStart();
     clockT.current = { t: from, last: 0 };
@@ -428,13 +447,8 @@ function ListenButton({ offer, onHour, onCaption, stopSignal, onStart }: {
     if (state === "done" && reply) return start(reply, 0);
     setState("loading");
     try {
-      const res = await fetch(`/api/offer/${offer.token}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "listen" }),
-      });
-      if (!res.ok) throw new Error();
-      const r = (await res.json()) as ListenReply;
+      const r = await loadListen(); // the request the page started on open (or one retry if that failed)
+      if (!r) throw new Error();
       setReply(r);
       await start(r);
     } catch {
