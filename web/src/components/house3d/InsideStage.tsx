@@ -23,6 +23,8 @@ export interface InsideStageProps {
   mode: House3DMode;
   /** Show the zone pickers under the model. */
   controls: boolean;
+  /** false while hidden (kept mounted): the 3D pauses. Default true. */
+  active?: boolean;
   /** Where the parts start (e.g. a battery the planner already put in the basement). Default: garage/outside. */
   zones?: Partial<Record<InsideKey, Zone>>;
   onZonesChange?: (p: Partial<Record<InsideKey, Zone>>) => void;
@@ -35,7 +37,7 @@ export interface InsideStageProps {
  * Inside the house as a simple section: basement, garage, outside wall. The planner drags each part of the system
  * into a zone (or picks it from the list); parts snap into place and only go where they belong.
  */
-export function InsideStage({ design, home, mode, controls, zones, onZonesChange, floorPlan, className }: InsideStageProps) {
+export function InsideStage({ design, home, mode, controls, active = true, zones, onZonesChange, floorPlan, className }: InsideStageProps) {
   const theme = useThemeName();
   const reduced = useReducedMotion();
   const palette = useMemo(() => getPalette(theme), [theme]);
@@ -82,6 +84,7 @@ export function InsideStage({ design, home, mode, controls, zones, onZonesChange
             batteryKwh={design.design.battery.kwh}
             onDrop={(k, x, z) => apply(k, drop(placement, k, x, z, geo))}
             plan={plan}
+            active={active}
           />
         </div>
         {keys.length === 0 && (

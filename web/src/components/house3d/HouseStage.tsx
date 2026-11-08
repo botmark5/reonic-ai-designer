@@ -108,6 +108,10 @@ export function HouseStage({
   const [ownView, setOwnView] = useState<StageView>("outside");
   const shownView = view ?? ownView;
   const tiles = wanted && !!TILES_KEY && !!at && shownView === "outside" && !still && off !== at;
+  // Inside mounts the first time it is shown and then stays (hidden while Outside shows)
+  const insideOn = shownView === "inside";
+  const [insideOpen, setInsideOpen] = useState(insideOn);
+  if (insideOn && !insideOpen) setInsideOpen(true);
   // The procedural house stays on screen until the street's first tiles arrive (the street fades in over it), then
   // it unmounts. A fallback before that is invisible: the house was there all along.
   const [readyAt, setReadyAt] = useState<string | null>(null);
@@ -168,8 +172,9 @@ export function HouseStage({
   );
 
   function renderStage() {
-  const inside = shownView === "inside" ? (
+  const inside = insideOpen ? (
     <InsideStage
+      active={insideOn}
       design={design}
       home={home}
       mode={mode}
@@ -183,8 +188,7 @@ export function HouseStage({
   // the model stays mounted (hidden, paused) while Inside shows: edits, time and camera survive the switch
   const model = (
     <>
-      {inside}
-      <div hidden={!!inside}>
+      <div hidden={insideOn}>
     <House3D
       design={design}
       home={home}
@@ -215,6 +219,9 @@ export function HouseStage({
   // same tree shape with and without the street, so a fallback never remounts the house
   return (
     <>
+      {/* Inside, once opened, stays mounted (hidden, paused): unmounting its canvas tore out drei's <Html> labels
+          mid-commit (the removeChild page error) and lost the parts' places */}
+      {inside && <div hidden={!insideOn}>{inside}</div>}
       {!settled && model}
       {tiles && location && (
         <div className={settled ? undefined : cn("absolute inset-0", !ready && "pointer-events-none")} aria-hidden={ready ? undefined : true}>
