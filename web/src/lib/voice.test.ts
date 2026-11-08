@@ -705,6 +705,22 @@ describe("offer timeline", () => {
   });
 });
 
+describe("committed voice clips (voice-cache.json)", () => {
+  it("every clip has its mp3 in public/ and timings in order", async () => {
+    const { existsSync, statSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const clips = (await import("./voice-cache.json")).default as Record<string, { audio_path: string; segments: { start_s: number; end_s: number }[]; duration_s: number }>;
+    for (const [key, c] of Object.entries(clips)) {
+      expect(key).toMatch(/^[0-9a-f]{16}$/);
+      const file = join(process.cwd(), "public", c.audio_path);
+      expect(existsSync(file)).toBe(true);
+      expect(statSync(file).size).toBeGreaterThan(10_000);
+      for (let i = 1; i < c.segments.length; i++) expect(c.segments[i].start_s).toBeGreaterThanOrEqual(c.segments[i - 1].end_s);
+      expect(c.segments[c.segments.length - 1].end_s).toBeLessThanOrEqual(c.duration_s);
+    }
+  });
+});
+
 describe("handleExplain", () => {
   const d0 = design({ annual_kwh: 5000 }, { ...EMPTY_LOCKS, pv_kwp: 10.8, battery_kwh: 10 });
   beforeEach(() => {
