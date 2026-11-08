@@ -421,6 +421,27 @@ describe("handleUpdateFacts", () => {
     expect(stored(fs)?.facts).toMatchObject({ orientation_deg: 170, tilt_deg: 35, inhabitants: 2 });
     await Promise.all(d.deferred.slice(1).map((fn) => fn()));
     expect(solar).toHaveBeenCalledTimes(1); // same address: no second lookup
+    let seen: DesignRequest | null = null;
+    const res = await handleCreateDesign(
+      post("/api/voice/create-design", { conversation_id: "c1", annual_kwh: 4000 }, auth),
+      { ...d, design: async (req) => ((seen = req), mockDesign(req)) },
+    );
+    expect(res.status).toBe(200);
+    expect(solar).toHaveBeenCalledTimes(1); // create-design reuses the stored roof
+    expect(seen!.home).toMatchObject({ orientation_deg: 170, tilt_deg: 35 });
+    expect(stored(fs)?.facts).toMatchObject({ orientation_deg: 170, solar: { status: "ok" } });
+  });
+
+  it("create-design still uses stored answers when the read takes a transatlantic 500 ms", async () => {
+    const fs = fakeStore();
+    let seen: DesignRequest | null = null;
+    const d = deps({ store: fs.store, design: async (req) => ((seen = req), mockDesign(req)) });
+    await upd(d, { conversation_id: "c1", household: 4, has_ev: "planned" });
+    const slow = { ...fs.store, getCall: async (cid: string) => (await new Promise((r) => setTimeout(r, 500)), fs.store.getCall(cid)) };
+    const res = await handleCreateDesign(post("/api/voice/create-design", { conversation_id: "c1", annual_kwh: 5200 }, auth), { ...d, store: slow });
+    expect(res.status).toBe(200);
+    expect(seen!.home).toMatchObject({ annual_kwh: 5200, inhabitants: 4, has_ev: true });
+    expect(stored(fs)?.facts).toMatchObject({ inhabitants: 4, has_ev: true, stated: { household: 4, has_ev: "planned", annual_kwh: 5200 } });
   });
 
   it("create-design fills in answers the agent stored earlier but did not repeat", async () => {

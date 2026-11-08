@@ -27,6 +27,7 @@ const DEFAULT_KWH = 4000;
 const EV_KM_DEFAULT = 15000; // planner form and chat agent use the same default
 const CREATE_BUDGET_MS = 2500; // the agent must be able to speak within ~3 s
 const SOLAR_BUDGET_MS = 900;
+const STORED_READ_MS = 900; // create-design: reading the answers update_facts stored
 const POSTCALL_BUDGET_MS = 8000;
 /** After create-design answered "pending": wait for the slow engine call, then retry once after the engine client's
  *  15 s outage cool-down (engine.ts COOLDOWN_MS). Routes set maxDuration = 60. */
@@ -502,14 +503,16 @@ export interface DraftResult {
 export async function createDraftFromFacts(
   raw: unknown,
   deps: VoiceDeps,
-  opts: { budgetMs: number; callStatus: string },
+  opts: { budgetMs: number; callStatus: string; existing?: StoredCall; extraFacts?: Record<string, unknown> },
 ): Promise<DraftResult> {
   const t0 = deps.now();
   const { facts, home, assumptions } = normaliseFacts(raw);
 
   let solar: SolarResult | null = null;
+  const storedSolar = opts.existing?.facts.solar_for === facts.address ? (opts.existing?.facts.solar as SolarResult | undefined) : undefined;
   if (facts.address) {
-    solar = await withTimeout(deps.solar(facts.address), Math.min(SOLAR_BUDGET_MS, opts.budgetMs * 0.36), "solar");
+    solar = storedSolar // update_facts already looked this roof up
+      ?? (await withTimeout(deps.solar(facts.address), Math.min(SOLAR_BUDGET_MS, opts.budgetMs * 0.36), "solar"));
     const roof = solar ? roofFromSolar(solar) : null;
     if (roof && (home.orientation_deg == null || home.tilt_deg == null)) {
       if (home.orientation_deg == null) home.orientation_deg = roof.orientation_deg;
@@ -530,7 +533,8 @@ export async function createDraftFromFacts(
       status: opts.callStatus,
       customer_name: facts.customer_name ?? undefined,
       address: facts.address ?? undefined,
-      facts: { ...home, voice: facts, assumptions, solar },
+      facts: { ...home, voice: facts, assumptions, solar, ...opts.extraFacts },
+      existing: opts.existing,
     }),
   ]);
 
@@ -573,15 +577,19 @@ export async function handleCreateDesign(req: Request, deps: VoiceDeps, opts = {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return Response.json({ instruction: SAY_SORRY }, { status: 400 });
   }
-  // Answers update_facts stored during the call fill whatever the agent did not repeat now.
+  // Answers update_facts stored during the call fill whatever the agent did not repeat now. The read gets
+  // up to STORED_READ_MS: from a US function region one Supabase (EU) round trip alone can take 300-400 ms.
   const cid = parseText((body as Record<string, unknown>).conversation_id);
+  let existing: StoredCall | undefined;
+  let extraFacts: Record<string, unknown> | undefined;
   if (cid) {
-    const prev = await withTimeout(deps.store.getCall(cid), 300, "stored facts");
-    const stated = prev?.facts.stated as Record<string, unknown> | undefined;
-    if (stated) body = { ...mergeStated(stated, body as Record<string, unknown>).stated, conversation_id: cid };
+    existing = (await withTimeout(deps.store.getCall(cid), STORED_READ_MS, "stored facts")) ?? undefined;
+    const merged = mergeStated(existing?.facts.stated as Record<string, unknown> | undefined, body as Record<string, unknown>);
+    if (existing?.facts.stated) body = { ...merged.stated, conversation_id: cid };
+    extraFacts = { stated: merged.stated };
   }
   const left = Math.max(250, opts.budgetMs - (deps.now() - t0));
-  const result = await createDraftFromFacts(body, deps, { budgetMs: left, callStatus: "live" });
+  const result = await createDraftFromFacts(body, deps, { budgetMs: left, callStatus: "live", existing, extraFacts });
   log(`create-design ${deps.now() - t0} ms, design ${result.pending ? "pending" : (result.design_id ?? "not stored")}`);
   return Response.json(result);
 }
