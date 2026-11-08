@@ -60,6 +60,8 @@ async function main() {
   mkdirSync(OUT, { recursive: true });
   const base = args.base ?? (await startServer());
 
+  if (args.set === "v2") return v2(base);
+
   const designs = [];
   for (const s of SCENES) {
     const r = await fetch(`${base}/api/engine/design`, {
@@ -147,7 +149,119 @@ async function record(page, base, scene) {
   return file;
 }
 
-async function open(page, base, shot, w, h, dpr) {
+/**
+ * Tonight's features (--set v2), all 16:9 at 1920×1080, the demo persona's home (runbook: Anna Weber, family of
+ * four, ~4,100 kWh, EV next year, gas): (1) the real street from Google 3D tiles with the panels on the roof,
+ * (2) the sun map, (3) Inside with the battery in the basement, (4) the EV state with car + wallbox (model),
+ * plus a 15 s clip of the /live build-up. The real street needs the tiles key, which allows localhost:3123 only.
+ */
+const DEMO_ADDRESS = "Ungererstraße 80, 80805 München"; // the address in docs/demo-runbook.md, nothing else
+const PERSONA = home({ annual_kwh: 4100, has_ev: true, ev_km_year: 15000 });
+
+async function v2(base) {
+  const r = await fetch(`${base}/api/engine/design`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ installer: INSTALLER, home: PERSONA, locks: LOCKS }),
+  });
+  const design = await r.json();
+  if (design.served?.source !== "engine") throw new Error(`design served by "${design.served?.source}", not the engine`);
+  const d = design.design;
+  console.log(`persona: PV ${d.pv.kwp} kWp · battery ${d.battery.include ? d.battery.kwh : "-"} kWh · wallbox ${d.wallbox.include ? "yes" : "no"} · heat pump ${d.heatpump.include ? d.heatpump.kw : design.options?.heatpump?.available ? "option" : "-"}`);
+  const geo = await (await fetch(`${base}/api/solar/panels?${new URLSearchParams({ address: DEMO_ADDRESS, kwp: String(d.pv.kwp ?? 0) })}`)).json();
+  if (geo.status !== "ok") throw new Error(`no placement for the demo address: ${geo.status} ${geo.reason ?? ""}`);
+  const location = { lat: geo.center.lat, lng: geo.center.lng, address: DEMO_ADDRESS };
+  console.log(`placement: ${geo.panel_count} panels on ${geo.segments.length} roof segments`);
+  writeFileSync(join(OUT, "deck_3d_v2_design.json"), JSON.stringify({ home: PERSONA, design, address: DEMO_ADDRESS }, null, 2));
+
+  const chrome = await launchChrome();
+  const page = chrome.page;
+  await page.send("Page.enable");
+  await page.send("Runtime.enable");
+  const files = ["deck_3d_v2_design.json"];
+  const W = 1920, H = 1080;
+  const tilesReady = `!!document.querySelector('[data-h3d-stage] canvas') && !document.querySelector('[data-h3d-stage] [role=status]') && !document.querySelector('[data-h3d-stage] > img')`;
+  const still = async (file, shot, opts, settle) => {
+    if (args.only === "video") return;
+    await open(page, base, { design, home: PERSONA, mode: "planner", clean: true, ...shot }, W, H, SS, opts);
+    if (opts?.hour) await setHour(page, opts.hour);
+    await sleep(settle);
+    const raw = join(OUT, `.raw-${file}`);
+    writeFileSync(raw, Buffer.from((await page.send("Page.captureScreenshot", { format: "png" })).data, "base64"));
+    ffmpeg(["-i", raw, "-vf", `scale=${W}:${H}:flags=lanczos`, join(OUT, file)]);
+    rmSync(raw);
+    files.push(file);
+    console.log(`  ${file}`);
+  };
+  // tiles: wait for the street, then for the fine detail, the measured roof and the panels' drop
+  await still("deck_3d_v2_1_street_16x9.png", { location, labels: true }, { query: "?tiles=1", ready: tilesReady }, 22000);
+  await still("deck_3d_v2_2_sunmap_16x9.png", { location, sunMap: true }, { query: "?tiles=1", ready: tilesReady }, 22000);
+  await still("deck_3d_v2_3_inside_16x9.png", { view: "inside", zones: { battery: "basement" } },
+    { ready: `!!document.querySelector('[data-h3d-stage] canvas') && document.querySelectorAll('.uppercase').length >= 3` }, 4000);
+  await still("deck_3d_v2_4_ev_16x9.png", { labels: true }, { hour: HOUR }, 6000);
+  if (args.only !== "stills") files.push(await recordReveal(page, base, design));
+  chrome.close();
+  if (args.upload) {
+    execFileSync("gh", ["release", "upload", "data-v1", ...files.map((f) => join(OUT, f)), "--clobber"], { stdio: "inherit" });
+    console.log(`uploaded ${files.length} files to data-v1`);
+  }
+}
+
+/** 15 s of the /live build-up: empty board → shell → roof → warm windows → panels row by row + battery → car → heat pump. */
+async function recordReveal(page, base, design) {
+  const file = "deck_3d_v2_live_16x9.mp4";
+  const shot = { design, home: PERSONA, mode: "planner", labels: true, controls: "none", timeOfDay: 10, reveal: {} };
+  await open(page, base, shot, 1280, 720, 1.5);
+  await sleep(1500);
+  const steps = [
+    [700, { shell: true }],
+    [2200, { shell: true, roof: true }],
+    [3400, { shell: true, roof: true, warm: true }],
+    [4400, { shell: true, roof: true, warm: true, panels: true }],
+    [8200, { shell: true, roof: true, warm: true, panels: true, car: true }],
+    [10800, { shell: true, roof: true, warm: true, panels: true, car: true, heatpump: true }],
+  ];
+  const frames = await screencast(page, 15000, async (t0) => {
+    for (const [at, reveal] of steps) {
+      await sleep(Math.max(0, at - (Date.now() - t0)));
+      await evaluate(page, `(() => { window.__H3D = { ...window.__H3D, reveal: ${JSON.stringify(reveal)} }; dispatchEvent(new Event("h3d")); })()`);
+    }
+  });
+  encode(frames, file);
+  return file;
+}
+
+/** Screencast for `ms` while `during(t0)` runs; returns the frames with their timestamps. */
+async function screencast(page, ms, during) {
+  const dir = mkdtempSync(join(tmpdir(), "h3d-rec-"));
+  const frames = [];
+  const off = page.on((m) => {
+    if (m.method !== "Page.screencastFrame") return;
+    const { data, metadata, sessionId } = m.params;
+    const f = join(dir, `${String(frames.length).padStart(5, "0")}.jpg`);
+    writeFileSync(f, Buffer.from(data, "base64"));
+    frames.push({ f, t: metadata.timestamp });
+    void page.send("Page.screencastFrameAck", { sessionId });
+  });
+  await page.send("Page.startScreencast", { format: "jpeg", quality: 95, maxWidth: 1920, maxHeight: 1080 });
+  const t0 = Date.now();
+  await Promise.all([during(t0), sleep(ms)]);
+  await page.send("Page.stopScreencast");
+  off();
+  if (frames.length < 60) throw new Error(`only ${frames.length} frames captured`);
+  return { dir, frames };
+}
+
+function encode({ dir, frames }, file) {
+  const list = frames.map((fr, i) => `file '${fr.f}'\nduration ${((frames[i + 1]?.t ?? fr.t + 1 / 30) - fr.t).toFixed(4)}`).join("\n");
+  writeFileSync(join(dir, "list.txt"), `${list}\nfile '${frames.at(-1).f}'\n`);
+  ffmpeg(["-f", "concat", "-safe", "0", "-i", join(dir, "list.txt"), "-vf", "fps=30,scale=1920:1080:flags=lanczos",
+    "-c:v", "libx264", "-crf", "16", "-preset", "slow", "-pix_fmt", "yuv420p", "-movflags", "+faststart", join(OUT, file)]);
+  const secs = frames.at(-1).t - frames[0].t;
+  console.log(`  ${file} (${frames.length} frames over ${secs.toFixed(1)} s)`);
+  rmSync(dir, { recursive: true, force: true });
+}
+
+async function open(page, base, shot, w, h, dpr, opts = {}) {
   await page.send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: dpr, mobile: false });
   await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: THEME }] });
   const { identifier } = await page.send("Page.addScriptToEvaluateOnNewDocument", {
@@ -155,11 +269,11 @@ async function open(page, base, shot, w, h, dpr) {
       addEventListener("error", (e) => __h3dErrors.push(String(e.message)));
       addEventListener("unhandledrejection", (e) => __h3dErrors.push(String(e.reason)));`,
   });
-  await page.send("Page.navigate", { url: `${base}/house3d-export` });
+  await page.send("Page.navigate", { url: `${base}/house3d-export${opts.query ?? ""}` });
   try {
     for (let i = 0; i < 120; i++) {
       await sleep(250);
-      const ready = await evaluate(page, `!!document.querySelector('[data-h3d-stage] > img')?.classList.contains('opacity-0')`).catch(() => false);
+      const ready = await evaluate(page, opts.ready ?? `!!document.querySelector('[data-h3d-stage] > img')?.classList.contains('opacity-0')`).catch(() => false);
       if (ready) return;
     }
     const shot = await page.send("Page.captureScreenshot", { format: "png" });
@@ -190,7 +304,7 @@ function ffmpeg(a) {
 }
 
 async function startServer() {
-  const port = 3119;
+  const port = Number(args.port ?? 3123); // the tiles key allows localhost:3123 (and 3125) only
   if (await fetch(`http://localhost:${port}`).then(() => true).catch(() => false)) {
     throw new Error(`port ${port} is busy (an earlier run still serving?); stop it or pass --base`);
   }

@@ -134,7 +134,7 @@ export function WarmWindows({ glass, on, reduced }: { glass: THREE.MeshStandardM
     if (!s.current || reduced) s.current = { x: target, v: 0 };
     else stepSpring(s.current, target, dt, SETTLE);
     m.emissive.copy(WARM);
-    m.emissiveIntensity = Math.max(0, s.current.x) * 0.85;
+    m.emissiveIntensity = Math.max(0, s.current.x) * 0.4; // a soft glow: in daylight more reads as orange paint
   });
   return null;
 }
