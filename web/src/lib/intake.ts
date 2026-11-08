@@ -7,11 +7,64 @@
 import { DEFAULT_INSTALLER } from "./engine";
 import type { SolarResult } from "./solar";
 import { EMPTY_LOCKS, type DesignResponse, type Home } from "./types";
-import { applyGoogleRoof, hasUsageFacts, normaliseFacts, withTimeout, type VoiceDeps, type VoiceFacts } from "./voice";
+import { applyGoogleRoof, hasUsageFacts, normaliseFacts, withTimeout, type NormalisedFacts, type VoiceDeps, type VoiceFacts } from "./voice";
 
 const SOLAR_MS = 4000; // the roof is looked up once per address (lookupSolar caches it), so the first answer may wait
 const ENGINE_MS = 8000;
 const MAX_BODY_FIELDS = 30;
+
+/**
+ * A site-visit form's fields (/visit) in the voice agent's vocabulary. Every field is optional; the values are the
+ * ones a form naturally has (booleans, numbers, enum keys). factsFromForm gives the same facts and the same engine
+ * home as a call or /intake with the same answers, so all three entry points design identically.
+ */
+export interface FormFields {
+  customer_name?: string | null;
+  address?: string | null;
+  /** true / false / null (don't know) */
+  has_existing_pv?: boolean | null;
+  existing_pv_kwp?: number | null;
+  existing_battery_kwh?: number | null;
+  /** give one of the two; a stated use wins over the bill */
+  annual_kwh?: number | null;
+  monthly_bill_eur?: number | null;
+  /** people in the home (number, or words like "couple with two kids") */
+  household?: number | string | null;
+  daytime_presence?: boolean | null;
+  /** "no" | "yes" or "now" (drives one today) | "planned"; booleans work too */
+  has_ev?: "no" | "yes" | "now" | "planned" | boolean | null;
+  ev_km_year?: number | null;
+  /** gas | oil | heatpump | electric | district | wood | other */
+  heating?: string | null;
+  heating_age_years?: number | null;
+  /** concrete_tile | clay_tile | flat | metal | slate | other */
+  roof_type?: string | null;
+  /** south | south_east | south_west | east_west | east | west | north; leave empty to use Google's roof */
+  roof_direction?: string | null;
+  wishes?: string | null;
+  notes?: string | null;
+}
+
+/** Empty form values are "not answered" (never a value); "now" is the form's word for a car they already drive. */
+function formAnswers(fields: FormFields): Record<string, unknown> {
+  const raw: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields)) if (v != null && v !== "") raw[k] = v;
+  if (raw.has_ev === "now") raw.has_ev = "yes";
+  return raw;
+}
+
+/** Form fields → the voice pipeline's facts, engine home and stated assumptions (no Google roof: see formDraft). */
+export function factsFromForm(fields: FormFields): NormalisedFacts {
+  return normaliseFacts(formAnswers(fields));
+}
+
+/**
+ * Form fields → the full draft input, exactly as /intake and create_design build it: facts + Google's roof for the
+ * address + the engine's design (null until use, bill or household is known). Server-side only.
+ */
+export function formDraft(fields: FormFields, deps: Pick<VoiceDeps, "design" | "solar" | "installer">): Promise<IntakeReply> {
+  return intakePreview(formAnswers(fields), deps);
+}
 
 export interface IntakeReply {
   facts: VoiceFacts;
