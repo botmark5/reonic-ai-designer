@@ -816,6 +816,40 @@ describe("handleExplain", () => {
     expect(f).toHaveBeenCalledTimes(1);
   });
 
+  it("shares one TTS run between concurrent requests for the same design (offer prefetch + click)", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const f = vi.fn(async (_u: string | URL | Request, init?: RequestInit) => {
+      await gate;
+      return Response.json(tts(JSON.parse(String(init?.body)).text));
+    });
+    const d = deps({ fetch: f as unknown as typeof fetch, elevenLabsKey: "el", voiceId: "voice1", ttsEnabled: true });
+    const ask = () => handleExplain(post("/api/voice/explain", { design_response: d0, audio: true }), d).then((r) => r.json());
+    const first = ask();
+    const second = ask();
+    await new Promise((r) => setTimeout(r, 0));
+    release();
+    const [a, b] = await Promise.all([first, second]);
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(a).toMatchObject({ audio_base64: "AQID", cached: null });
+    expect(b).toMatchObject({ audio_base64: "AQID", cached: "in_flight", segments: a.segments });
+    // a text-only request does not wait for (or receive) the audio run
+    const text = await (await handleExplain(post("/api/voice/explain", { design_response: d0 }), d)).json();
+    expect(text).toMatchObject({ audio_base64: null, cached: "memory" });
+  });
+
+  it("a failed TTS run is not cached as final: the next request pays again", async () => {
+    let n = 0;
+    const f = vi.fn(async (_u: string | URL | Request, init?: RequestInit) =>
+      ++n === 1 ? new Response("busy", { status: 503 }) : Response.json(tts(JSON.parse(String(init?.body)).text)),
+    );
+    const d = deps({ fetch: f as unknown as typeof fetch, elevenLabsKey: "el", voiceId: "voice1", ttsEnabled: true });
+    const ask = () => handleExplain(post("/api/voice/explain", { design_response: d0, audio: true }), d).then((r) => r.json());
+    expect(await ask()).toMatchObject({ audio_base64: null, audio_reason: "error", timing: "estimated" });
+    expect(await ask()).toMatchObject({ audio_base64: "AQID", timing: "audio" });
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+
   it("never passes a login or error page off as the cached clip, and does not pay for a new one", async () => {
     const key = explainKey(d0, "en", "voice1");
     setStaticClips({
