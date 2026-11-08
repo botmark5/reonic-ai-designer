@@ -49,7 +49,23 @@ export function capacity(plane: RoofPlane): { cols: number; rows: number; total:
   return { cols, rows, total: cols * rows };
 }
 
-/** Fill planes in order. On each plane: full rows from the eave up, the last row centred. */
+/**
+ * Fill planes in order. On each plane: full rows from the eave up, the last row centred. A last row of only one or two
+ * panels would stand alone on the roof, so then the last two rows share their panels evenly (21 on a 10-wide roof:
+ * 10/6/5, not 10/10/1). More panels only ever add to the top, so a bigger design drops in new panels, not a re-layout.
+ */
+export function rowSizes(k: number, cols: number): number[] {
+  if (cols <= 0 || k <= 0) return [];
+  const sizes = Array.from({ length: Math.floor(k / cols) }, () => cols);
+  const r = k % cols;
+  if (r > 0) sizes.push(r);
+  if (r > 0 && r <= 2 && sizes.length >= 2 && cols >= 4) {
+    const pair = cols + r;
+    sizes[sizes.length - 2] = Math.ceil(pair / 2);
+    sizes[sizes.length - 1] = Math.floor(pair / 2);
+  }
+  return sizes;
+}
 export function layoutPanels(n: number, planes: RoofPlane[]): Layout {
   const requested = Math.max(0, Math.floor(n));
   const slots: PanelSlot[] = [];
@@ -58,8 +74,9 @@ export function layoutPanels(n: number, planes: RoofPlane[]): Layout {
     if (left <= 0) break;
     const { cols, total } = capacity(plane);
     const k = Math.min(left, total);
+    const sizes = rowSizes(k, cols);
     for (let i = 0, row = 0; i < k; row++) {
-      const inRow = Math.min(cols, k - i);
+      const inRow = Math.min(cols, sizes[row] ?? 0, k - i);
       const v = plane.margin.eave + PANEL.h / 2 + row * (PANEL.h + PANEL.gap);
       for (let col = 0; col < inRow; col++, i++) {
         const u = (col - (inRow - 1) / 2) * (PANEL.w + PANEL.gap);
