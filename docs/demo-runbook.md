@@ -12,7 +12,7 @@ Numbers for the pitch: `docs/pitch-facts.md`.
 4. On `/reality`, check that the headline numbers show. "Engine offline" means the engine is down. Numbers to expect: new systems 2.50 vs 2.62 kWp; what-if card 2.94 → 2.19 kWp (say "what-if", never "accuracy": the answer is derived from the expert offer in this test).
 5. Real voice call only: HQ's test call must have landed in the planner inbox on production. If it has not, use the scripted call.
 6. Phone: charged, hotspot ready, the ElevenLabs test-call link from `docs/voice-agent.md` open, volume up.
-7. Backup video: on the laptop desktop, already scrubbed to 0:00. v1 (5:09, local build of main + #89 + #103, scripted call, refine "Customer wants no battery") is in `.status/backup/backup-v1.mp4`; it shows Reonic projects, so it is never committed. v2 is recorded after the morning deploy.
+7. Backup video: on the laptop desktop, already scrubbed to 0:00. v2 (4:58, local build of main + #89 + #103 with the engine's new /reality cases; scripted call with the EV, refine "Customer wants no battery", roof cap, /reality EV owner, send, Listen) is in `.status/backup/backup-v2.mp4`; v1 is the older take. Both show Reonic projects, so they are never committed. Re-take after the morning deploy if the screens change.
 
 ## The click path
 | time | screen | do | expect on screen | say |
