@@ -98,3 +98,21 @@ export function variantView(d: DesignResponse, heatpumpOn: boolean): { design: D
     },
   };
 }
+
+/** The sentence to show at audio time t: the last one that has started, so the caption holds through short gaps. */
+export function captionAt(t: number, segments: TimedSegment[]): TimedSegment | null {
+  let cur: TimedSegment | null = null;
+  for (const s of segments) if (Number.isFinite(s.start_s) && s.start_s <= t && (!cur || s.start_s >= cur.start_s)) cur = s;
+  return cur;
+}
+
+/** Plain words for the homeowner: no markdown (bold, headings, bullets) and no [voice tags]. */
+export function plainText(s: string): string {
+  return s
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/(\*\*|__)(.*?)\1/g, "$2")
+    .replace(/^\s{0,3}(#{1,6}|[-*•])\s+/gm, "")
+    .replace(/[*_]{2,}/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}

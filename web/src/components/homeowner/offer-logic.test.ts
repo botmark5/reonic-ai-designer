@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mockDesign } from "@/lib/engine-mock";
 import { EMPTY_LOCKS, type DesignResponse, type HeatpumpChoice } from "@/lib/types";
-import { DAY_END, DAY_START, timeOfDayAt, variantView, type TimedSegment } from "./offer-logic";
+import { DAY_END, DAY_START, captionAt, plainText, timeOfDayAt, variantView, type TimedSegment } from "./offer-logic";
 
 const seg = (start_s: number, end_s: number, time_of_day_h: number | null): TimedSegment => ({ text: "x", moment: null, start_s, end_s, time_of_day_h });
 
@@ -81,5 +81,33 @@ describe("variantView: the heat pump chip shows the engine's own 'with heat pump
     const none: DesignResponse = { ...base, options: { heatpump: { available: false, reasons: [] } } };
     expect(variantView(none, true).design).toBe(none);
     expect(variantView(base, true).heatpump).toBeNull();
+  });
+});
+
+describe("captionAt: the sentence under the house never blinks off between sentences", () => {
+  const segs = [seg(0, 4, null), seg(4.4, 10, 8), seg(10.5, 18, 12.5)];
+  it("shows the sentence being spoken", () => {
+    expect(captionAt(2, segs)).toBe(segs[0]);
+    expect(captionAt(12, segs)).toBe(segs[2]);
+  });
+  it("keeps the last sentence in the short gap before the next", () => {
+    expect(captionAt(4.2, segs)).toBe(segs[0]);
+    expect(captionAt(10.2, segs)).toBe(segs[1]);
+  });
+  it("nothing before the first sentence; the last one after the end", () => {
+    expect(captionAt(-1, segs)).toBeNull();
+    expect(captionAt(99, segs)).toBe(segs[2]);
+    expect(captionAt(1, [])).toBeNull();
+  });
+});
+
+describe("plainText: the explain fallback has no markdown", () => {
+  it("strips bold, underline-bold, headings, bullets and voice tags", () => {
+    expect(plainText("## Your offer\n**What you get:** 11.25 kWp solar.\n- a __10 kWh__ battery\n* a wallbox [warmly]")).toBe(
+      "Your offer What you get: 11.25 kWp solar. a 10 kWh battery a wallbox",
+    );
+  });
+  it("leaves plain sentences and numbers alone", () => {
+    expect(plainText("You cover about 59% of your electricity yourself.")).toBe("You cover about 59% of your electricity yourself.");
   });
 });

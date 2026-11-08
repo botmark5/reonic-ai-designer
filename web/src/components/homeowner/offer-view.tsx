@@ -11,9 +11,8 @@ import { sizeOf } from "@/lib/diff";
 import { fmtEur, fmtInt } from "@/lib/format";
 import type { Offer } from "@/lib/offer";
 import type { DesignResponse, Home } from "@/lib/types";
-import { stripVoiceTags } from "@/lib/display-text";
 import { cn } from "@/lib/utils";
-import { timeOfDayAt, variantView, type TimedSegment } from "./offer-logic";
+import { captionAt, plainText, timeOfDayAt, variantView, type TimedSegment } from "./offer-logic";
 
 function household(h: Home) {
   const who = h.inhabitants ? (h.inhabitants === 1 ? "one person" : h.inhabitants === 4 ? "a family of four" : `${h.inhabitants} people`) : "your home";
@@ -143,7 +142,7 @@ export function OfferView({ offer }: { offer: Offer }) {
       </header>
 
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] md:items-start md:gap-8">
-        {/* The house: full-bleed on phones, framed and sticky on larger screens. Nothing over the model but c-3d's view switch. */}
+        {/* The house: full-bleed on phones, framed and sticky on larger screens. Nothing over the model (controls="time"). */}
         <section aria-label="Your house through a sunny day" className="-mx-4 flex min-w-0 flex-col gap-3 md:sticky md:top-20 md:mx-0">
           <HouseStage
             design={view.design}
@@ -151,7 +150,7 @@ export function OfferView({ offer }: { offer: Offer }) {
             mode="homeowner"
             timeOfDay={hour}
             onTimeOfDayChange={onUserHour}
-            controls="full"
+            controls="time"
             className="rounded-none border-x-0 md:rounded-lg md:border-x"
           />
           <p className={cn("m-0 min-h-[3lh] px-4 text-[17px] leading-[26px] text-balance md:px-1", caption ? "text-ink" : "text-ink-muted")} aria-live="polite">
@@ -364,8 +363,8 @@ function ListenButton({ offer, onHour, onCaption, stopSignal, onStart }: {
         const t = now();
         const segs = r.segments ?? [];
         onHour(timeOfDayAt(t, segs, duration(r)));
-        const seg = segs.find((s) => t >= s.start_s && t < s.end_s);
-        onCaption(seg ? stripVoiceTags(seg.text) : segs.length ? null : stripVoiceTags(r.text));
+        const seg = captionAt(t, segs);
+        onCaption(seg ? plainText(seg.text) : segs.length ? null : plainText(r.text));
         if (t >= duration(r) && (!audio.current || audio.current.ended)) {
           setState("done");
           return;
@@ -408,7 +407,8 @@ function ListenButton({ offer, onHour, onCaption, stopSignal, onStart }: {
     clockT.current = { t: from, last: 0 };
     if (r.audio_url || r.audio_base64) {
       if (!audio.current) {
-        const a = new Audio(r.audio_url ?? `data:audio/mpeg;base64,${r.audio_base64}`);
+        // the inline clip first (no second request; /voice/*.mp3 may sit behind the planner gate on older deploys)
+        const a = new Audio(r.audio_base64 ? `data:audio/mpeg;base64,${r.audio_base64}` : r.audio_url!);
         audio.current = a;
       }
       audio.current.currentTime = from;
@@ -446,7 +446,7 @@ function ListenButton({ offer, onHour, onCaption, stopSignal, onStart }: {
           body: JSON.stringify({ action: "explain" }),
         });
         if (!res.ok) throw new Error();
-        const r: ListenReply = { text: stripVoiceTags(await res.text()), audio_base64: null };
+        const r: ListenReply = { text: plainText(await res.text()), audio_base64: null };
         setReply(r);
         await start(r);
       } catch {
@@ -480,7 +480,7 @@ function ListenButton({ offer, onHour, onCaption, stopSignal, onStart }: {
       {reply && state !== "idle" && (
         <details className="group rounded-lg bg-ai-tint px-4 py-3 text-[15px] leading-6 text-ink">
           <summary className="cursor-pointer text-[13px] font-medium text-ai-text">Read the whole explanation</summary>
-          <p className="m-0 mt-2">{stripVoiceTags(reply.text)}</p>
+          <p className="m-0 mt-2">{plainText(reply.text)}</p>
         </details>
       )}
     </div>
