@@ -66,6 +66,25 @@ describe("placePanels", () => {
     expect(r.panels[0].y_m).toBeCloseTo(-2.2, 1);
   });
 
+  it("fills the best roof face contiguously before starting the next (no scattered pairs)", () => {
+    // Google's best-first list alternates between a small dormer (seg 2: 3 panels) and the main face (seg 0: 10 panels)
+    const p = (seg: number, kwh: number) => ({ center: C, orientation: "LANDSCAPE", segmentIndex: seg, yearlyEnergyDcKwh: kwh });
+    const mixed = {
+      center: C,
+      solarPotential: {
+        roofSegmentStats: [{}, {}, {}],
+        solarPanels: [p(2, 520), p(0, 510), p(2, 505), p(0, 500), p(2, 495), ...Array.from({ length: 8 }, (_, i) => p(0, 490 - i))],
+      },
+    };
+    const r = placePanels(mixed, 6 * 0.45);
+    expect(r.panels.map((x) => x.segment_index)).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(r.panels.map((x) => x.yearly_kwh)).toEqual([510, 500, 490, 489, 488, 487]);
+    // more than the main face holds: it fills up first, then the next best face
+    const big = placePanels(mixed, 12 * 0.45);
+    expect(big.panels.map((x) => x.segment_index)).toEqual([...Array(10).fill(0), 2, 2]);
+    expect(big.segments[0].panel_count).toBe(10);
+  });
+
   it("rounds the panel count and caps at what fits on the roof", () => {
     expect(placePanels(INSIGHTS, 1.0).panel_count).toBe(2); // 2.22 → 2
     const big = placePanels(INSIGHTS, 20);
