@@ -37,8 +37,13 @@ export interface House3DProps {
   flyIn?: boolean;
   /** Emphasise one part from outside (e.g. the planner card under the pointer). */
   highlight?: CompKey | null;
-  /** The viewer picked a part in the scene or the readout (null: picked nothing / clicked empty space). */
+  /** The viewer picked a part in the scene or the readout (null: picked nothing / clicked empty space / Esc). */
   onSelect?: (key: CompKey | null) => void;
+  /**
+   * The part the camera zooms to and features (controlled). Omit and a click on a part focuses it by itself; null:
+   * the preset view. Clicking a part, Esc and clicking empty space report through `onSelect`.
+   */
+  focus?: CompKey | null;
   /** Controlled time of day in hours (6–22). Omit and the slider keeps its own time. */
   timeOfDay?: number;
   /** The slider or Play moved the time (with timeOfDay controlled, apply it to see it move). */
@@ -105,7 +110,7 @@ const kw = (x: number) => `${(Math.abs(x) < 0.05 ? 0 : x).toFixed(1)} kW`;
  * energy flowing through it. Planner mode shows exact sizes and "Save image"; homeowner mode uses plain words.
  */
 export function House3D({
-  design, home, mode, roof, static: forceStatic = false, flyIn = true, highlight = null, onSelect, timeOfDay,
+  design, home, mode, roof, static: forceStatic = false, flyIn = true, highlight = null, onSelect, focus, timeOfDay,
   onTimeOfDayChange, reveal, labels = false, controls = "full", cameraKey, editable = false, onPanelsChange, className,
 }: House3DProps) {
   const theme = useThemeName();
@@ -162,13 +167,27 @@ export function House3D({
   }, []);
   const three = useRef<RootState | null>(null);
   const shown = (k: CompKey | null) => (k && spec.components[k].visible ? k : null);
-  const active = shown(hovered) ?? shown(highlight) ?? shown(selected);
+  // click to focus: the controlled `focus`, else the part the viewer clicked
+  const focused = shown(focus !== undefined ? focus : selected);
+  const active = shown(hovered) ?? shown(highlight) ?? focused;
   const selectedRef = useRef<CompKey | null>(null);
   const select = useCallback((k: CompKey | null) => {
     selectedRef.current = k;
     setSelected(k);
     latest.current.onSelect?.(k);
   }, []);
+
+  // Esc zooms back out of a focused part (not while typing, not while a panel is picked: that Esc lets go of it)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !selectedRef.current) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      select(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [select]);
 
   // never leave the page with a pointer cursor
   useEffect(() => () => { document.body.style.cursor = ""; }, []);
@@ -319,6 +338,7 @@ export function House3D({
                 labels={labels}
                 cameraKey={cameraKey}
                 panelEdit={panelEdit}
+                focus={focused}
                 inView={inView}
                 onMiss={() => { if (selectedRef.current) select(null); }}
                 onReady={onReady}
@@ -357,7 +377,7 @@ export function House3D({
                   key={p}
                   type="button"
                   aria-pressed={preset.preset === p}
-                  onClick={() => setPreset((r) => ({ preset: p, n: r.n + 1 }))}
+                  onClick={() => { if (selectedRef.current) select(null); setPreset((r) => ({ preset: p, n: r.n + 1 })); }}
                   className={cn(pill, "h-7", preset.preset === p ? "bg-primary text-primary-ink" : "text-ink-body [@media(hover:hover)]:hover:bg-surface-2")}
                 >
                   {PRESET_LABEL[p]}
