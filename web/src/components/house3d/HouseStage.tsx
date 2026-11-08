@@ -1,7 +1,8 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { DesignResponse, Home } from "../../lib/types";
+import { cn } from "../../lib/utils";
 import { House3D } from "./House3D";
 import { InsideStage } from "./InsideStage";
 import type { Zone } from "./insideRules";
@@ -63,6 +64,8 @@ const SiteStage = dynamic(() => import("../site3d/SiteStage").then((m) => m.Site
 const noop = () => () => {};
 const TILES_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_TILES_KEY;
 const TILES_FLAG = process.env.NEXT_PUBLIC_HOUSE_TILES;
+/** SiteStage's tile fade-in. */
+const FADE_MS = 500;
 
 /**
  * The one 3D component pages mount. It picks the renderer (procedural house today; real 3D tiles outside and the
@@ -82,6 +85,17 @@ export function HouseStage({
   const [ownView, setOwnView] = useState<StageView>("outside");
   const shownView = view ?? ownView;
   const tiles = wanted && !!TILES_KEY && !!at && shownView === "outside" && !still && off !== at;
+  // The procedural house stays on screen until the street's first tiles arrive (the street fades in over it), then
+  // it unmounts. A fallback before that is invisible: the house was there all along.
+  const [readyAt, setReadyAt] = useState<string | null>(null);
+  const [settledAt, setSettledAt] = useState<string | null>(null);
+  const ready = tiles && readyAt === at;
+  const settled = ready && settledAt === at;
+  useEffect(() => {
+    if (!ready || settled) return;
+    const t = window.setTimeout(() => setSettledAt(at), FADE_MS + 100);
+    return () => window.clearTimeout(t);
+  }, [ready, settled, at]);
   const overlays = controls !== "none" && controls !== "time";
   const switcher = view === undefined && overlays && !still && !reveal;
 
@@ -122,27 +136,8 @@ export function HouseStage({
       className={className}
     />
   ) : null;
-  if (tiles && location) {
-    return (
-      <SiteStage
-        apiKey={TILES_KEY!}
-        location={location}
-        design={design}
-        panelsOn={revealedFromKey(revealKey(reveal)).panels}
-        labels={labels}
-        sunMap={sunMap}
-        buttons={overlays}
-        onFallback={(reason) => {
-          if (process.env.NODE_ENV !== "production") console.info("[HouseStage] real outside unavailable:", reason);
-          setOff(at);
-        }}
-        onModelView={() => setOff(at)}
-        className={className}
-      />
-    );
-  }
   // the model stays mounted (hidden, paused) while Inside shows: edits, time and camera survive the switch
-  return (
+  const model = (
     <>
       {inside}
       <div hidden={!!inside}>
@@ -166,6 +161,33 @@ export function HouseStage({
       className={className}
     />
       </div>
+    </>
+  );
+  // same tree shape with and without the street, so a fallback never remounts the house
+  return (
+    <>
+      {!settled && model}
+      {tiles && location && (
+        <div className={settled ? undefined : cn("absolute inset-0", !ready && "pointer-events-none")} aria-hidden={ready ? undefined : true}>
+          <SiteStage
+            apiKey={TILES_KEY!}
+            location={location}
+            design={design}
+            panelsOn={revealedFromKey(revealKey(reveal)).panels}
+            labels={labels}
+            sunMap={sunMap}
+            buttons={overlays}
+            veil={false}
+            onReady={() => setReadyAt(at)}
+            onFallback={(reason) => {
+              if (process.env.NODE_ENV !== "production") console.info("[HouseStage] real outside unavailable:", reason);
+              setOff(at);
+            }}
+            onModelView={() => setOff(at)}
+            className={className}
+          />
+        </div>
+      )}
     </>
   );
   }
