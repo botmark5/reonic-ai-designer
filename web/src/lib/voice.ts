@@ -1044,6 +1044,7 @@ interface CachedExplain {
 const explainCache = new Map<string, CachedExplain>();
 export function clearExplainCache() {
   explainCache.clear();
+  explainInFlight.clear();
 }
 type StaticClip = Omit<CachedExplain, "audio_base64" | "audio_url"> & { audio_path: string };
 let staticClips: Record<string, StaticClip> = staticVoiceCache as Record<string, StaticClip>;
@@ -1123,7 +1124,25 @@ export async function handleExplain(req: Request, deps: VoiceDeps): Promise<Resp
   const hit = explainCache.get(key);
   if (hit && (hit.audio_base64 || !canSpeak)) return reply(hit, "memory");
 
-  // 3. Make it: script (Claude or template), then audio with timestamps.
+  // 3. Make it once: concurrent requests for the same design (the offer page's prefetch, a click, a second tab)
+  //    share one Claude + ElevenLabs run instead of paying for it twice.
+  const flightKey = `${key}:${canSpeak ? "audio" : "text"}`;
+  let flight = explainInFlight.get(flightKey);
+  const shared = Boolean(flight);
+  if (!flight) {
+    flight = makeExplain(d, lang, canSpeak, hit, deps).finally(() => explainInFlight.delete(flightKey));
+    explainInFlight.set(flightKey, flight);
+  }
+  const made = await flight;
+  if (canSpeak && !made.audio_base64) audio_reason = "error";
+  return reply(made, shared ? "in_flight" : null);
+}
+
+const explainInFlight = new Map<string, Promise<CachedExplain>>();
+
+/** Script (Claude or template), then audio with timestamps; stores the result in this instance's cache. */
+async function makeExplain(d: DesignResponse, lang: Lang, canSpeak: boolean, hit: CachedExplain | undefined, deps: VoiceDeps): Promise<CachedExplain> {
+  const key = explainKey(d, lang, deps.voiceId);
   const script = hit ? { segments: hit.segments.map(({ text, moment }) => ({ text, moment })), by: hit.by } : await offerScript(d, lang, deps);
   const text = script.segments.map((x) => x.text).join(" ");
   let audio_base64: string | null = null;
@@ -1133,7 +1152,6 @@ export async function handleExplain(req: Request, deps: VoiceDeps): Promise<Resp
       ({ audio_base64, alignment } = await speak(text, deps));
     } catch (e) {
       log(`tts failed: ${e instanceof Error ? e.message : "unknown error"}`);
-      audio_reason = "error";
     }
   }
   const { segments, duration_s } = timeSegments(script.segments, audio_base64 ? alignment : null);
@@ -1143,5 +1161,5 @@ export async function handleExplain(req: Request, deps: VoiceDeps): Promise<Resp
   };
   if (explainCache.size >= 50) explainCache.delete(explainCache.keys().next().value as string);
   explainCache.set(key, made);
-  return reply(made, null);
+  return made;
 }
