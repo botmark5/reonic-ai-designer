@@ -161,3 +161,13 @@ describe("expertDesign", () => {
     expect(e.design.pv.reasons).toEqual([]);
   });
 });
+
+describe("top3 (issue #57)", () => {
+  it("reads pv_top3_within_1.5_pct when at least 20 homes with solar stand behind it", async () => {
+    const { top3 } = await import("./reality");
+    expect(top3({ "pv_top3_within_1.5_pct": 67.19, pv_n: 253 })).toBe(67.19);
+    expect(top3({ "pv_top3_within_1.5_pct": 0, pv_n: 4 })).toBeNull();
+    expect(top3({ pv_n: 253 })).toBeNull();
+    expect(top3(undefined)).toBeNull();
+  });
+});
