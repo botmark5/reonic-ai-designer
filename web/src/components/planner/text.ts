@@ -1,4 +1,5 @@
 /** Planner display text: pure helpers, tested in text.test.ts. */
+import { fmtKwp } from "@/lib/format";
 
 const norm = (clause: string) => clause.trim().replace(/[.\s]+$/, "").toLowerCase();
 
@@ -33,4 +34,13 @@ export function homeTitle(row: { customer_name: string | null; address: string |
   const address = row.address?.trim();
   if (address) return address;
   return row.source === "voice" ? "Draft from a call" : "Unnamed home";
+}
+
+/** "Also plausible" chips: "Smaller 6.3 kWp" / "Larger 11.7 kWp" relative to the proposal; the share goes in the tooltip. */
+export function altLabel(proposed: number, alt: { kwp: number; share?: number | null }): { label: string; title: string | undefined } {
+  const word = alt.kwp < proposed ? "Smaller" : "Larger";
+  return {
+    label: `${word} ${fmtKwp(alt.kwp)} kWp`,
+    title: typeof alt.share === "number" ? `${Math.round(alt.share * 100)} % of similar homes got this size` : undefined,
+  };
 }

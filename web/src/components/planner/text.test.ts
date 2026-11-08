@@ -39,3 +39,12 @@ describe("homeTitle", () => {
     expect(homeTitle({ customer_name: null, address: "", source: "planner" })).toBe("Unnamed home");
   });
 });
+
+describe("altLabel", () => {
+  it("names each alternative smaller or larger than the proposal", async () => {
+    const { altLabel } = await import("./text");
+    expect(altLabel(10.35, { kwp: 6.3, share: 0.2 })).toEqual({ label: "Smaller 6.3 kWp", title: "20 % of similar homes got this size" });
+    expect(altLabel(10.35, { kwp: 11.7 })).toEqual({ label: "Larger 11.7 kWp", title: undefined });
+    expect(altLabel(10.35, { kwp: 11.25, share: 0.31 }).label).toBe("Larger 11.25 kWp");
+  });
+});

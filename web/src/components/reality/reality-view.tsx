@@ -177,13 +177,13 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
           {offline && <span className="text-body-sm text-ink-muted">Engine offline: no numbers are shown until it is reachable again.</span>}
         </div>
         <h1 className="m-0 text-[clamp(32px,4vw,48px)] leading-none font-normal tracking-[-0.02em]">Does it design like your experts?</h1>
-        <p className="m-0 max-w-2xl text-body text-ink-body">Every number on this page comes from homes the engine never saw while learning.</p>
+        <p className="m-0 max-w-2xl text-body text-ink-body">Every result below the two houses comes from homes the engine never saw while learning.</p>
       </header>
 
       <section aria-labelledby="one-home" className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex min-w-0 flex-col gap-1">
-            <h2 id="one-home" className="m-0 text-label uppercase text-ink-muted">One held-out home</h2>
+            <h2 id="one-home" className="m-0 text-label uppercase text-ink-muted">One past home</h2>
             <p className="m-0 text-body-sm text-ink-body" aria-live="polite" title={project?.project_id ? `Held-out project ${project.project_id}` : undefined}>
               {project ? describeHome(project) : projectId ? "Loading…" : "No held-out projects available"}
             </p>
@@ -310,6 +310,8 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
           </p>
         )}
         <p className="m-0 text-[13px] leading-5 text-ink-muted">
+          Our design here is the shipped engine, which learned from all past projects, this one included: a picture of how it
+          designs, not a test. The held-out results are the numbers below.{" "}
           {demo ? `${demo.why}. ` : ""}
           {shown && shown.variants.length > 1
             ? `The expert offered ${shown.variants.length} variants for this home; the house shows the main one, and any proposal inside that range counts as a hit.`
@@ -327,7 +329,7 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
             id="pid"
             value={manual}
             onChange={(e) => setManual(e.target.value)}
-            placeholder="Open a held-out home by ID"
+            placeholder="Open a past project by ID"
             className="h-8 min-w-0 flex-1 rounded-sm border border-border bg-surface-1 px-2.5 font-mono text-[13px] outline-none focus-visible:border-focus"
           />
           <Button type="submit" size="sm" variant="ghost">Open</Button>
