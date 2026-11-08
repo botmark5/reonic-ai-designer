@@ -5,9 +5,9 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
-  { href: "/", label: "Designs" },
-  { href: "/live", label: "Live call" },
-  { href: "/reality", label: "Reality check" },
+  { href: "/", label: "Designs", short: "Designs" },
+  { href: "/live", label: "Live call", short: "Live" },
+  { href: "/reality", label: "Reality check", short: "Reality" },
 ] as const;
 
 const isHomeowner = (path: string) => path.startsWith("/offer");
@@ -43,11 +43,13 @@ export function AppNav() {
             href={l.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "rounded-pill px-3 py-1.5 text-body-sm whitespace-nowrap transition-colors duration-150",
+              "rounded-pill px-2.5 py-1.5 text-body-sm sm:px-3 whitespace-nowrap transition-colors duration-150",
               active ? "bg-surface-2 font-medium text-ink" : "text-ink-body hover:bg-surface-2/60 hover:text-ink",
             )}
           >
-            {l.label}
+            {/* short labels on phones so all three fit at 390 px */}
+            <span className="sm:hidden">{l.short}</span>
+            <span className="hidden sm:inline">{l.label}</span>
           </Link>
         );
       })}

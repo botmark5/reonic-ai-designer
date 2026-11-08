@@ -22,6 +22,7 @@ export interface Change {
   id: number; // increments per change, keys the highlight animation
   diff: DesignDiff;
   note: string | null; // e.g. the refine summary or "You locked the battery at 10 kWh"
+  before: Design | null; // the design before this change, for "old → new" on the cards
 }
 
 export interface PlannerState {
@@ -123,7 +124,7 @@ export function usePlanner(initial: DesignRow) {
           ...p,
           response,
           busy: false,
-          change: diff.changed.length || note ? { id: ++changeId.current, diff, note } : p.change,
+          change: diff.changed.length || note ? { id: ++changeId.current, diff, note, before: prev } : p.change,
         }));
         save({ home, locks }); // the server re-runs the engine; it never stores a design sent by the browser
         validate(home, response.design, ctrl.signal);
@@ -191,7 +192,8 @@ export function usePlanner(initial: DesignRow) {
     (r: Pick<RefineResponse, "home" | "locks" | "design" | "summary">) => {
       abortRef.current?.abort(); // a refine result wins over a design run that started before it
       const st = stateRef.current;
-      const diff = diffDesigns(st.response?.design, r.design.design);
+      const before = st.response?.design ?? null;
+      const diff = diffDesigns(before, r.design.design);
       logOverride("refine", { home: st.home, locks: st.locks }, { home: r.home, locks: r.locks }, r.summary);
       setS((p) => ({
         ...p,
@@ -200,7 +202,7 @@ export function usePlanner(initial: DesignRow) {
         response: r.design,
         busy: false,
         refining: false,
-        change: { id: ++changeId.current, diff, note: r.summary },
+        change: { id: ++changeId.current, diff, note: null, before }, // the refine box already shows r.summary
       }));
       save({ home: r.home, locks: r.locks });
       validate(r.home, r.design.design);
