@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { HouseStage, roofFromSolarResult, type ComponentKey as StageKey, type StageLocation } from "@/components/house3d";
@@ -20,6 +20,20 @@ import { RefineBox } from "./refine-box";
 import { SystemCard } from "./system-card";
 import { homeTitle } from "./text";
 import { usePlanner } from "./use-planner";
+
+/** Floating 3D labels only where there is room for them (they crowd the house on a phone). */
+const WIDE = "(min-width: 768px)";
+function useWide() {
+  return useSyncExternalStore(
+    (cb) => {
+      const m = window.matchMedia(WIDE);
+      m.addEventListener("change", cb);
+      return () => m.removeEventListener("change", cb);
+    },
+    () => window.matchMedia(WIDE).matches,
+    () => true,
+  );
+}
 
 export function PlannerApp({ designs, initial }: { designs: DesignRow[]; initial: DesignRow }) {
   const [rows, setRows] = useState(designs);
@@ -140,6 +154,7 @@ function Workspace({
     if (c) setPicked(null);
   }, []);
   const title = homeTitle(row);
+  const wide = useWide();
 
   async function send() {
     const res = await p.share();
@@ -167,7 +182,7 @@ function Workspace({
               {lockedCount > 0 && <StatusBadge tone="neutral">{lockedCount === 1 ? "1 choice by you" : `${lockedCount} choices by you`}</StatusBadge>}
               <ServedBadge served={r?.served} />
             </div>
-            <h1 className="m-0 truncate text-h1" title={row.address && row.address !== title ? `${title} · ${row.address}` : title}>
+            <h1 className="m-0 text-h1 [overflow-wrap:anywhere] sm:truncate" title={row.address && row.address !== title ? `${title} · ${row.address}` : title}>
               {title}
             </h1>
             <p className="m-0 text-body-sm text-ink-muted">
@@ -229,7 +244,7 @@ function Workspace({
               editable={!!location}
               highlight={hovered ?? picked}
               onSelect={onStageSelect}
-              labels
+              labels={wide}
               className="md:[&_[data-h3d-stage]]:aspect-video"
             />
           </section>
