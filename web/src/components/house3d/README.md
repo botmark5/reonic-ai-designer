@@ -67,6 +67,16 @@ Deck stills and the day recording (live engine designs, no mock): `node scripts/
 Regenerate the still images: render the component (light, then dark) with reduced motion and with equipment and flow
 lines temporarily hidden, screenshot the model area at 1600×1000 and replace the two PNGs in `web/public/models/`.
 
+### Floor plan in the Inside view (`floorPlan`)
+- `floorPlan?: FloorPlan | null` (b-web's type in `lib/floorplan.ts`: metres, origin top-left, y down, bottom edge =
+  front). Set: the Inside view draws the plan instead of the generic section: the ground floor as a plate with every
+  room's walls extruded (1.1 m cutaway) and named, basement rooms on their own plate to the left, an outside strip along
+  the front facade. Upper floors are not drawn (equipment never goes there). Rules: `floorPlanLayout.ts` (tested).
+- The equipment zones snap into named rooms: basement → a basement room, else a utility room; garage → a garage room;
+  outside → the front facade. A missing room becomes a labelled tile next to the house. Deep narrow rooms (a garage)
+  take the parts along their long side wall. Parts drag anywhere on the plan and drop into the room under them; the
+  zone pickers list the room names. Labels sit above the walls, staggered, so neighbours never overlap.
+
 ## HouseStage (mount this one)
 `<HouseStage>` is the single 3D component pages mount. Today it renders the procedural house; real 3D tiles
 outside (behind `?tiles=1` / `NEXT_PUBLIC_HOUSE_TILES=1`, needs `location`) and the inside diorama land behind the

@@ -1,11 +1,13 @@
 "use client";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
+import type { FloorPlan } from "../../lib/floorplan";
 import type { DesignResponse, Home } from "../../lib/types";
 import { cn } from "../../lib/utils";
 import { useReducedMotion, useThemeName } from "./hooks";
 import { roofPlanes } from "./houseGeometry";
-import { ALLOWED, INSIDE_KEYS, ZONE_ORDER, ZONES, defaultPlacement, drop, moveTo, type InsideKey, type Placement, type Zone } from "./insideRules";
+import { planScene } from "./floorPlanLayout";
+import { ALLOWED, GENERIC, INSIDE_KEYS, ZONE_ORDER, defaultPlacement, drop, moveTo, type InsideKey, type Placement, type Zone } from "./insideRules";
 import { getPalette } from "./palette";
 import { buildSceneSpec } from "./sceneSpec";
 import type { House3DMode } from "./types";
@@ -24,6 +26,8 @@ export interface InsideStageProps {
   /** Where the parts start (e.g. a battery the planner already put in the basement). Default: garage/outside. */
   zones?: Partial<Record<InsideKey, Zone>>;
   onZonesChange?: (p: Partial<Record<InsideKey, Zone>>) => void;
+  /** An uploaded floor plan: its rooms instead of the generic section; the zones snap into its named rooms. */
+  floorPlan?: FloorPlan | null;
   className?: string;
 }
 
@@ -31,18 +35,22 @@ export interface InsideStageProps {
  * Inside the house as a simple section: basement, garage, outside wall. The planner drags each part of the system
  * into a zone (or picks it from the list); parts snap into place and only go where they belong.
  */
-export function InsideStage({ design, home, mode, controls, zones, onZonesChange, className }: InsideStageProps) {
+export function InsideStage({ design, home, mode, controls, zones, onZonesChange, floorPlan, className }: InsideStageProps) {
   const theme = useThemeName();
   const reduced = useReducedMotion();
   const palette = useMemo(() => getPalette(theme), [theme]);
   const spec = useMemo(() => buildSceneSpec(design, home, mode, roofPlanes), [design, home, mode]);
   const keys = INSIDE_KEYS.filter((k) => spec.components[k].visible);
-  const keysKey = keys.join(",");
+  const plan = useMemo(() => (floorPlan ? planScene(floorPlan) : null), [floorPlan]);
+  const geo = plan?.geo ?? GENERIC;
+  const label = (z: Zone) => geo.zones[z].label;
+  // a new plan re-snaps the parts into its rooms (keeping each part's zone)
+  const keysKey = `${keys.join(",")}|${floorPlan ? `${floorPlan.widthM}x${floorPlan.depthM}:${floorPlan.rooms.map((r) => r.name).join("/")}` : ""}`;
   const start = () => {
-    let p = defaultPlacement(keys);
+    let p = defaultPlacement(keys, geo);
     for (const k of keys) {
       const z = zones?.[k];
-      const r = z ? moveTo(p, k, z) : null;
+      const r = z ? moveTo(p, k, z, undefined, geo) : null;
       if (r?.ok) p = r.placement;
     }
     return p;
@@ -57,14 +65,14 @@ export function InsideStage({ design, home, mode, controls, zones, onZonesChange
     if (!r.ok) { setMessage(`${NAME[k]}: ${r.reason}`); setState({ for: keysKey, p: { ...placement } }); return; }
     setState({ for: keysKey, p: r.placement });
     const zone = r.placement[k]!.zone;
-    setMessage(`${NAME[k]} in the ${ZONES[zone].label.toLowerCase()}.`);
+    setMessage(`${NAME[k]}: ${label(zone)}.`);
     onZonesChange?.(Object.fromEntries(Object.entries(r.placement).map(([key, v]) => [key, v!.zone])));
   };
 
   return (
     <figure className={cn("relative isolate w-full overflow-hidden rounded-lg border border-border bg-surface-0", className)}>
       <div data-h3d-stage className="relative aspect-[4/3] w-full md:aspect-[16/10]">
-        <div role="img" aria-label={`Inside the house: ${keys.map((k) => `${NAME[k]} in the ${ZONES[placement[k]?.zone ?? "garage"].label.toLowerCase()}`).join(", ")}.`} className="absolute inset-0">
+        <div role="img" aria-label={`Inside the house${plan ? " (from the uploaded floor plan)" : ""}: ${keys.map((k) => `${NAME[k]}: ${label(placement[k]?.zone ?? "garage")}`).join(", ")}.`} className="absolute inset-0">
           <Inside
             palette={palette}
             reduced={reduced}
@@ -72,7 +80,8 @@ export function InsideStage({ design, home, mode, controls, zones, onZonesChange
             placement={placement}
             sizes={sizes}
             batteryKwh={design.design.battery.kwh}
-            onDrop={(k, x) => apply(k, drop(placement, k, x))}
+            onDrop={(k, x, z) => apply(k, drop(placement, k, x, z, geo))}
+            plan={plan}
           />
         </div>
         {keys.length === 0 && (
@@ -92,18 +101,18 @@ export function InsideStage({ design, home, mode, controls, zones, onZonesChange
                 <select
                   aria-label={`Where the ${NAME[k].toLowerCase()} goes`}
                   value={placement[k]?.zone ?? ""}
-                  onChange={(e) => apply(k, moveTo(placement, k, e.target.value as Zone))}
+                  onChange={(e) => apply(k, moveTo(placement, k, e.target.value as Zone, undefined, geo))}
                   className="h-8 rounded-md border border-border bg-surface-1 px-2 text-[13px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-focus"
                 >
                   {ZONE_ORDER.map((z) => (
-                    <option key={z} value={z} disabled={!ALLOWED[k].includes(z)}>{ZONES[z].label}</option>
+                    <option key={z} value={z} disabled={!ALLOWED[k].includes(z)}>{label(z)}</option>
                   ))}
                 </select>
               </li>
             ))}
           </ul>
           <p role="status" className="min-h-[18px] px-0.5 text-[13px] leading-[18px] text-ink-body">
-            {message || "Drag a part into the basement, the garage or onto the outside wall."}
+            {message || (plan ? "Drag a part into a room of the floor plan, or pick its room here." : "Drag a part into the basement, the garage or onto the outside wall.")}
           </p>
         </div>
       )}
