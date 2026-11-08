@@ -14,7 +14,7 @@ import type { DesignRow } from "@/lib/supabase";
 import { OFFER_TYPE_LABEL, type ComponentKey, type OfferType } from "@/lib/types";
 import type { FloorPlan } from "@/lib/floorplan";
 import { FloorPlanUpload } from "./floorplan-upload";
-import { HomeForm } from "./home-form";
+import { HomeForm, type AddressLookup } from "./home-form";
 import { Inbox } from "./inbox";
 import { PhysicsTiles, SimilarHomes, WhyThisDesign } from "./evidence";
 import { RefineBox } from "./refine-box";
@@ -75,8 +75,12 @@ export function PlannerApp({ designs, initial }: { designs: DesignRow[]; initial
     selectRef.current = select;
   }, [select]);
 
-  const createNew = useCallback(async (name: string) => {
-    const res = await fetch("/api/designs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ customer_name: name }) });
+  const createNew = useCallback(async (name: string, address?: string) => {
+    const res = await fetch("/api/designs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ customer_name: name, address: address?.trim() || null }),
+    });
     if (!res.ok) return toast.error("Could not create the design");
     const row = (await res.json()) as DesignRow;
     known.current.add(row.id);
@@ -102,7 +106,7 @@ function Workspace({
   row: DesignRow;
   rows: DesignRow[];
   onSelect: (r: DesignRow) => void;
-  onNew: (name: string) => void;
+  onNew: (name: string, address?: string) => void;
 }) {
   const p = usePlanner(row);
   const { s } = p;
@@ -114,30 +118,52 @@ function Workspace({
   // Google Solar for the customer's address: roof cap, direction and pitch go into /design (once; the planner can
   // edit or remove them in the form), and the real roof goes to the 3D house. Nothing happens without a result.
   const [solar, setSolar] = useState<SolarResult | null>(null);
-  const { applyRoof } = p;
+  const { applyRoof, setHome } = p;
+  // The address to look up: the row's (from a call or New home), or one the planner typed ("Find house").
+  const [address, setAddress] = useState(row.address?.trim() ?? "");
+  const [lookupRun, setLookupRun] = useState(0); // bumps on every "Find house", so the same address can be retried
+  const [lookup, setLookup] = useState<AddressLookup>("idle");
+  const typed = useRef(false); // a typed address replaces the roof inputs; a stored one only fills them when empty
   useEffect(() => {
-    const address = row.address?.trim();
     if (!address) return;
     const ctrl = new AbortController();
     fetch(`/api/solar?address=${encodeURIComponent(address)}`, { signal: ctrl.signal })
       .then((res) => (res.ok ? (res.json() as Promise<SolarResult>) : null))
       .then((res) => {
-        if (!res || ctrl.signal.aborted) return;
+        if (ctrl.signal.aborted) return;
+        if (!res) {
+          if (typed.current) setLookup("notfound");
+          return;
+        }
         setSolar(res);
+        if (typed.current) setLookup("found");
         const roof = roofInputsFromSolar(res);
-        if (roof) applyRoof(roof);
+        if (roof) (typed.current ? setHome : applyRoof)(roof);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!ctrl.signal.aborted && typed.current) setLookup("notfound");
+      });
     return () => ctrl.abort();
-  }, [row.address, applyRoof]);
+  }, [address, lookupRun, applyRoof, setHome]);
+  const findHouse = useCallback(
+    (a: string) => {
+      typed.current = true;
+      setLookup("looking");
+      setSolar(null);
+      setAddress(a);
+      setLookupRun((n) => n + 1);
+      fetch(`/api/designs/${row.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ address: a }) }).catch(() => {});
+    },
+    [row.id],
+  );
   const roof3d = useMemo(() => roofFromSolarResult(solar), [solar]);
   // Only a real address the planner has (geocoded by /api/solar) puts the house on the map; never Reonic project data.
   const location = useMemo<StageLocation | undefined>(
     () =>
       solar && Number.isFinite(solar.lat) && Number.isFinite(solar.lng)
-        ? { lat: solar.lat as number, lng: solar.lng as number, address: row.address ?? undefined }
+        ? { lat: solar.lat as number, lng: solar.lng as number, address: address || undefined }
         : undefined,
-    [solar, row.address],
+    [solar, address],
   );
   const [sunMap, setSunMap] = useState(false);
   // Floor plan per design (layout for the Inside view only), kept while the planner is open.
@@ -198,7 +224,7 @@ function Workspace({
       <aside className="order-3 flex min-w-0 flex-col gap-5 lg:order-1 lg:row-span-2" aria-label="Inbox and inputs">
         <Inbox rows={rows} selectedId={row.id} onSelect={onSelect} onNew={onNew} />
         <fieldset disabled={s.refining} className="m-0 min-w-0 border-0 p-0 disabled:opacity-60" aria-describedby={s.refining ? "refining-note" : undefined}>
-          <HomeForm home={s.home} onChange={p.setHome} />
+          <HomeForm home={s.home} onChange={p.setHome} address={address} lookup={lookup} onFindHouse={findHouse} />
         </fieldset>
         {s.refining && <p id="refining-note" className="m-0 -mt-3 text-[12px] text-ink-muted">Inputs are paused while the designer updates the design.</p>}
       </aside>

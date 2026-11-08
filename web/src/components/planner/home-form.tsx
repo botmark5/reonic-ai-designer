@@ -4,6 +4,45 @@ import { useId, useState } from "react";
 import { Field, Segmented, Select, TextInput } from "@/components/ui/field";
 import { compass } from "@/lib/roof";
 import type { Home } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+
+export type AddressLookup = "idle" | "looking" | "found" | "notfound";
+
+/** The customer's address: "Find house" saves it and looks the roof up (Google Solar → roof inputs, 3D house, Sun map). */
+function AddressField({ address, lookup, roofKwp, onFind }: { address: string; lookup: AddressLookup; roofKwp: number | null; onFind: (a: string) => void }) {
+  const [draft, setDraft] = useState(address);
+  const id = useId();
+  const status =
+    lookup === "looking"
+      ? "Looking up the house…"
+      : lookup === "found"
+        ? `House found${roofKwp ? `: the roof fits about ${roofKwp} kWp` : ""}.`
+        : lookup === "notfound"
+          ? "No house found at this address. Check street, number and city."
+          : "The roof size, the real house and the sun map come from the address.";
+  return (
+    <form
+      className="flex flex-col gap-1"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (draft.trim()) onFind(draft.trim());
+      }}
+    >
+      <label htmlFor={id} className="text-label text-ink-muted">
+        Address
+      </label>
+      <div className="flex gap-2">
+        <TextInput id={id} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Street, number, city" autoComplete="street-address" />
+        <Button type="submit" variant="secondary" disabled={!draft.trim() || lookup === "looking"} className="shrink-0">
+          Find house
+        </Button>
+      </div>
+      <p role="status" className={`m-0 text-[12px] leading-4 ${lookup === "notfound" ? "text-warning-text" : "text-ink-muted"}`}>
+        {status}
+      </p>
+    </form>
+  );
+}
 
 const HEATING = ["Gas", "Oil", "Heat pump", "Electric", "District", "Wood"] as const;
 const ROOF = ["Concrete tile", "Clay tile", "Metal", "Flat", "Slate"] as const;
@@ -65,7 +104,19 @@ function NumberField({
   );
 }
 
-export function HomeForm({ home, onChange }: { home: Home; onChange: (patch: Partial<Home>) => void }) {
+export function HomeForm({
+  home,
+  onChange,
+  address,
+  lookup = "idle",
+  onFindHouse,
+}: {
+  home: Home;
+  onChange: (patch: Partial<Home>) => void;
+  address?: string;
+  lookup?: AddressLookup;
+  onFindHouse?: (address: string) => void;
+}) {
   const roofSet = home.roof_max_kwp != null || home.roof_azimuth != null || home.roof_pitch != null;
   const id = useId();
   return (
@@ -73,6 +124,7 @@ export function HomeForm({ home, onChange }: { home: Home; onChange: (patch: Par
       <h2 id={`${id}-t`} className="text-label uppercase text-ink-muted">
         The home
       </h2>
+      {onFindHouse && <AddressField address={address ?? ""} lookup={lookup} roofKwp={home.roof_max_kwp ?? null} onFind={onFindHouse} />}
       <div className="flex flex-col gap-1">
         <span className="text-label text-ink-muted">Solar already on the roof?</span>
         <Segmented
