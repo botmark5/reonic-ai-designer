@@ -230,8 +230,6 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
                         cameraKey="reality"
                         controls="minimal"
                         labels
-                        // the sizes are in the table below; keep the houses clear (until the stage honours controls="minimal")
-                        className="[&_[data-h3d-ui]]:hidden"
                       />
                     ) : (
                       <div className="aspect-[4/3] w-full animate-pulse rounded-lg border border-border bg-surface-1 motion-reduce:animate-none md:aspect-[16/10]" aria-hidden />

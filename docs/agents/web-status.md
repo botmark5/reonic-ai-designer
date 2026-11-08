@@ -2,25 +2,22 @@
 
 _Web agent: replace this with what changed, what is next, what is blocking, and any change to how you call the engine._
 
-## b-web (planner, live call, reality check, homeowner offer; web/src outside house3d and voice)
-- Changed: roof inputs (engine #27): when a design has an address, the planner asks GET /api/solar and sends
-  `home.roof_max_kwp` (Google max panels × panel watts), `home.roof_azimuth`, `home.roof_pitch` to /design once;
-  the planner sees, edits or removes them ("Roof size and direction"); omitted when Google has nothing. The same
-  roof drives `<House3D roof>`. The offline estimate also respects the roof cap.
-- Changed: /reality reads both /eval shapes: headline from `segments.full_designs` when present (else all projects),
-  `segments.add_ons` as a separate block; P10–P90 coverage tile (new full systems) + add-on row from
-  `pv_interval_coverage_pct` (#43/#46). All headline tiles, the add-on block and coverage read the ANSWERED mode
-  (`with_existing_pv_answer.segments`) when present; coverage rows need pv_n >= 20. Ties read "Same as rule".
-- Changed: /reality "Battery retrofit" example is labelled "Unanswered mode" while /project designs without the
-  existing-PV answer (#47); the label disappears by itself once the engine returns a battery retrofit for it.
-- Changed: with no new PV (pv.include=false) the PV range is hidden from the planner card and from the refine agent
-  (no lock to a range end of a retrofit design).
-- Smoke (Sun 00:20, live engine): EV refine on 4,500 kWh / no existing PV: PV 9.45 → 10.8 kWp, battery 9.2 → 10,
-  wallbox on. Roof cap 6 → PV 5.85 kWp, battery 5 kWh. No GOOGLE_MAPS_API_KEY locally or on prod → /api/solar
-  says no_key and the planner silently keeps the default roof. Gate on prod: / 307, APIs 401, /offer + health public.
-- Engine calls: unchanged (server routes only, X-Engine-Key, 4 s fallback). Optional request fields: the three roof fields.
-- Next: Google key (Mark) to see a real roof end to end; drop the #47 label check once the engine fix lands.
-- Blocking: nothing.
+## b-web (planner, reality check, ui, theme; web/src/components/{planner except live-call.tsx, reality, ui}, app/{page, reality, login}, globals.css, layout.tsx)
+Updated Sun 04:05.
+- **Theme (#63):** light only (forced, no system follow); muted/AI/warning text darkened for AA on tints, page surface separates white cards on a projector.
+- **Planner A (#68):**
+  - Centre column = header → HouseStage (16:9) → refine box → 2×2 cards.
+  - Card hover highlights its part on the house; clicking a part points at its card.
+  - The changed card keeps the highlight fill and shows old → new.
+  - `location` (from /api/solar's geocode of the planner's address only) adds Outside/Inside + Sun map toggles and `editable`.
+  - Cross-cutting: the header uses the name or address; reasons de-duplicated, 2 shown; heat pump "Option · 10.5 kW" chip; "96 % similar" (id in a tooltip); short nav labels at 390 px.
+- **Reality A (#72):**
+  - Two procedural HouseStages ("Our design" | "What the expert sold", `cameraKey="reality"`, `controls="minimal"`) with the table of sizes and verdicts under them.
+  - One headline tile (new-systems solar error, "Level with rule"), then the add-on block (no new solar 77 vs 6 %).
+  - "Level with rule" = within 2 points, or 5 % of the rule's kWp error.
+  - Battery retrofit chip hidden until engine #47 (`HIDDEN_ROLES`); project ids only in tooltips; installers shown as A/B.
+- **Save/share (this PR):** planner saves run in order through a queue; "Send to homeowner" waits for pending saves, so the link carries the latest refine (race seen by e-spare).
+- **Engine calls:** unchanged. **Next:** polish loop at 1440/390; a-labels' curated case ids when they arrive.
 
 ## c-3d (3D house, web/src/components/house3d)
 - Changed: `<House3D>` is now an architectural model (matte white, AO, contact shadows, golden-hour sun) with a
