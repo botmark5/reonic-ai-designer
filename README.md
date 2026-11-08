@@ -78,6 +78,7 @@ More detail: [`engine/README.md`](engine/README.md) (results tables and caveats)
 (before/after per improvement, error analysis).
 
 ## Demo and pitch
+- [`docs/user-guide.md`](docs/user-guide.md): using the website, screen by screen (planner, live call, reality check, homeowner offer).
 - [`docs/demo-runbook.md`](docs/demo-runbook.md): the 5-minute click path, the hero moments and the fallbacks.
 - [`docs/pitch-deck.md`](docs/pitch-deck.md): the deck plan, slide by slide, with the script.
 - [`docs/pitch-facts.md`](docs/pitch-facts.md): every number the pitch, deck or README may use, plus what not to say.
