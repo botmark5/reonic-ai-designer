@@ -177,3 +177,10 @@ describe("review fixes", () => {
     expect(s.layout.placed).toBe(16);
   });
 });
+
+describe("catalogue sizes keep two decimals", () => {
+  it("11.25 kWp stays 11.25 (not 11.3)", () => {
+    const d = withDesign((x) => { x.design.pv.kwp = 11.25; });
+    expect(buildSceneSpec(d, demoHome, "planner", planesFor).components.pv.size).toMatch(/^11\.25 kWp \(25 × 450 W\)/);
+  });
+});

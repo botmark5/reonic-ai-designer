@@ -53,7 +53,8 @@ const PITCH_RANGE: [number, number] = [15, 50];
 
 const finite = (x: number | null | undefined): x is number => x != null && Number.isFinite(x);
 const positive = (x: number | null | undefined): x is number => finite(x) && x > 0;
-const num = (x: number) => (Number.isInteger(x) ? String(x) : x.toFixed(1));
+/** Up to two decimals, no trailing zeros: catalogue PV sizes are multiples of 0.45 kWp (9.45, 10.8, 11.25). */
+const num = (x: number) => String(Number(x.toFixed(2)));
 
 /**
  * Roof direction and pitch: the planner's roof fields (home.roof_*, filled from Google Solar and editable) first, then
@@ -98,7 +99,7 @@ export function buildSceneSpec(
     if (homeowner) return `${designPanels + existingWanted} panels`;
     const old = sizeGiven ? `${num(existingKwp)} kWp existing` : `≈ ${num(existingKwp)} kWp existing (size not given)`;
     if (!pvOn) return old; // the engine sends kwp: null when it adds no PV
-    const fresh = `${pv.kwp!.toFixed(1)} kWp${existingWanted ? " new" : ""} (${designPanels} × ${PANEL.kwp * 1000} W)`;
+    const fresh = `${num(pv.kwp!)} kWp${existingWanted ? " new" : ""} (${designPanels} × ${PANEL.kwp * 1000} W)`;
     return existingWanted ? `${fresh} + ${old}` : fresh;
   };
 
