@@ -36,13 +36,21 @@ const SHORT: Record<CompSpec["key"], string> = {
 };
 
 /** Always-on label for a projector: name and size, big enough to read from the back of the room. */
-export function Label({ spec, position }: { spec: CompSpec; position: THREE.Vector3 }) {
+/** Which side of its point a label sits on, so neighbours (battery and wallbox on the garage) never overlap. */
+export type LabelSide = "left" | "right" | "above";
+const SIDE: Record<LabelSide, string> = {
+  left: "-translate-x-[calc(50%+14px)] -translate-y-1/2",
+  right: "translate-x-[calc(50%+14px)] -translate-y-1/2",
+  above: "-translate-y-[calc(100%+6px)]",
+};
+
+export function Label({ spec, position, side = "above" }: { spec: CompSpec; position: THREE.Vector3; side?: LabelSide }) {
   const size = spec.size?.split(" (")[0];
   return (
     <Html position={position} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
       <div
         aria-hidden
-        className="flex w-max -translate-y-1/2 items-center gap-2 rounded-full border border-border bg-surface-1/95 py-1.5 pl-2.5 pr-3.5 text-ink shadow-[0_8px_24px_rgba(16,17,20,0.12)] backdrop-blur-sm"
+        className={`flex w-max ${SIDE[side]} items-center gap-2 rounded-full border border-border bg-surface-1/95 py-1.5 pl-2.5 pr-3.5 text-ink shadow-[0_8px_24px_rgba(16,17,20,0.12)] backdrop-blur-sm`}
       >
         <span aria-hidden className={`size-2.5 shrink-0 rounded-full ${DOT[spec.key]}`} />
         <span className="text-base font-semibold">{SHORT[spec.key]}</span>
