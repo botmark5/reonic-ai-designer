@@ -31,11 +31,11 @@ In Reonic's words, planners "spend hours on every single design", and "the first
 
 ### 1. Technical depth: reproducing expert decisions on unseen projects
 - **Protocol.** 315 held-out homes, split by customer, never used for training; model choices were made by cross-validation on the training part. For every metric we compare with the best of three rules of thumb (kWh ÷ 1,000, the installer's median per consumption band, the installer's kWp per MWh).
-- **All homes.** Whole-project PV error 2.93 kWp against 3.77 for the best rule (22 % lower). The engine recognises add-on sales from the planner's inputs: on 62 add-on homes it proposes no new solar for 77 %, where rules of thumb manage 6 %. PV yes/no is right for 88 % against 82 %.
-- **New systems (253 homes).** PV error 2.42 kWp against 2.62: level with the best rule, at the edge of cross-validation noise. Every learner, hybrid and tuned variant we tried lands at 2.42–2.57 kWp. We hit the ceiling of what these inputs explain; the rest is roof size and customer wishes, which the data does not hold.
-- **Calibrated ranges.** The expert's PV falls inside the engine's P10–P90 range for 82 % of new full systems, against a target of 80 %. Next to its proposal the engine offers one smaller and one larger alternative; for 67 % of new systems the expert's PV is within 1.5 kWp of one of these three options.
+- **All homes.** Whole-project PV error 2.93 kWp against 3.85 for the best rule (24 % lower). The engine recognises add-on sales from the planner's inputs: on 62 add-on homes it proposes no new solar for 77 %, where rules of thumb manage 6 %. PV yes/no is right for 88 % against 82 %.
+- **New systems (253 homes).** PV error 2.45 kWp against 2.64, as on the reality-check screen: slightly better than the best rule, a small margin. Every learner, hybrid and tuned variant we tried lands at 2.42–2.57 kWp. We hit the ceiling of what these inputs explain; the rest is roof size and customer wishes, which the data does not hold.
+- **Calibrated ranges.** The expert's PV falls inside the engine's P10–P90 range for 82 % of new full systems, against a target of 80 %. Next to its proposal the engine offers one smaller and one larger alternative; for 66 % of new systems the expert's PV is within 1.5 kWp of one of these three options.
 - **Battery.** Size error where both chose a battery is 2.42 kWh against 2.71, and the size is within one catalogue step for 56 % of homes against 51 %. Installers size the battery by PV, not by consumption, and the chain reproduces that.
-- **Transfer.** Trained on one installer and tested on the other, PV size error is 2.95 against 3.00 kWp and 2.82 against 3.15 kWp. The margins are small and rest on one pair of installers.
+- **Transfer.** Trained on one installer and tested on the other, PV size error is 2.95 against 3.03 kWp and 2.82 against 3.12 kWp. The margins are small and rest on one pair of installers.
 - **Where it is not better.** PV within ±1.5 kWp: 40 % against 43 %. Battery yes/no over all homes: 88 % against 90 %. Wallbox yes/no: 72 % against 73 %, close to a coin flip without EV information.
 - **The one question that matters most.** The data records existing solar for only 5 % of battery-only add-ons, so the voice agent and the planner form ask "Solar already on the roof?" first. As a what-if, with that question answered correctly, PV error over all homes would drop from 2.93 to 2.15 kWp. This is not an accuracy, because in our test the answer comes from the expert offer itself.
 
@@ -71,7 +71,7 @@ The phone call is the front door of the product. An **ElevenLabs conversational 
 - **Homeowner:** "Use this design", then "Send to homeowner", choose what the homeowner may change, "Copy homeowner link", then open the link.
 
 ## Known limits
-- **PV size has hit the ceiling of these inputs.** On new systems the engine is on par with the best rule of thumb, not better. Roof size and customer wishes are not in the data; roof capacity from Google Solar is an optional input that caps the size.
+- **PV size has hit the ceiling of these inputs.** On new systems the engine is only slightly better than the best rule of thumb (2.45 vs 2.64 kWp). Roof size and customer wishes are not in the data; roof capacity from Google Solar is an optional input that caps the size.
 - **The existing-solar answer matters most**, and the data rarely records it. Without the answer the engine has to guess whether a home needs a new system or an add-on.
 - **The wallbox is close to a coin flip** without EV information. The heat pump is offered as a customer option for gas and oil homes, never imposed. Experts added one in 11 of 24 candidate homes.
 - **Installer A's PV sizes assume 450 W per panel**, because their offers list only panel counts.
