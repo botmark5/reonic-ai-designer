@@ -11,12 +11,14 @@ import { COMPONENTS, sizeOf } from "@/lib/diff";
 import { roofInputsFromSolar } from "@/lib/roof";
 import type { SolarResult } from "@/lib/solar";
 import type { DesignRow } from "@/lib/supabase";
-import { OFFER_TYPE_LABEL, type ComponentKey, type OfferType } from "@/lib/types";
+import { OFFER_TYPE_LABEL, type ComponentKey, type DesignResponse, type OfferType } from "@/lib/types";
+import type { InsideKey, Zone } from "@/components/house3d/insideRules";
 import type { FloorPlan } from "@/lib/floorplan";
 import { FloorPlanUpload } from "./floorplan-upload";
 import { HomeForm, type AddressLookup } from "./home-form";
 import { Inbox } from "./inbox";
 import { PhysicsTiles, SimilarHomes, WhyThisDesign } from "./evidence";
+import { FocusPanel } from "./focus-panel";
 import { RefineBox } from "./refine-box";
 import { SystemCard } from "./system-card";
 import { homeTitle } from "./text";
@@ -183,10 +185,14 @@ function Workspace({
   // Card ↔ house: hovering a card highlights its part on the house; clicking a part on the house points at its card.
   const [hovered, setHovered] = useState<ComponentKey | null>(null);
   const [picked, setPicked] = useState<ComponentKey | null>(null);
+  const [focusBefore, setFocusBefore] = useState<DesignResponse | null>(null);
+  const [zones, setZones] = useState<Partial<Record<InsideKey, Zone>>>({});
+  // Click a part on the house → its focus panel (want it, where, which size, what changes) next to the house.
   const onStageSelect = useCallback((key: StageKey | null) => {
     const c: ComponentKey | null = key === "inverter" ? "pv" : key;
     setPicked(c);
-    if (c) document.getElementById(`card-${c}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    setFocusBefore(null);
+    if (c) requestAnimationFrame(() => document.getElementById("focus-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   }, []);
   const onCardHover = useCallback((c: ComponentKey | null) => {
     setHovered(c);
@@ -292,6 +298,10 @@ function Workspace({
               editable
               highlight={hovered ?? picked}
               onSelect={onStageSelect}
+              // the camera zooms to the part whose focus panel is open (c-3d #140); closing the panel zooms back out
+              focus={picked}
+              zones={zones as Partial<Record<ComponentKey, Zone>>}
+              onZonesChange={(z) => setZones(z as Partial<Record<InsideKey, Zone>>)}
               labels={wide}
               // the readout and time bar would push the refine box and cards below the fold at 1440 × 900; the same
               // numbers are in the evidence column
@@ -352,6 +362,25 @@ function Workspace({
       </main>
 
       <aside className="order-2 flex min-w-0 flex-col gap-4 lg:order-3 lg:col-start-2 xl:col-start-3 xl:row-start-1" aria-label="Evidence">
+        {r && picked && (
+          <FocusPanel
+            key={picked}
+            component={picked}
+            response={r}
+            before={focusBefore}
+            busy={s.busy}
+            zones={zones}
+            onZones={setZones}
+            onLock={(v, reason) => {
+              setFocusBefore(r);
+              p.setLock(picked, v, reason ?? undefined);
+            }}
+            onClose={() => {
+              setPicked(null);
+              setFocusBefore(null);
+            }}
+          />
+        )}
         <WhyThisDesign response={r} />
         {r && <SimilarHomes response={r} />}
         {r && <PhysicsTiles response={r} flags={s.flags} />}
