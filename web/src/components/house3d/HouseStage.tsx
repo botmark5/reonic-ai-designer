@@ -24,6 +24,8 @@ export interface HouseStageProps {
   location?: StageLocation;
   /** Outside or the inside diorama. Omit and the stage shows its own Outside / Inside switch. */
   view?: StageView;
+  /** Inside: where the parts start (default battery, inverter, wallbox in the garage; heat pump outside). */
+  zones?: Partial<Record<ComponentKey, Zone>>;
   /** Inside: the planner moved a part to another zone. */
   onZonesChange?: (zones: Partial<Record<ComponentKey, Zone>>) => void;
   /** Drape the annual sunshine map on the roof. */
@@ -68,7 +70,7 @@ const TILES_FLAG = process.env.NEXT_PUBLIC_HOUSE_TILES;
  * Props that a renderer does not support yet are accepted and ignored, so pages can wire them now.
  */
 export function HouseStage({
-  design, home, mode = "homeowner", roof, location, view, onZonesChange, sunMap, reveal, highlight, onSelect, cameraKey, timeOfDay,
+  design, home, mode = "homeowner", roof, location, view, zones, onZonesChange, sunMap, reveal, highlight, onSelect, cameraKey, timeOfDay,
   onTimeOfDayChange, labels, controls, editable, onPanelsChange, static: forceStatic, flyIn, className,
 }: HouseStageProps) {
   const wanted = useSyncExternalStore(noop, () => tilesWanted(window.location.search, TILES_FLAG), () => false);
@@ -114,6 +116,7 @@ export function HouseStage({
       home={home}
       mode={mode}
       controls={controls === undefined || controls === "full"}
+      zones={zones as Partial<Record<"battery" | "inverter" | "heatpump" | "wallbox", Zone>> | undefined}
       onZonesChange={onZonesChange}
       className={className}
     />

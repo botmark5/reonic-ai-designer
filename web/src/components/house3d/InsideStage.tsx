@@ -21,6 +21,8 @@ export interface InsideStageProps {
   mode: House3DMode;
   /** Show the zone pickers under the model. */
   controls: boolean;
+  /** Where the parts start (e.g. a battery the planner already put in the basement). Default: garage/outside. */
+  zones?: Partial<Record<InsideKey, Zone>>;
   onZonesChange?: (p: Partial<Record<InsideKey, Zone>>) => void;
   className?: string;
 }
@@ -29,16 +31,25 @@ export interface InsideStageProps {
  * Inside the house as a simple section: basement, garage, outside wall. The planner drags each part of the system
  * into a zone (or picks it from the list); parts snap into place and only go where they belong.
  */
-export function InsideStage({ design, home, mode, controls, onZonesChange, className }: InsideStageProps) {
+export function InsideStage({ design, home, mode, controls, zones, onZonesChange, className }: InsideStageProps) {
   const theme = useThemeName();
   const reduced = useReducedMotion();
   const palette = useMemo(() => getPalette(theme), [theme]);
   const spec = useMemo(() => buildSceneSpec(design, home, mode, roofPlanes), [design, home, mode]);
   const keys = INSIDE_KEYS.filter((k) => spec.components[k].visible);
   const keysKey = keys.join(",");
-  const [state, setState] = useState<{ for: string; p: Placement }>(() => ({ for: keysKey, p: defaultPlacement(keys) }));
+  const start = () => {
+    let p = defaultPlacement(keys);
+    for (const k of keys) {
+      const z = zones?.[k];
+      const r = z ? moveTo(p, k, z) : null;
+      if (r?.ok) p = r.placement;
+    }
+    return p;
+  };
+  const [state, setState] = useState<{ for: string; p: Placement }>(() => ({ for: keysKey, p: start() }));
   // a new design with other parts starts from the defaults again
-  const placement = state.for === keysKey ? state.p : defaultPlacement(keys);
+  const placement = state.for === keysKey ? state.p : start();
   const [message, setMessage] = useState("");
   const sizes = Object.fromEntries(keys.map((k) => [k, spec.components[k].size?.split(" (")[0] ?? null]));
 
