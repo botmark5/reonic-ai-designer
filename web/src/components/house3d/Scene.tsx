@@ -250,7 +250,10 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
         <Appear object={equipment.heatpump} mount={anchors.heatpump} visible={(c.heatpump.visible || hpOption) && shown.heatpump} reduced={reduced} intro={intro} delay={0.05} ghostFor={building ? 0.9 : 0} ghostOnly={!c.heatpump.visible} hitKey="heatpump" pointer={pointer} />
         <Battery mount={anchors.battery} modules={modules} soc={moment.soc} palette={palette} reduced={reduced} intro={intro} pointer={pointer} />
         <Car object={equipment.car} path={anchors.carPath} visible={c.wallbox.visible && shown.car} reduced={reduced} intro={intro} pointer={pointer} />
-        <EnergyFlow flows={flows} nodes={nodes} sunDir={sunLocal} rayTargets={rays} gradientStops={palette.flow} reduced={reduced} />
+        {/* the flows step aside while a panel is picked or dragged (they would draw over it) */}
+        <group visible={!panelEdit?.selected}>
+          <EnergyFlow flows={flows} nodes={nodes} sunDir={sunLocal} rayTargets={rays} gradientStops={palette.flow} reduced={reduced} />
+        </group>
         <ContactShadows key={groundKey} frames={reduced ? 2 : 200} position={[1.2, 0.012, 2]} scale={38} resolution={512} blur={2.6} far={7} opacity={0.38} color="#1b1d20" />
         {/* drei's first Html in a canvas can lose its root under React 19: a placeholder takes that hit */}
         {settled && <Html position={[0, -50, 0]} style={{ display: "none" }}><span /></Html>}

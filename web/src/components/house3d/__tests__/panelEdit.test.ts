@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { layoutPanels, type RoofPlane } from "../layout";
-import { addPanel, fullGrid, movePanel, nearestFree, overlaps, removePanel } from "../panelEdit";
+import { addPanel, fullGrid, movePanel, nearestFree, overlaps, removePanel, touches } from "../panelEdit";
 
 const planes: RoofPlane[] = [
   { id: "main", width: 13, slope: 6.1, margin: { side: 0.4, eave: 0.4, ridge: 0.3 } },
@@ -38,5 +38,38 @@ describe("panel editing", () => {
     expect(p[30].plane).toBe("garage");
     const full = layoutPanels(36, planes).slots;
     expect(addPanel(full, grid, full[0])).toBe(full);
+  });
+  it("an attached drop never makes an island", () => {
+    const spot = nearestFree(design, grid, "main", 0, 99, design[0].id, true)!;
+    expect(design.some((p) => p.id !== design[0].id && touches(p, spot))).toBe(true);
+  });
+  it("the first panel on an empty plane may go anywhere", () => {
+    expect(nearestFree(design, grid, "garage", 0, 0, undefined, true)).not.toBeNull();
+  });
+  it("removing from the middle of a row closes the gap, ids follow the position", () => {
+    const row0 = design.filter((p) => Math.abs(p.v - design[0].v) < 1e-6);
+    const mid = row0[3];
+    const after = removePanel(design, mid.id);
+    expect(after).toHaveLength(13);
+    const left = after.filter((p) => Math.abs(p.v - mid.v) < 1e-6).sort((a, b) => a.u - b.u);
+    for (let i = 1; i < left.length; i++) expect(left[i].u - left[i - 1].u).toBeCloseTo(1.154, 3);
+    expect(new Set(after.map((p) => p.id)).size).toBe(13);
+    for (let i = 0; i < after.length; i++) for (let j = i + 1; j < after.length; j++) expect(overlaps(after[i], after[j])).toBe(false);
+  });
+  it("removing an end panel moves nothing else; locked panels never slide", () => {
+    const row0 = design.filter((p) => Math.abs(p.v - design[0].v) < 1e-6).sort((a, b) => a.u - b.u);
+    expect(removePanel(design, row0[0].id)).toEqual(design.filter((p) => p.id !== row0[0].id));
+    const locked = new Set(design.map((p) => p.id));
+    expect(removePanel(design, row0[3].id, locked)).toEqual(design.filter((p) => p.id !== row0[3].id));
+  });
+  it("moving a panel out of the middle of a row leaves no hole", () => {
+    const row0 = design.filter((p) => Math.abs(p.v - design[0].v) < 1e-6).sort((a, b) => a.u - b.u);
+    const top = nearestFree(design, grid, "main", 0, 99)!;
+    const after = movePanel(design, row0[4].id, top);
+    expect(after).toHaveLength(14);
+    const row = after.filter((p) => Math.abs(p.v - design[0].v) < 1e-6).sort((a, b) => a.u - b.u);
+    for (let i = 1; i < row.length; i++) expect(row[i].u - row[i - 1].u).toBeCloseTo(1.154, 3);
+    expect(after.some((p) => p.id === top.id && p.u === top.u)).toBe(true);
+    expect(new Set(after.map((p) => p.id)).size).toBe(14);
   });
 });

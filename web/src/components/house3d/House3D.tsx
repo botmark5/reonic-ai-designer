@@ -228,7 +228,7 @@ export function House3D({
     ? {
         selected: pickedSlot?.id ?? null, grid, locked,
         onPick: (id) => setPicked(id && locked.has(id) ? null : id),
-        onMove: (id, to) => { if (locked.has(id)) return; commit(movePanel(spec.layout.slots, id, to)); setPicked(to.id); },
+        onMove: (id, to) => { if (locked.has(id)) return; commit(movePanel(spec.layout.slots, id, to, locked)); setPicked(to.id); },
       }
     : null;
   // Delete / Backspace removes the picked panel, Escape lets go (not while typing elsewhere)
@@ -240,7 +240,7 @@ export function House3D({
       if (e.key === "Escape") setPicked(null);
       if ((e.key === "Delete" || e.key === "Backspace") && pickedSlot) {
         e.preventDefault();
-        commit(removePanel(spec.layout.slots, pickedSlot.id));
+        commit(removePanel(spec.layout.slots, pickedSlot.id, locked));
         setPicked(null);
       }
     };
@@ -339,7 +339,7 @@ export function House3D({
               Placed {placedPanels} of {enginePanels}
             </span>
             <button type="button" onClick={() => commit(addPanel(spec.layout.slots, grid, pickedSlot))} className={cn(pill, "h-7 text-ink-body [@media(hover:hover)]:hover:bg-surface-2")}>Add</button>
-            <button type="button" disabled={!pickedSlot} onClick={() => { if (pickedSlot) { commit(removePanel(spec.layout.slots, pickedSlot.id)); setPicked(null); } }} className={cn(pill, "h-7 text-ink-body disabled:opacity-40 [@media(hover:hover)]:hover:bg-surface-2")}>Remove</button>
+            <button type="button" disabled={!pickedSlot} onClick={() => { if (pickedSlot) { commit(removePanel(spec.layout.slots, pickedSlot.id, locked)); setPicked(null); } }} className={cn(pill, "h-7 text-ink-body disabled:opacity-40 [@media(hover:hover)]:hover:bg-surface-2")}>Remove</button>
             {editedSlots && (
               <button type="button" onClick={() => { setEdited(null); setPicked(null); onPanelsChange?.(null); }} className={cn(pill, "h-7 text-ink-body [@media(hover:hover)]:hover:bg-surface-2")}>Reset</button>
             )}
