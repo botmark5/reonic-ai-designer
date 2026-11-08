@@ -78,3 +78,20 @@ def test_large_home_fallback_when_no_retrofit_or_heatpump():
     picks = pick_reality(t, LABELS, _pred(t, {"r1": {"pv_kwp": 8.0}, "g1": {"pv_kwp": 14.0}}))
     assert [p["role"] for p in picks] == ["typical_pv_battery", "ev_wallbox", "large_home"]
     assert picks[-1]["project_id"] == "L1"
+
+
+def test_live_design_asks_for_the_unanswered_project(monkeypatch):
+    """Called in-process, /project's FastAPI Query(False) default is truthy: live_design must pass answered=False."""
+    from engine import api
+    from engine.demo_set import live_design
+
+    seen = {}
+
+    def fake_project(project_id, answered=object()):
+        seen["answered"] = answered
+        return {"ours": {"design": {"pv": {"kwp": 9.0}, "battery": {"kwh": 10.0}, "wallbox": {"include": False},
+                                    "heatpump": {"kw": None}}, "facts_for_explanation": {"offer_type": "pv"}}}
+
+    monkeypatch.setattr(api, "project", fake_project)
+    assert live_design("x") == dict(pv_kwp=9.0, battery_kwh=10.0, wallbox=False, heatpump_kw=0.0, offer_type="pv")
+    assert seen["answered"] is False
