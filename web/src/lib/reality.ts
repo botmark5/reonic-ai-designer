@@ -144,16 +144,27 @@ type EvalLike = {
 const nonEmpty = (m: Metrics | undefined) => (m && Object.keys(m).length ? m : null);
 
 /**
- * Where the headline numbers come from. Answered mode (the planner answered "Solar already on the roof?", as in the
- * planner and the pitch) when /eval reports it, else the unanswered numbers. Within a mode: new full systems when
- * that slice exists, else all projects; add-on sales separately.
+ * Where the headline numbers come from (audit 8 Nov, engine/RESULTS.md "How to read answered").
+ * In the evaluation the answer to "Solar already on the roof?" is DERIVED FROM THE EXPERT OFFER, so answered-mode
+ * yes/no and all-homes numbers restate the label and are not accuracy. Two places are fair:
+ *   - new full systems: every home gets the same answer ("new system"), so it carries no information about sizes
+ *     -> the headline tiles use the answered full_designs slice when /eval has it (else the unanswered one, else all homes);
+ *   - everything else (all homes, add-on sales) is shown WITHOUT the answer, as the data records it.
+ * The answered all-homes numbers only appear in the explicit what-if card of the view.
  */
 export function headlineSource(e: EvalLike) {
   const a = e.with_existing_pv_answer;
-  const answered = !!(nonEmpty(a?.segments?.full_designs) || nonEmpty(a?.metrics));
-  const mode = answered ? { metrics: a?.metrics ?? e.metrics, segments: a?.segments } : { metrics: e.metrics, segments: e.segments };
-  const full = nonEmpty(mode.segments?.full_designs);
-  return { metrics: full ?? mode.metrics, overall: mode.metrics, fullOnly: !!full, addOns: nonEmpty(mode.segments?.add_ons), answered };
+  const fullAnswered = nonEmpty(a?.segments?.full_designs);
+  const full = fullAnswered ?? nonEmpty(e.segments?.full_designs);
+  return {
+    metrics: full ?? e.metrics,
+    overall: e.metrics,
+    fullOnly: !!full,
+    /** add-on sales without the answer; the answered version only when /eval has no unanswered segments at all */
+    addOns: nonEmpty(e.segments?.add_ons) ?? (e.segments ? null : nonEmpty(a?.segments?.add_ons)),
+    /** true when the new-systems tiles come from the answered slice (planner said "new system") */
+    answered: !!fullAnswered,
+  };
 }
 
 /** Coverage only when enough homes stand behind it (pv_n >= MIN_COVERAGE_N; older /eval without pv_n: n_projects). */

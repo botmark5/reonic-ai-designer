@@ -54,6 +54,8 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 
 ## Phase 5 — Pitch and submission
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
+  - [x] metric charts (docs/deck/charts.py) · [x] README (root + engine, PR #60: reproducible from the data-v1 release) · [x] pitch facts re-checked for leakage (answered mode = what-if, see engine/RESULTS.md)
+  - [ ] deck (Mark, from docs/pitch-facts.md) · [ ] backup video (shot list in docs/demo-runbook.md) · [ ] judges invited to the repo + submission channel (ask organisers 08:00) · [ ] rehearse ×2 · [ ] freeze 11:00 · [ ] submit 13:30 Munich
   - metric charts done (docs/deck/charts.py, PR #40/#41) · deck: HQ chat in Claude Slides · pitch-facts, demo runbook, README: e-spare (docs/pitch)
 
 ## Decisions

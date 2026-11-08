@@ -95,18 +95,27 @@ describe("headlines ties", () => {
 });
 
 describe("answered mode and trusted coverage", () => {
-  it("prefers the answered mode's new full systems and add-ons", () => {
+  it("new systems from the answered slice, add-ons and all homes WITHOUT the answer", () => {
     const full = { design_model: { n_projects: 253, pv_n: 240, pv_interval_coverage_pct: 79.1 } };
-    const addOns = { design_model: { n_projects: 62, pv_n: 4, pv_interval_coverage_pct: 0 } };
+    const addOnsAnswered = { design_model: { n_projects: 62, has_pv_accuracy: 87 } };
+    const addOnsPlain = { design_model: { n_projects: 62, pv_n: 4, has_pv_accuracy: 77.4, pv_interval_coverage_pct: 0 } };
+    const all = { design_model: { pv_kwp_mae_all_projects: 2.94 } };
     const s = headlineSource({
-      metrics: { design_model: {} },
-      segments: { full_designs: { design_model: { pv_interval_coverage_pct: 80.7 } } },
-      with_existing_pv_answer: { metrics: { design_model: {} }, segments: { full_designs: full, add_ons: addOns } },
+      metrics: all,
+      segments: { full_designs: { design_model: { pv_interval_coverage_pct: 80.7 } }, add_ons: addOnsPlain },
+      with_existing_pv_answer: { metrics: { design_model: { pv_kwp_mae_all_projects: 2.19 } }, segments: { full_designs: full, add_ons: addOnsAnswered } },
     });
     expect(s.answered).toBe(true);
-    expect(s.metrics).toBe(full);
+    expect(s.metrics).toBe(full); // the answer is "new system" for every home here: fair
+    expect(s.overall).toBe(all); // all homes: never the answered (label-derived) numbers
+    expect(s.addOns).toBe(addOnsPlain); // add-on sales: without the answer
     expect(trustedCoverage(s.metrics.design_model)).toBe(79.1);
     expect(trustedCoverage(s.addOns?.design_model)).toBeNull(); // only 4 homes
     expect(trustedCoverage({ pv_n: 30, pv_interval_coverage_pct: null })).toBeNull();
+  });
+  it("without unanswered segments the answered add-ons are the only ones available", () => {
+    const addOnsAnswered = { design_model: { n_projects: 62 } };
+    const s = headlineSource({ metrics: { design_model: {} }, with_existing_pv_answer: { segments: { full_designs: { design_model: { n_projects: 1 } }, add_ons: addOnsAnswered } } });
+    expect(s.addOns).toBe(addOnsAnswered);
   });
 });

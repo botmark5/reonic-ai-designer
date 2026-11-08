@@ -40,7 +40,7 @@ export const TIMEOUTS = {
   validate: 4000,
   eval: 4000,
   project: 8000, // runs a full design too
-  refine: 10000, // Claude Haiku + design
+  refine: 20000, // Claude Haiku + design; the first structured-output call after an engine start can take ~25 s (warmed up at start-up since #60)
   explain: 8000, // time to the response headers; the stream itself may run longer
   health: 3000,
 } as const;
