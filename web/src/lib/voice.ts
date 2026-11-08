@@ -316,6 +316,8 @@ export interface VoiceStore {
   saveDesign(row: { call_id: string | null; home: Home; locks: Locks; design: DesignResponse }): Promise<string | null>;
   callHasDesign(callId: string): Promise<boolean>;
   getDesign(id: string): Promise<DesignResponse | null>;
+  /** home + locks of a stored design row (for rows saved without an engine answer), or null. */
+  getDesignInputs?(id: string): Promise<{ home: Home; locks: Locks } | null>;
   /** The stored call (id + facts) with this conversation_id, or null. */
   getCall(conversationId: string): Promise<StoredCall | null>;
 }
@@ -418,6 +420,10 @@ export function supabaseStore(db: SupabaseClient): VoiceStore {
     async getDesign(id) {
       const { data } = await db.from("designs").select("design").eq("id", id).maybeSingle();
       return (data?.design as DesignResponse | null | undefined) ?? null;
+    },
+    async getDesignInputs(id) {
+      const { data } = await db.from("designs").select("home, locks").eq("id", id).maybeSingle();
+      return data?.home ? { home: data.home as Home, locks: { ...EMPTY_LOCKS, ...((data.locks as Partial<Locks> | null) ?? {}) } } : null;
     },
   };
 }
@@ -858,18 +864,33 @@ function offerFacts(d: DesignResponse) {
 
 /** Every number Claude writes must be one of the engine's (any rounding / separator style). */
 export function numbersAllowed(text: string, facts: ReturnType<typeof offerFacts>): boolean {
+  return unknownNumbers(text, facts).length === 0;
+}
+
+function unknownNumbers(text: string, facts: ReturnType<typeof offerFacts>): string[] {
   const ok = new Set<number>();
   for (const v of Object.values(facts)) {
     if (typeof v !== "number" || !Number.isFinite(v)) continue;
     [v, Math.round(v), Math.round(v * 10) / 10, Math.round(v / 100) * 100, Math.round(v / 1000) * 1000].forEach((x) => ok.add(x));
   }
   const found = text.match(/\d[\d.,]*/g) ?? [];
-  return found.every((raw) => {
+  return found.filter((raw) => {
     const t = raw.replace(/[.,]$/, "");
     const asThousands = /^\d{1,3}([.,]\d{3})+$/.test(t) ? Number(t.replace(/[.,]/g, "")) : NaN;
     const asDecimal = Number(t.replace(",", "."));
-    return ok.has(asThousands) || ok.has(asDecimal);
+    return !(ok.has(asThousands) || ok.has(asDecimal));
   });
+}
+
+/** Spoken text only: no markdown emphasis, headings, bullets or voice tags (TTS would read them, the UI would show them). */
+export function plainSpoken(t: string): string {
+  return t
+    .replace(/\*\*|__|`/g, "")
+    .replace(/(^|\s)[*_](\S[^*_]*\S|\S)[*_](?=\s|[.,!?;:]|$)/g, "$1$2")
+    .replace(/^\s*(#{1,6}\s+|[-*•]\s+)/gm, "")
+    .replace(/\[[^\]\n]{1,40}\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Claude's JSON script → segments, or null if it is not usable (then the template is used). */
@@ -886,15 +907,20 @@ export function parseScript(raw: string, d: DesignResponse): ScriptSegment[] | n
   if (!Array.isArray(list) || !list.length) return null;
   const segments: ScriptSegment[] = [];
   for (const x of list) {
-    const text = typeof x?.text === "string" ? x.text.trim() : "";
+    const text = typeof x?.text === "string" ? plainSpoken(x.text) : "";
     const mo = x?.moment;
     const moment: Moment = mo === "morning" || mo === "noon" || mo === "evening" ? mo : null;
     if (text) segments.push({ text, moment });
   }
-  const words = segments.map((x) => x.text).join(" ").split(/\s+/).length;
+  const all = segments.map((x) => x.text).join(" ");
+  const words = all.split(/\s+/).length;
   const hasDay = ["morning", "noon", "evening"].every((mo) => segments.some((x) => x.moment === mo));
-  if (words > 130 || (d.design.pv.include && !hasDay)) return null;
-  if (!numbersAllowed(segments.map((x) => x.text).join(" "), offerFacts(d))) return null;
+  const problem = words > 130 ? `${words} words` : d.design.pv.include && !hasDay ? "no morning/noon/evening"
+    : !numbersAllowed(all, offerFacts(d)) ? `numbers not from the engine: ${unknownNumbers(all, offerFacts(d)).join(", ")}` : null;
+  if (problem) {
+    log(`Claude script rejected: ${problem}`);
+    return null;
+  }
   return segments;
 }
 
@@ -1031,7 +1057,18 @@ export async function handleExplain(req: Request, deps: VoiceDeps): Promise<Resp
   const designId = parseText(body?.design_id);
   // Only stored (engine-made) designs in production, so nobody can make the offer voice read arbitrary text.
   const inline = deps.allowInlineDesign ? body?.design_response : undefined;
-  const d = inline ?? (designId ? await deps.store.getDesign(designId) : null);
+  let d = inline ?? (designId ? await deps.store.getDesign(designId) : null);
+  if (!d && designId) {
+    // A row saved without an engine answer (e.g. seeded or planner-made): design it now, like the offer page does.
+    const inputs = await deps.store.getDesignInputs?.(designId);
+    if (inputs) {
+      try {
+        d = await deps.design({ installer: deps.installer, home: inputs.home, locks: inputs.locks });
+      } catch (e) {
+        log(`explain: engine design for stored inputs failed: ${e instanceof Error ? e.message : "unknown error"}`);
+      }
+    }
+  }
   if (!d && designId) return Response.json({ error: "design not found" }, { status: 404 });
   if (!d?.design?.pv) return Response.json({ error: "design_id is required" }, { status: 400 });
 
