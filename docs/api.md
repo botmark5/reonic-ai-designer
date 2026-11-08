@@ -42,7 +42,7 @@ Response: { "changes": { "has_ev": true, "ev_km_year": 15000 }, "design": { ...a
   that this default often means "consumption unknown" (battery retrofits); a typed value is real (`false` / omitted). `/project/{id}`
   sends the flag as recorded in the data.
 - `home.annual_kwh` below 1,500 kWh is rejected with HTTP 422 (placeholder entries; nothing can be sized from them).
-- `battery.range` always contains `battery.kwh`; `battery.alternatives` are the classifier's own top catalogue sizes (shares > 0).
+- `battery.range` always contains `battery.kwh`; `battery.alternatives` are other catalogue sizes with the classifier's shares (> 0); since 8 Nov one smaller and one larger, see below.
 - Heat pump sizes (`options.heatpump.kw`, `heatpump.kw`) come from the installer's catalogue as sold (2a8ba8e2: 5.5 / 7.5 / 8 / 10.5 / 12.5 kW);
   the physics size check uses the same list.
 - `physics.flags` thresholds are calibrated on the experts' own new-system designs (8 Nov, issue #66): PV yield / consumption
