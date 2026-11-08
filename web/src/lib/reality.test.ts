@@ -119,3 +119,45 @@ describe("answered mode and trusted coverage", () => {
     expect(s.addOns).toBe(addOnsAnswered);
   });
 });
+
+describe("level with the rule (scorecard 03:00)", () => {
+  const one = (key: string, unit: "%" | "kWp", better: "higher" | "lower", ours: number, base: number) =>
+    headlines({ design_model: { [key]: ours }, baseline_band_median: { [key]: base } }, "design_model", [{ key, label: "x", better, unit }])[0];
+  it("a gap of 2 points or less is level, neither a win nor a loss", () => {
+    const h = one("pv_variant_hit_tolerant_pct", "%", "higher", 38.4, 37.1);
+    expect(h.level).toBe(true);
+    expect(h.wins).toBeNull();
+    expect(one("has_wallbox_accuracy", "%", "higher", 73, 72).wins).toBeNull();
+    expect(one("has_pv_accuracy", "%", "higher", 77, 6).wins).toBe(true);
+    expect(one("has_battery_accuracy", "%", "higher", 86.7, 89.8).wins).toBe(false);
+  });
+  it("a solar error within 5 % of the rule is level (2.50 vs 2.62)", () => {
+    const h = one("pv_kwp_mae_all_projects", "kWp", "lower", 2.5, 2.62);
+    expect(h.level).toBe(true);
+    expect(h.wins).toBeNull();
+    expect(one("pv_kwp_mae_all_projects", "kWp", "lower", 2.94, 3.77).wins).toBe(true);
+  });
+});
+
+describe("expertDesign", () => {
+  it("puts the expert's primary variant into our response shape, none where the expert sold none", async () => {
+    const { expertDesign } = await import("./reality");
+    const ours = {
+      design: {
+        pv: { include: true, kwp: 9.9, range: [8, 12], confidence: 0.8, reasons: ["x"] },
+        battery: { include: true, kwh: 10, range: [5, 10], confidence: 0.7, reasons: [] },
+        wallbox: { include: false, kw: null, confidence: 0.6, reasons: [] },
+        heatpump: { include: false, kw: null, confidence: 0.6, reasons: [] },
+      },
+    } as unknown as Parameters<typeof expertDesign>[0];
+    const e = expertDesign(ours, [
+      { option_number: 2, is_primary: false, pv_kwp: 12, battery_kwh: null, has_wallbox: false, heatpump_kw: null },
+      { option_number: 1, is_primary: true, pv_kwp: null, battery_kwh: 5, has_wallbox: true, heatpump_kw: 9 },
+    ]);
+    expect(e.design.pv).toMatchObject({ include: false, kwp: null });
+    expect(e.design.battery).toMatchObject({ include: true, kwh: 5 });
+    expect(e.design.wallbox).toMatchObject({ include: true, kw: 11 });
+    expect(e.design.heatpump).toMatchObject({ include: true, kw: 9 });
+    expect(e.design.pv.reasons).toEqual([]);
+  });
+});

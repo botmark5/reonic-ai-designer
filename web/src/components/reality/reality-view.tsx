@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Shuffle } from "lucide-react";
+import { HouseStage } from "@/components/house3d";
 import { Button } from "@/components/ui/button";
 import { ServedBadge } from "@/components/ui/served-badge";
 import { StatusBadge, type Tone } from "@/components/ui/status-badge";
 import { COMPONENTS, sizeOf } from "@/lib/diff";
 import { fmtInt, fmtKwp, fmtSize, LABEL } from "@/lib/format";
 import type { DemoProject } from "@/lib/heldout";
-import { ADDON_HEADLINES, headlines, headlineSource, trustedCoverage, verdicts, type VerdictKind } from "@/lib/reality";
+import { ADDON_HEADLINES, expertDesign, headlines, headlineSource, trustedCoverage, verdicts, type Headline, type VerdictKind } from "@/lib/reality";
 import type { ComponentKey, EvalResponse, ExpertVariant, MetricSet, ProjectResponse } from "@/lib/types";
 import { PREDICTORS } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,22 @@ const ROLE_LABEL: Record<string, string> = {
   battery_retrofit: "Battery retrofit",
   experts_disagree: "Experts disagree",
 };
+
+// engine #47: /project designs a battery retrofit as a new system. The chip comes back when #47 is merged.
+const HIDDEN_ROLES = new Set(["battery_retrofit"]);
+
+function Verdict({ t, short = false }: { t: Headline; short?: boolean }) {
+  if (t.level) return <StatusBadge tone="neutral">{short ? "Level" : "Level with rule"}</StatusBadge>;
+  if (t.wins == null) return null;
+  return <StatusBadge tone={t.wins ? "success" : "warning"}>{t.wins ? (short ? "Better" : "Better than rules") : short ? "Below" : "Below simple rule"}</StatusBadge>;
+}
+
+function oursCell(c: ComponentKey, p: ProjectResponse | null) {
+  const d = p?.ours?.design;
+  if (!d) return "–";
+  if (c === "heatpump" && !d.heatpump.include && p?.ours?.options?.heatpump?.available) return <span className="font-sans">Option {p.ours.options.heatpump.kw} kW</span>;
+  return fmtSize(c, sizeOf(d, c));
+}
 
 const n = (m: MetricSet | undefined, k: string) => (m && typeof m[k] === "number" ? (m[k] as number) : null);
 const pct = (x: number | null) => (x == null ? "–" : `${Math.round(x)}`);
@@ -55,7 +72,8 @@ function describeHome(p: ProjectResponse) {
     .join(" · ");
 }
 
-export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; ids: string[]; demos: DemoProject[] }) {
+export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalResponse; ids: string[]; demos: DemoProject[] }) {
+  const demos = allDemos.filter((d) => !HIDDEN_ROLES.has(d.role));
   const [projectId, setProjectId] = useState<string | null>(demos[0]?.project_id ?? ids[0] ?? null);
   const [history, setHistory] = useState<string[]>([]);
   const [project, setProject] = useState<ProjectResponse | null>(null);
@@ -130,9 +148,18 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
   const nTest = n(HM, "n_projects") ?? (src.fullOnly ? null : ((evalRes.protocol?.n_test as number | undefined) ?? null));
   const nAll = n(M, "n_projects") ?? (evalRes.protocol?.n_test as number | undefined) ?? null;
   const transfer = Object.entries(evalRes.transfer ?? {});
+  const installerIds = Array.from(new Set(transfer.flatMap(([k]) => k.split("->").map((x) => x.trim())))).sort();
+  const [headline, ...otherHeads] = heads;
+  // on new full systems nearly every home has solar on both sides: the "where both chose solar" tile repeats the headline
+  const restHeads = otherHeads.filter((t) => !(t.key === "pv_kwp_mae_when_both_pv" && headline && fmt(t.ours, t.unit) === fmt(headline.ours, headline.unit)));
+  const installerName = (id: string) => `Installer ${String.fromCharCode(65 + Math.max(0, installerIds.indexOf(id)))}`;
+  const noNewSolar = addOns.find((t) => t.key === "has_pv_accuracy");
+  const otherAddOns = addOns.filter((t) => t !== noNewSolar);
+  const shown = project && project.project_id === projectId ? project : null;
+  const theirs = shown?.ours ? expertDesign(shown.ours, shown.variants) : null;
 
   return (
-    <main id="main" className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-8 px-4 py-8 md:px-6 md:py-12">
+    <main id="main" className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-10 px-4 py-8 md:px-6 md:py-12">
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <ServedBadge served={evalRes.served} />
@@ -142,144 +169,217 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
         <p className="m-0 max-w-2xl text-body text-ink-body">Every number on this page comes from homes the engine never saw while learning.</p>
       </header>
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-        <section aria-labelledby="one-home" className="flex flex-col gap-4 self-start rounded-lg border border-border bg-surface-1 p-5 md:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex min-w-0 flex-col gap-1">
-              <h2 id="one-home" className="m-0 text-label uppercase text-ink-muted">One held-out home</h2>
-              <p className="m-0 font-mono text-data text-ink-body tabular" aria-live="polite">
-                {project ? `Project ${project.project_id?.slice(0, 8)} · ${describeHome(project)}` : projectId ? "Loading…" : "No held-out projects available"}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" size="sm" disabled={!history.length} onClick={() => setHistory((h) => (setErrorId(null), setProjectId(h[h.length - 1]), h.slice(0, -1)))}>
-                Previous
-              </Button>
-              <Button variant="secondary" size="sm" disabled={!ids.length} onClick={random}>
-                <Shuffle data-icon="inline-start" strokeWidth={1.5} /> Random home
-              </Button>
-            </div>
-          </div>
-
-          {demos.length > 0 && (
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Example cases">
-              {demos.map((d) => (
-                <button
-                  key={d.project_id}
-                  type="button"
-                  onClick={() => go(d.project_id)}
-                  aria-pressed={d.project_id === projectId}
-                  title={d.why}
-                  className={cn(
-                    "cursor-pointer rounded-pill border px-2.5 py-1 text-[12px] transition-colors",
-                    d.project_id === projectId ? "border-ink bg-ink text-surface-0" : "border-border text-ink-body hover:border-border-strong hover:text-ink",
-                  )}
-                >
-                  {ROLE_LABEL[d.role] ?? d.role}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {state === "error" ? (
-            <p className="m-0 text-body-sm text-critical-text">
-              This project could not be loaded: the engine is offline or does not know this id. No example values are shown in its place.
+      <section aria-labelledby="one-home" className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex min-w-0 flex-col gap-1">
+            <h2 id="one-home" className="m-0 text-label uppercase text-ink-muted">One held-out home</h2>
+            <p className="m-0 text-body-sm text-ink-body" aria-live="polite" title={project?.project_id ? `Held-out project ${project.project_id}` : undefined}>
+              {project ? describeHome(project) : projectId ? "Loading…" : "No held-out projects available"}
             </p>
-          ) : (
-            <div className={cn("overflow-x-auto", state === "loading" && "opacity-60 transition-opacity")} aria-busy={state === "loading"}>
-              <table className="w-full min-w-[520px] border-collapse text-[14px]">
-                <thead>
-                  <tr className="text-left text-[12px] text-ink-muted">
-                    <th scope="col" className="border-b border-border py-2 font-medium">Component</th>
-                    <th scope="col" className="border-b border-border py-2 font-medium">Our design</th>
-                    <th scope="col" className="border-b border-border py-2 font-medium">Expert offered</th>
-                    <th scope="col" className="border-b border-border py-2 font-medium">Verdict</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {COMPONENTS.map((c) => (
-                    <tr key={c} className="border-b border-surface-2 last:border-0">
-                      <td className="py-3">
-                        <span className="flex items-center gap-2">
+          </div>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" disabled={!history.length} onClick={() => setHistory((h) => (setErrorId(null), setProjectId(h[h.length - 1]), h.slice(0, -1)))}>
+              Previous
+            </Button>
+            <Button variant="secondary" size="sm" disabled={!ids.length} onClick={random}>
+              <Shuffle data-icon="inline-start" strokeWidth={1.5} /> Random home
+            </Button>
+          </div>
+        </div>
+
+        {demos.length > 0 && (
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Example cases">
+            {demos.map((d) => (
+              <button
+                key={d.project_id}
+                type="button"
+                onClick={() => go(d.project_id)}
+                aria-pressed={d.project_id === projectId}
+                title={d.why}
+                className={cn(
+                  "h-8 cursor-pointer rounded-pill border px-3 text-[13px] transition-colors",
+                  d.project_id === projectId ? "border-ink bg-ink text-surface-0" : "border-border bg-surface-1 text-ink-body hover:border-border-strong hover:text-ink",
+                )}
+              >
+                {ROLE_LABEL[d.role] ?? d.role}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {state === "error" ? (
+          <p className="m-0 rounded-lg border border-dashed border-border bg-surface-1 p-6 text-body-sm text-critical-text">
+            This home could not be loaded: the engine is offline or does not know this id. No example values are shown in its place.
+          </p>
+        ) : (
+          <div className={cn("flex flex-col gap-4", state === "loading" && "opacity-60 transition-opacity")} aria-busy={state === "loading"}>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {(["ours", "expert"] as const).map((side) => {
+                const design = side === "ours" ? (shown?.ours ?? null) : theirs;
+                return (
+                  <figure key={side} className="m-0 flex min-w-0 flex-col gap-2">
+                    <figcaption className="flex items-center gap-2 text-[15px] font-medium text-ink">
+                      <span className={cn("size-2 rounded-full", side === "ours" ? "bg-ai-orange" : "bg-ink")} aria-hidden />
+                      {side === "ours" ? "Our design" : "What the expert sold"}
+                    </figcaption>
+                    {design && shown ? (
+                      <HouseStage
+                        design={design}
+                        home={shown.home}
+                        mode="planner"
+                        cameraKey="reality"
+                        controls="minimal"
+                        labels
+                        // the sizes are in the table below; keep the houses clear (until the stage honours controls="minimal")
+                        className="[&_[data-h3d-ui]]:hidden"
+                      />
+                    ) : (
+                      <div className="aspect-[4/3] w-full animate-pulse rounded-lg border border-border bg-surface-1 motion-reduce:animate-none md:aspect-[16/10]" aria-hidden />
+                    )}
+                  </figure>
+                );
+              })}
+            </div>
+
+            <table className="w-full border-collapse rounded-lg bg-surface-1 text-[14px] [&_td]:px-3 md:text-[15px]">
+              <caption className="sr-only">Our design and the expert&apos;s sale, per component, with the verdict</caption>
+              <thead>
+                <tr className="border-b border-border text-[12px] text-ink-muted">
+                  <th scope="col" className="px-3 pt-3 pb-2 text-right font-medium">Our design</th>
+                  <th scope="col" className="px-3 pt-3 pb-2 text-center font-medium"><span className="sr-only">Component and verdict</span></th>
+                  <th scope="col" className="px-3 pt-3 pb-2 text-left font-medium">Expert sold</th>
+                </tr>
+              </thead>
+              <tbody>
+                {COMPONENTS.map((c) => (
+                  <tr key={c} className="border-b border-border last:border-0">
+                    <td className="w-[38%] py-3 text-right font-mono font-medium tabular">{oursCell(c, shown)}</td>
+                    <td className="py-3">
+                      <span className="flex flex-col items-center gap-1 text-center">
+                        <span className="flex items-center gap-1.5 text-[12px] text-ink-muted">
                           <span className={cn("size-2 rounded-full", DOT[c])} aria-hidden />
                           {LABEL[c]}
                         </span>
-                      </td>
-                      <td className="py-3 font-mono tabular">
-                        {ours ? (c === "heatpump" && !ours.heatpump.include && project?.ours?.options?.heatpump?.available ? <span className="font-sans">Option {project.ours.options.heatpump.kw} kW</span> : fmtSize(c, sizeOf(ours, c))) : "–"}
-                      </td>
-                      <td className="py-3 font-mono tabular">{project ? expertCell(c, project.variants) : "–"}</td>
-                      <td className="py-3">{v ? <StatusBadge tone={TONE[v[c].kind]}>{v[c].label}</StatusBadge> : null}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {unanswered && (
-            <p className="m-0 rounded-md bg-warning-tint px-3 py-2 text-[13px] leading-5 text-warning-text">
-              Unanswered mode: this design was made without the answer to “Solar already on the roof?”, so the engine cannot know
-              the expert only added a battery. The held-out numbers count add-ons like this with the answer given (engine #47 fixes this case).
-            </p>
-          )}
-          <p className="m-0 text-[13px] leading-5 text-ink-muted">
-            {demo ? `${demo.why}. ` : ""}
-            {project && project.variants.length > 1
-              ? `The expert offered ${project.variants.length} variants for this home; any proposal inside that range counts as a hit.`
-              : "PV counts as a match within 1 kWp, a battery within one catalogue size step."}
+                        {v && shown ? <StatusBadge tone={TONE[v[c].kind]}>{v[c].label}</StatusBadge> : null}
+                      </span>
+                    </td>
+                    <td className="w-[38%] py-3 text-left font-mono font-medium tabular">{shown ? expertCell(c, shown.variants) : "–"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {unanswered && (
+          <p className="m-0 rounded-md bg-warning-tint px-3 py-2 text-[13px] leading-5 text-warning-text">
+            Unanswered mode: this design was made without the answer to “Solar already on the roof?”, so the engine cannot know
+            the expert only added a battery (engine #47 fixes this case).
           </p>
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (manual.trim()) go(manual.trim());
-            }}
-          >
-            <label htmlFor="pid" className="sr-only">Project ID</label>
-            <input
-              id="pid"
-              value={manual}
-              onChange={(e) => setManual(e.target.value)}
-              placeholder="Open a project by ID"
-              className="h-8 min-w-0 flex-1 rounded-sm border border-border bg-surface-0 px-2.5 font-mono text-[13px] outline-none focus-visible:border-focus"
-            />
-            <Button type="submit" size="sm" variant="ghost">Open</Button>
-          </form>
-        </section>
+        )}
+        <p className="m-0 text-[13px] leading-5 text-ink-muted">
+          {demo ? `${demo.why}. ` : ""}
+          {shown && shown.variants.length > 1
+            ? `The expert offered ${shown.variants.length} variants for this home; the house shows the main one, and any proposal inside that range counts as a hit.`
+            : "Solar counts as a match within 1 kWp, a battery within one catalogue size step."}
+        </p>
+        <form
+          className="flex max-w-sm gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (manual.trim()) go(manual.trim());
+          }}
+        >
+          <label htmlFor="pid" className="sr-only">Project ID</label>
+          <input
+            id="pid"
+            value={manual}
+            onChange={(e) => setManual(e.target.value)}
+            placeholder="Open a held-out home by ID"
+            className="h-8 min-w-0 flex-1 rounded-sm border border-border bg-surface-1 px-2.5 font-mono text-[13px] outline-none focus-visible:border-focus"
+          />
+          <Button type="submit" size="sm" variant="ghost">Open</Button>
+        </form>
+      </section>
 
-        <section aria-labelledby="across" className="flex flex-col gap-4">
-          <h2 id="across" className="m-0 text-label uppercase text-ink-muted">
-            Across {nTest ? fmtInt(nTest) : "all"} held-out {src.fullOnly ? "new systems" : "homes"}
-          </h2>
-          {!offline && (
-            <p className="m-0 -mt-2 text-[12px] leading-4 text-ink-muted">
-              {src.fullOnly
-                ? "New full systems, scored with the planner saying “new system” (the same answer for every home here, so it tells the engine nothing about sizes). Add-on sales below are scored without any answer, as the data records them."
-                : "Scored without the answer to “Solar already on the roof?”, as the data records it."}
-            </p>
-          )}
-          {offline ? (
-            <div className="rounded-lg border border-dashed border-border bg-surface-1 p-6 text-body-sm text-ink-muted">
-              Engine offline: the held-out metrics appear here as soon as it is reachable again. No numbers are shown in the meantime.
+      <section aria-labelledby="across" className="flex flex-col gap-4">
+        <h2 id="across" className="m-0 text-label uppercase text-ink-muted">
+          Across {nTest ? fmtInt(nTest) : "all"} held-out {src.fullOnly ? "new systems" : "homes"}
+        </h2>
+        {offline ? (
+          <div className="rounded-lg border border-dashed border-border bg-surface-1 p-6 text-body-sm text-ink-muted">
+            Engine offline: the held-out metrics appear here as soon as it is reachable again. No numbers are shown in the meantime.
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {headline && (
+                <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-1 p-5 md:p-6">
+                  <div className="flex flex-wrap-reverse items-start justify-between gap-2">
+                    <span className="min-w-[14ch] flex-1 text-[15px] leading-5 font-medium text-ink">
+                      {src.fullOnly ? "Solar size error on new full systems" : headline.label}
+                    </span>
+                    <Verdict t={headline} />
+                  </div>
+                  <span className="flex flex-wrap items-baseline gap-x-3 font-mono font-medium tabular">
+                    <span className="text-[56px] leading-none tracking-[-0.02em]">{fmt(headline.ours, headline.unit)}</span>
+                    <span className="text-[20px] text-ink-muted">{headline.unit}</span>
+                    <span className="text-[20px] font-normal text-ink-muted">vs {fmt(headline.base, headline.unit)} best rule</span>
+                  </span>
+                  <span className="text-[13px] leading-5 text-ink-muted">
+                    {headline.level ? "Level with the best simple rule" : "Best simple rule"}
+                    {headline.baseName ? ` (${headline.baseName})` : ""}. {headline.note ?? ""} Scored with the planner saying “new system”, the same answer for every home here.
+                  </span>
+                </div>
+              )}
+              {noNewSolar && (
+                <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-1 p-5 md:p-6">
+                  <div className="flex flex-wrap-reverse items-start justify-between gap-2">
+                    <span className="min-w-[14ch] flex-1 text-[15px] leading-5 font-medium text-ink">
+                      Add-on sales{nAddOns ? ` (${fmtInt(nAddOns)} homes)` : ""}: {noNewSolar.label.toLowerCase()}
+                    </span>
+                    <Verdict t={noNewSolar} />
+                  </div>
+                  <span className="flex flex-wrap items-baseline gap-x-3 font-mono font-medium tabular">
+                    <span className="text-[56px] leading-none tracking-[-0.02em]">{fmt(noNewSolar.ours, "%")}</span>
+                    <span className="text-[20px] text-ink-muted">%</span>
+                    <span className="text-[20px] font-normal text-ink-muted">vs {fmt(noNewSolar.base, "%")} % best rule</span>
+                  </span>
+                  <span className="text-[13px] leading-5 text-ink-muted">
+                    Battery retrofits, extensions, wallbox only: the rules put new panels on every roof. Scored without the answer to “Solar already on the roof?”.
+                  </span>
+                  {otherAddOns.map((t) => (
+                    <div key={t.key} className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2 text-[13px]">
+                      <span className="text-ink-body">{t.label}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="font-mono tabular">{fmt(t.ours, t.unit)} %</span>
+                        <span className="text-ink-muted">vs {fmt(t.base, t.unit)} %</span>
+                        <Verdict t={t} short />
+                      </span>
+                    </div>
+                  ))}
+                  {addOnCov != null && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2 text-[13px]">
+                      <span className="text-ink-body">Expert solar inside our P10–P90 range, where both chose solar</span>
+                      <span className="font-mono tabular">{Math.round(addOnCov)} %</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {heads.map((t, i) => (
-                <div key={t.key} className={cn("flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4", i === 0 && "sm:col-span-2")}>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {restHeads.map((t) => (
+                <div key={t.key} className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4">
                   <div className="flex flex-wrap-reverse items-start justify-between gap-2">
                     <span className="min-w-[12ch] flex-1 text-[13px] leading-[18px] text-ink-body">{t.label}</span>
-                    {t.wins != null && (
-                      <StatusBadge tone={t.wins ? "success" : "warning"}>{t.wins ? "Better than rules" : "Below simple rule"}</StatusBadge>
-                    )}
-                    {t.tie && <StatusBadge tone="neutral">Same as rule</StatusBadge>}
+                    <Verdict t={t} short />
                   </div>
-                  <span className="font-mono text-metric font-medium tabular">
-                    {fmt(t.ours, t.unit)} <small className="text-[15px] text-ink-muted">{t.unit}</small>
+                  <span className="font-mono text-[26px] leading-8 font-medium tabular">
+                    {fmt(t.ours, t.unit)} <small className="text-[14px] text-ink-muted">{t.unit}</small>
                   </span>
                   <span className="text-[12px] leading-4 text-ink-muted">
-                    Best simple rule: <span className="font-mono tabular">{fmt(t.base, t.unit)} {t.unit}</span>
+                    Best rule: <span className="font-mono tabular">{fmt(t.base, t.unit)} {t.unit}</span>
                     {t.baseName ? ` (${t.baseName})` : ""}
-                    {t.note ? `. ${t.note}` : ""}
                   </span>
                 </div>
               ))}
@@ -288,115 +388,97 @@ export function RealityView({ evalRes, ids, demos }: { evalRes: EvalResponse; id
                   <div className="flex flex-wrap-reverse items-start justify-between gap-2">
                     <span className="min-w-[12ch] flex-1 text-[13px] leading-[18px] text-ink-body">Expert solar inside our P10–P90 range</span>
                     <StatusBadge tone={Math.abs(cov - 80) <= 5 ? "success" : "warning"}>
-                      {Math.abs(cov - 80) <= 5 ? "Calibrated" : cov < 80 ? "Range too narrow" : "Range too wide"}
+                      {Math.abs(cov - 80) <= 5 ? "Calibrated" : cov < 80 ? "Too narrow" : "Too wide"}
                     </StatusBadge>
                   </div>
-                  <span className="font-mono text-metric font-medium tabular">
-                    {Math.round(cov)} <small className="text-[15px] text-ink-muted">%</small>
+                  <span className="font-mono text-[26px] leading-8 font-medium tabular">
+                    {Math.round(cov)} <small className="text-[14px] text-ink-muted">%</small>
                   </span>
+                  {/* 80 % is not an engine number: a P10–P90 range should hold 90 − 10 = 80 % by definition. */}
                   <span className="text-[12px] leading-4 text-ink-muted">Target 80 %: an honest range holds about 8 in 10 expert choices.</span>
                 </div>
               )}
             </div>
-          )}
-          {!offline && addOns.length > 0 && (
-            <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4">
-              <span className="text-[13px] text-ink-body">
-                Add-on sales{nAddOns ? ` (${fmtInt(nAddOns)} homes)` : ""}: battery retrofits, extensions, wallbox only. Scored separately.
-              </span>
-              {addOns.map((t) => (
-                <div key={t.key} className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
-                  <span className="text-ink-muted">{t.label}</span>
-                  <span className="flex items-center gap-2">
-                    <span className="font-mono tabular">{fmt(t.ours, t.unit)} %</span>
-                    <span className="text-ink-muted">vs {fmt(t.base, t.unit)} % best rule</span>
-                    {t.wins != null && <StatusBadge tone={t.wins ? "success" : "warning"}>{t.wins ? "Better" : "Below"}</StatusBadge>}
-                    {t.tie && <StatusBadge tone="neutral">Same</StatusBadge>}
+          </>
+        )}
+        {!offline && answered && (
+          <div className="flex flex-col gap-2 rounded-lg border border-border bg-ai-tint/50 p-4">
+            <span className="text-[13px] font-medium text-ink">What-if: the planner answers “Solar already on the roof?”</span>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px] sm:grid-cols-4">
+              {[
+                ["Solar size error", "pv_kwp_mae_all_projects", "kWp"],
+                ["Solar yes/no", "has_pv_accuracy", "%"],
+                ["Battery yes/no", "has_battery_accuracy", "%"],
+                ["Offer type", "offer_type_accuracy", "%"],
+              ].map(([label, key, unit]) => (
+                <div key={key} className="flex flex-col">
+                  <span className="text-[12px] text-ink-muted">{label}</span>
+                  <span className="font-mono tabular">
+                    {fmt(n(M, key), unit as "kWp" | "%")} → <b>{fmt(n(answered, key), unit as "kWp" | "%")}</b> {unit}
                   </span>
                 </div>
               ))}
-              {addOnCov != null && (
-                <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
-                  <span className="text-ink-muted">Expert solar inside our P10–P90 range, where both chose solar</span>
-                  <span className="font-mono tabular">{Math.round(addOnCov)} %</span>
+            </div>
+            <span className="text-[12px] text-ink-muted">
+              All {nAll ? fmtInt(nAll) : ""} held-out homes, add-ons included. Not an accuracy: in this test the answer is derived from the expert offer itself,
+              so these numbers show what the question is worth when it is answered correctly, which is why the planner form and the voice agent ask it first.
+            </span>
+          </div>
+        )}
+        {!offline && transfer.length > 0 && (
+          <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4">
+            <span className="text-[13px] text-ink-body">Learned on one installer, tested on the other (solar size error where both chose PV)</span>
+            {transfer.map(([name, preds]) => {
+              const ours = n(preds[PREDICTORS.model], "pv_kwp_mae_when_both_pv");
+              const base = n(preds[PREDICTORS.bandMedian], "pv_kwp_mae_when_both_pv");
+              const better = ours != null && base != null && ours < base;
+              return (
+                <div key={name} className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
+                  <span className="text-ink-muted" title={name.replace("->", " → ")}>
+                    {name
+                      .split("->")
+                      .map((x) => installerName(x.trim()))
+                      .join(" → ")}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="font-mono tabular">{kwp(ours)} kWp</span>
+                    <span className="text-ink-muted">vs {kwp(base)} band median</span>
+                    <StatusBadge tone={better ? "success" : "warning"}>{better ? "Transfers" : "Weaker"}</StatusBadge>
+                  </span>
                 </div>
-              )}
-            </div>
-          )}
-          {!offline && answered && (
-            <div className="flex flex-col gap-2 rounded-lg border border-border bg-ai-tint/50 p-4">
-              <span className="text-[13px] font-medium text-ink">What-if: the planner answers “Solar already on the roof?”</span>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px] sm:grid-cols-4">
-                {[
-                  ["Solar size error", "pv_kwp_mae_all_projects", "kWp"],
-                  ["Solar yes/no", "has_pv_accuracy", "%"],
-                  ["Battery yes/no", "has_battery_accuracy", "%"],
-                  ["Offer type", "offer_type_accuracy", "%"],
-                ].map(([label, key, unit]) => (
-                  <div key={key} className="flex flex-col">
-                    <span className="text-[12px] text-ink-muted">{label}</span>
-                    <span className="font-mono tabular">
-                      {fmt(n(M, key), unit as "kWp" | "%")} → <b>{fmt(n(answered, key), unit as "kWp" | "%")}</b> {unit}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <span className="text-[12px] text-ink-muted">
-                All {nAll ? fmtInt(nAll) : ""} held-out homes, add-ons included. Not an accuracy: in this test the answer is derived from the expert offer itself,
-                so these numbers show what the question is worth when it is answered correctly, which is why the planner form and the voice agent ask it first.
-              </span>
-            </div>
-          )}
-          {!offline && transfer.length > 0 && (
-            <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4">
-              <span className="text-[13px] text-ink-body">Learned on one installer, tested on the other (solar size error where both chose PV)</span>
-              {transfer.map(([name, preds]) => {
-                const ours = n(preds[PREDICTORS.model], "pv_kwp_mae_when_both_pv");
-                const base = n(preds[PREDICTORS.bandMedian], "pv_kwp_mae_when_both_pv");
-                const better = ours != null && base != null && ours < base;
-                return (
-                  <div key={name} className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
-                    <span className="font-mono text-ink-muted tabular">{name.replace("->", " → ")}</span>
-                    <span className="flex items-center gap-2">
-                      <span className="font-mono tabular">{kwp(ours)} kWp</span>
-                      <span className="text-ink-muted">vs {kwp(base)} band median</span>
-                      <StatusBadge tone={better ? "success" : "warning"}>{better ? "Transfers" : "Weaker"}</StatusBadge>
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {!offline && <details className="rounded-lg border border-border bg-surface-1 p-4">
-            <summary className="cursor-pointer text-[13px] font-medium text-ink-body">All baselines</summary>
-            <table className="mt-3 w-full border-collapse text-[12px]">
-              <thead>
-                <tr className="text-left text-ink-muted">
-                  <th scope="col" className="py-1 font-medium">Method</th>
-                  <th scope="col" className="py-1 text-right font-medium">PV error</th>
-                  <th scope="col" className="py-1 text-right font-medium">PV in range</th>
-                  <th scope="col" className="py-1 text-right font-medium">Battery ±1 step</th>
+              );
+            })}
+          </div>
+        )}
+        {!offline && <details className="rounded-lg border border-border bg-surface-1 p-4">
+          <summary className="cursor-pointer text-[13px] font-medium text-ink-body">All baselines</summary>
+          <table className="mt-3 w-full border-collapse text-[12px]">
+            <thead>
+              <tr className="text-left text-ink-muted">
+                <th scope="col" className="py-1 font-medium">Method</th>
+                <th scope="col" className="py-1 text-right font-medium">PV error</th>
+                <th scope="col" className="py-1 text-right font-medium">PV in range</th>
+                <th scope="col" className="py-1 text-right font-medium">Battery ±1 step</th>
+              </tr>
+            </thead>
+            <tbody className="font-mono tabular">
+              {Object.entries(src.metrics as Record<string, MetricSet>).map(([name, m]) => (
+                <tr key={name} className={cn("border-t border-surface-2", name === PREDICTORS.model && "font-semibold text-ink")}>
+                  <td className="py-1.5 font-sans">{name === PREDICTORS.model ? "Our engine" : name.replace("baseline_", "").replace(/_/g, " ")}</td>
+                  <td className="py-1.5 text-right">{kwp(n(m, "pv_kwp_mae_all_projects"))}</td>
+                  <td className="py-1.5 text-right">{pct(n(m, "pv_variant_hit_tolerant_pct"))} %</td>
+                  <td className="py-1.5 text-right">{pct(n(m, "battery_within_one_step_pct"))} %</td>
                 </tr>
-              </thead>
-              <tbody className="font-mono tabular">
-                {Object.entries(src.metrics as Record<string, MetricSet>).map(([name, m]) => (
-                  <tr key={name} className={cn("border-t border-surface-2", name === PREDICTORS.model && "font-semibold text-ink")}>
-                    <td className="py-1.5 font-sans">{name === PREDICTORS.model ? "Our engine" : name.replace("baseline_", "").replace(/_/g, " ")}</td>
-                    <td className="py-1.5 text-right">{kwp(n(m, "pv_kwp_mae_all_projects"))}</td>
-                    <td className="py-1.5 text-right">{pct(n(m, "pv_variant_hit_tolerant_pct"))} %</td>
-                    <td className="py-1.5 text-right">{pct(n(m, "battery_within_one_step_pct"))} %</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </details>}
-          <p className="m-0 text-[12px] leading-4 text-ink-muted">
-            Test set: {nAll ? fmtInt(nAll) : "20 %"} homes ({Math.round(((evalRes.protocol?.test_size as number) ?? 0.2) * 100)} %), split{" "}
-            {String(evalRes.protocol?.split ?? "by customer").replace(/\s*\(.*\)/, "").replace("grouped by customer_contact_id", "by customer")}, seed{" "}
-            {String(evalRes.protocol?.seed ?? 42)}, locked before training. Labels: {evalRes.labels_source ?? "engine"}.
-          </p>
-        </section>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </details>}
+        <p className="m-0 text-[12px] leading-4 text-ink-muted">
+          Test set: {nAll ? fmtInt(nAll) : "20 %"} homes ({Math.round(((evalRes.protocol?.test_size as number) ?? 0.2) * 100)} %), split{" "}
+          {String(evalRes.protocol?.split ?? "by customer").replace(/\s*\(.*\)/, "").replace("grouped by customer_contact_id", "by customer")}, seed{" "}
+          {String(evalRes.protocol?.seed ?? 42)}, locked before training. Labels: {evalRes.labels_source ?? "engine"}.
+        </p>
+      </section>
     </main>
   );
 }
