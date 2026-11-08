@@ -19,9 +19,9 @@ Numbers for the pitch: `docs/pitch-facts.md`.
 |---|---|---|---|---|
 | 0:00–0:20 | slide | Opening line. | | "Planners rebuild the same system from scratch for every home. We let the installer's own past offers draft it, and the planner stays in charge." |
 | 0:20–1:20 | `/live` | Start the voice call on the phone, held to the mic, and play the caller persona below. | "Incoming call" (replaced by the caller's name once given), then the fact checklist filling in, then "Draft design". At the end: "In the planner's inbox for review." | "An AI agent takes the site-visit call. It asks about existing solar first, because that is the strongest signal we found." |
-| 1:20–1:35 | `/live` | Click **Open in planner**. | Planner page with "Drafted by AI from a call". **9.9 kWp, 10 kWh battery, no wallbox.** A **10.5 kW heat pump** appears as a customer option (sizes are the installer's real ones since engine #60). | "Every size comes from the engine, trained on this installer's signed offers. Claude never picks a size." |
-| 1:35–2:00 | planner | Point at a card's range and its reasons, then at the 3D house. | P10–P90 range bar, reasons, similar homes. | "Not a black box: a range, the reasons, and similar homes the installer already built." |
-| 2:00–2:30 | planner | Click the example **They are buying an EV next year**, or type it, then **Update design**. | "Updating…", then the **Changed** marker. **About 11 kWp, 10 kWh, wallbox on.** | "The planner talks to it like a colleague. PV, battery and wallbox are decided as one chain, so the EV pulls the PV up and adds the wallbox." |
+| 1:20–1:35 | `/live` | Click **Open in planner**. | Planner page with "Drafted by AI from a call": the 3D house on top, the four system cards below. **9.9 kWp, 10 kWh battery, no wallbox**, and a heat pump chip **Option · 10.5 kW** (the installer's real size since engine #60). | "Every size comes from the engine, trained on this installer's signed offers. Claude never picks a size." |
+| 1:35–2:00 | planner | Hover the Solar card: its part lights up on the house. Click the battery on the house: its card is ringed. Point at the range bar and the reasons. | P10–P90 range bar, 2 reasons ("N more reasons" opens the rest), similar homes as "96 % similar". | "Not a black box: a range, the reasons, and similar homes the installer already built." |
+| 2:00–2:30 | planner | Click the example **They are buying an EV next year**, or type it, then **Update design**. | "Updating…" (about 4 s), then the changed cards stay highlighted with old → new: **Solar 9.9 → 11.25 kWp**, **Wallbox None → 11 kW**; battery stays 10 kWh. | "The planner talks to it like a colleague. PV, battery and wallbox are decided as one chain, so the EV pulls the PV up and adds the wallbox." |
 | 2:30–2:45 (optional) | planner | Open **Roof size and direction** and set **Roof fits up to (kWp)** to 6. | **5.85 kWp, 7 kWh**, wallbox still on. | "Roof only fits 6 kWp? The battery follows the PV down." |
 | 2:45–3:45 | `/reality` | On the planner, click **Compare with expert**, or switch to the pre-opened `/reality` tab. Read the headline, then click the example cases **EV owner** and **Experts disagree**. | Metrics from held-out homes. EV owner: ours **10.8 kWp / 9.7 kWh / wallbox** vs the expert's **10.8 / 9 / wallbox**. Experts disagree: ours **9.0 kWp**, inside the expert's two variants (6.75 and 12.15 kWp). | "Every number here comes from 315 homes the engine never saw. On new systems it is on par with the best rule of thumb, 2.50 against 2.62 kWp, and its range holds the expert's choice for 79–81 % of them, on target. Over all homes the whole-project solar error is 22 % lower than the best rule, 2.94 against 3.77 kWp, because it recognises add-on sales from the planner's inputs: no new solar for 77 % of add-on homes, where rules of thumb manage 6 %." |
 | 3:45–4:00 | planner | Back on the planner tab: **Use this design**, then **Send to homeowner**, then **Open** in the toast. | "Design saved as the offer", then "Homeowner link copied". The offer opens in the empty tab. | "One click and the homeowner gets a link." |
@@ -44,13 +44,26 @@ Expected draft: 9.9 kWp + 10 kWh, no wallbox, 10.5 kW heat pump option (checked 
 | Heat pump case | no new PV, no battery, a wallbox, **12.5 kW heat pump offered as an option** (checked on production 02:30 after engine #60: the home's consumption was left at the default, so the engine treats it as an add-on order) | 12.5 kW heat pump only, no PV | Only if asked: the heat pump size is exactly the expert's 12.5 kW and the engine, like the expert, proposes no PV; it adds a wallbox the expert did not sell. |
 | Battery retrofit | 9.9 kWp + 10 kWh, a new system (checked on production at 02:50, after engine #60: still not a retrofit without the answer) | 5 kWh battery-only add-on | **No.** The page shows the amber **Unanswered mode** note on it. If someone clicks it, point at the note and say: "This is the unanswered case. Answering 'solar already on the roof' turns it into a battery retrofit." |
 
-Live-engine checks you can repeat on the planner. Base home: 4,500 kWh, "Solar already on the roof?" = No.
+Live-engine checks you can repeat on the planner (production engine, 03:05). Base home: a new home in the planner with its defaults, 4,500 kWh, 0.32 €/kWh, H0 profile, gas heating, "Solar already on the roof?" = No.
+The price and profile matter: the same 4,500 kWh sent without them gives 9.0 / 10.35 kWp, which is why older notes differ.
 | change | design |
 |---|---|
-| none | 9.0 kWp, 9.2 kWh, no wallbox |
-| + electric car (15,000 km) | 10.35 kWp, 10 kWh, wallbox |
+| none | 9.45 kWp, 9.2 kWh, no wallbox, heat pump option 10.5 kW |
+| + electric car (15,000 km) | 10.8 kWp, 10 kWh, wallbox |
 | + roof fits 6 kWp | 5.85 kWp, 7 kWh, wallbox |
 | "Solar already on the roof?" = Yes, 8 kWp, instead of the above | battery retrofit, 5 kWh, no new PV |
+
+## Hero moments: status and fallback per step
+Updated as each pick merges. Until a row says **merged**, the click path above is what production shows.
+The 3D house falls back by itself: with no Google 3D tiles (no key, slow or empty), the procedural house shows; when WebGL is missing or fails, the still image `web/public/models/house-fallback.png` shows. There is no URL switch yet to force the still image when WebGL is merely slow (asked c-3d), so on a stuttering projector switch to the backup video for that step.
+
+| screen | hero moment | status (03:10) | if it misbehaves |
+|---|---|---|---|
+| `/live` | The house assembles while the call runs; "EV in spring" makes the car drive in. | building (f-hero, `web/hero-live`) | Tiles slow or missing: the procedural house assembles instead, automatically. WebGL slow: the fact checklist and draft still fill in; talk over the checklist. |
+| planner | The house stage on top, card ↔ house highlight, old → new on changed cards. | **merged** (#68) | Tiles: hidden today, the procedural house shows (no Google key on production). WebGL fails: the still image shows and the cards work as before. |
+| planner | The real house from Google 3D tiles with panels on the real roof, the **Outside / Inside** and **Sun map** toggles. | panels API merged (#64, #65), sun-map API merged (#69); toggles show only with a Google key on production (`?tiles=1` until verified) | No key, or tiles slow: no toggles, the procedural house shows. Do not mention the real roof then. |
+| `/reality` | Two houses side by side: ours and the expert's. | building (b-web, `web/ui-reality`) | Tiles slow or missing: procedural houses. WebGL slow: the numbers and the example cases still work; point at those. |
+| `/offer` | **Listen** walks the house through one day. | building (f-hero, `web/hero-offer`) | No audio: the text shows the same words. WebGL slow: the still image shows, the explanation still plays. |
 
 ## Fallbacks
 | problem | what you see | do | say |
@@ -62,12 +75,14 @@ Live-engine checks you can repeat on the planner. Base home: 4,500 kWh, "Solar a
 | **Planner login appears** | the `/login` page | Type the passcode, which the presenter knows (it is not in this file). | |
 | **Roof lookup empty** | no roof facts from the address | Expected: the Google Solar key is not set on production. Type the roof cap by hand, as in the optional step. | |
 
-## Backup video: shot list (record on production at 1080p, about 5 min, voice-over optional)
-1. `/live`, idle, then the incoming call. The fact checklist fills in and the draft appears (60 s). Use the real call if it works, else **Play demo call**.
-2. Click **Open in planner**: the draft with ranges, reasons and the 3D house. Hover one reason (25 s).
-3. Refine: **They are buying an EV next year**, then **Update design**, then the Changed marker with about 11 kWp and the wallbox (30 s).
-4. Roof cap 6 kWp, then 5.85 kWp + 7 kWh (15 s).
-5. Set "Solar already on the roof?" to Yes, 8 kWp: a battery retrofit, 5 kWh, no new PV (15 s).
-6. `/reality`: the headline metrics, then **EV owner**, then **Experts disagree** (60 s).
-7. **Use this design**, then **Send to homeowner**, then the offer page: scroll the 3D house and click **Listen to your offer** (60 s).
-8. End card: the deck's headline chart (10 s).
+## Backup video: shot list (Mark records it after the 11:00 freeze, on production at 1080p, about 5 min)
+Record the hero version once the rows above say merged; for a row that is not merged, record what production shows.
+1. `/live`, idle, then the incoming call: the fact checklist fills in, the house assembles, and the car drives in at "EV in spring" (60 s). Use the real call if it works, else **Play demo call** (the scripted call has the EV).
+2. **Open in planner**: the house on top, the cards below. Hover the Solar card (the roof lights up), click the battery on the house (its card is ringed), open "N more reasons" (25 s).
+3. If the Google key is on production: **Sun map** toggle, then **Inside** (the diorama), then back to **Outside** (15 s).
+4. Refine: **They are buying an EV next year**, then the changed cards: Solar 9.9 → 11.25 kWp, Wallbox None → 11 kW (30 s). With the scripted call use **Customer wants no battery** instead.
+5. Roof cap 6 kWp, then 5.85 kWp + 7 kWh (15 s).
+6. Set "Solar already on the roof?" to Yes, 8 kWp: a battery retrofit, 5 kWh, no new PV (15 s).
+7. `/reality`: the headline tiles (2.50 vs 2.62 kWp, 79 % "Calibrated"), the two houses side by side, then **EV owner** and **Experts disagree** (60 s). Keep the what-if card out of the shot or say "what-if".
+8. **Use this design**, then **Send to homeowner**, then **Open**: the offer page, scroll the house, click **Listen** and let the day play (60 s).
+9. End card: the deck's headline chart (10 s).
