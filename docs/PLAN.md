@@ -67,6 +67,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · no freeze (Mark, 8 Nov: keep go
   - metric charts done (docs/deck/charts.py, PR #40/#41) · deck: HQ chat in Claude Slides · pitch-facts, demo runbook, README: e-spare (docs/pitch)
 
 ## Decisions
+- Sun 12:40 · Engine: hybrid model (#127: decisions from the first full design, sizes from every offer option) merged and deployed to production; deck, README, pitch-facts, submission, runbook updated to its numbers (2.93 vs 3.77 all homes; 2.42 vs 2.62 new systems; coverage 82 %; top-3 67 %; hero case 11.7 kWp).
 - Sun 04:40 · Engine: physics plausibility flags are calibrated on expert practice (PV yield/consumption info > 2.5, warn > 4.0, error > 5.5; battery warn > 2.0 kWh/kWp) and a PV warning is downgraded when similar homes show the size is typical; small homes keep the expert-style 6-7 kWp + battery (#66). `/project?answered=true` = what-if with the planner's answer (#47). PV/battery alternatives = one smaller + one larger size with shares.
 - Sun 03:00 · Deck charts follow docs/pitch-facts.md: accuracy charts use the mode WITHOUT the existing-PV answer, except new full systems (fair); chart 3 is the only answered chart and is titled what-if; new chart 5 = add-on sales without the answer
 - Sun 03:00 · /reality two-houses cases (engine/demo_set.py --reality → demo_reality.json on data-v1): held-out typical PV+battery, EV+wallbox, battery retrofit; a case qualifies only if the held-out model AND /project's design are close (same components, PV ±1 kWp, battery ±2.5 kWh)
