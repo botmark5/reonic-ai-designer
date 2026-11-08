@@ -12,6 +12,8 @@ import { roofInputsFromSolar } from "@/lib/roof";
 import type { SolarResult } from "@/lib/solar";
 import type { DesignRow } from "@/lib/supabase";
 import { OFFER_TYPE_LABEL, type ComponentKey, type OfferType } from "@/lib/types";
+import type { FloorPlan } from "@/lib/floorplan";
+import { FloorPlanUpload } from "./floorplan-upload";
 import { HomeForm } from "./home-form";
 import { Inbox } from "./inbox";
 import { PhysicsTiles, SimilarHomes, WhyThisDesign } from "./evidence";
@@ -138,6 +140,19 @@ function Workspace({
     [solar, row.address],
   );
   const [sunMap, setSunMap] = useState(false);
+  // Floor plan per design (layout for the Inside view only), kept while the planner is open.
+  const [plans, setPlans] = useState<Record<string, FloorPlan>>({});
+  const floorPlan = plans[row.id] ?? null;
+  const setFloorPlan = useCallback(
+    (p: FloorPlan | null) =>
+      setPlans((all) => {
+        const next = { ...all };
+        if (p) next[row.id] = p;
+        else delete next[row.id];
+        return next;
+      }),
+    [row.id],
+  );
 
   // Card ↔ house: hovering a card highlights its part on the house; clicking a part on the house points at its card.
   const [hovered, setHovered] = useState<ComponentKey | null>(null);
@@ -226,8 +241,8 @@ function Workspace({
 
         {r ? (
           <section aria-label="The system on the house" className="flex flex-col gap-2">
-            {location && (
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {location && (
                 <button
                   type="button"
                   aria-pressed={sunMap}
@@ -236,9 +251,12 @@ function Workspace({
                 >
                   Sun map
                 </button>
-              </div>
-            )}
+              )}
+              <FloorPlanUpload plan={floorPlan} onPlan={setFloorPlan} />
+            </div>
             <HouseStage
+              // floorPlan: rooms for the Inside view (c-3d's prop; layout only, never a size)
+              {...{ floorPlan }}
               design={r}
               home={s.home}
               mode="planner"
