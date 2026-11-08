@@ -1,8 +1,9 @@
 import type { ThemeName } from "./types";
 
 /**
- * Scene colours. The house is an architectural model: matte warm white and zinc neutrals only.
- * Colour belongs to the energy system: component tokens from docs/design/tokens.json and the AI gradient for flows.
+ * Scene colours. A real, softly coloured house (warm plaster, anthracite roof, green lawn) in a muted palette that
+ * still reads on a projector; the energy system keeps the component tokens from docs/design/tokens.json and the AI
+ * gradient for flows, and the panels stay dark blue-black.
  */
 export interface Palette {
   surface0: string;
@@ -20,6 +21,8 @@ export interface Palette {
   // model materials
   board: string;
   boardEdge: string;
+  /** Indoor floors (the Inside diorama). */
+  floor: string;
   street: string;
   paving: string;
   wall: string;
@@ -53,27 +56,28 @@ const LIGHT: Palette = {
   heatpump: "#d4604a",
   wallbox: "#52525b",
   flow: ["#e9a23b", "#ef8a4c", "#ec8a7c"],
-  board: "#f4f4f2",
-  boardEdge: "#e4e4e1",
-  street: "#e8e8e5",
-  paving: "#ededea",
-  wall: "#fcfcfa",
-  plinth: "#e8e8e5",
-  roof: "#e7e7e4",
-  roofEdge: "#dcdcd9",
-  trim: "#ffffff",
-  glass: "#d4d4d8",
-  door: "#e4e4e7",
-  tree: "#f6f6f4",
-  trunk: "#d4d4d8",
-  car: "#f7f7f5",
-  carGlass: "#c4c5cb",
-  tyre: "#a1a1aa",
+  board: "#a3ba8c", // lawn
+  boardEdge: "#8f7a62", // soil edge of the base plate
+  floor: "#e6e1d8", // screed
+  street: "#c9c6c0",
+  paving: "#e2ddd3",
+  wall: "#f1e6d4", // warm plaster
+  plinth: "#b9b1a6",
+  roof: "#5f6268", // anthracite tiles
+  roofEdge: "#45474c",
+  trim: "#fbfaf7",
+  glass: "#7f97aa",
+  door: "#7a5238", // oak
+  tree: "#6f9a5b",
+  trunk: "#7a5c45",
+  car: "#d7dde3",
+  carGlass: "#5d6b78",
+  tyre: "#3f3f46",
   appliance: "#fbfbfa",
   panel: "#0e141e",
   panelFrame: "#b9bdc4",
   sky: "#ffffff",
-  groundBounce: "#ecebe8",
+  groundBounce: "#dfe6d3",
 };
 
 const DARK: Palette = {
@@ -88,10 +92,11 @@ const DARK: Palette = {
   heatpump: "#ef9a8e",
   wallbox: "#a1a1aa",
   flow: ["#eaa94a", "#f0955c", "#ef9a8e"],
-  board: "#1d1f22",
-  boardEdge: "#26282c",
-  street: "#232528",
-  paving: "#25272a",
+  board: "#2f3d27",
+  boardEdge: "#3a3027",
+  floor: "#2b2a28",
+  street: "#2a2b2d",
+  paving: "#34322f",
   sky: "#c9d2e0",
   groundBounce: "#2a2723",
 };

@@ -128,7 +128,7 @@ function materials(p: Palette) {
     roof: std(p.roof, 0.88),
     roofEdge: std(p.roofEdge, 0.85),
     trim: std(p.trim, 0.8),
-    glass: std(p.glass, 0.55),
+    glass: new THREE.MeshStandardMaterial({ color: p.glass, roughness: 0.18, metalness: 0.15 }),
     door: std(p.door),
     board: std(p.board, 0.95),
     boardEdge: std(p.boardEdge, 0.95),

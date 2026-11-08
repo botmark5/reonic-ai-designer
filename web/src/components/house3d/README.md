@@ -1,6 +1,6 @@
 # House3D
 
-The customer's house as an architectural model (matte white, soft shadows, ambient occlusion) with the proposed system
+The customer's house as a softly coloured model (warm plaster, anthracite roof, green lawn; soft shadows, ambient occlusion) with the proposed system
 on it. Colour appears only on the energy system: dark-glass panels, battery, heat pump, wallbox, and energy flows in
 the AI gradient. A time-of-day slider runs a modelled sunny May day: the sun moves on its real arc, flows follow it
 (noon: panels → house, battery, car; evening: battery → house; early morning: grid → house) with live kW and battery %.
