@@ -36,6 +36,10 @@ export interface SiteSceneProps {
   onFirstTiles: () => void;
   onError: (reason: string) => void;
   onAttribution: (text: string) => void;
+  /** "satellite": start ~800 m above the house looking down, glide down once the first tiles are in. */
+  intro?: "satellite";
+  /** The camera has arrived at the house (at once without an intro). */
+  onLanded?: () => void;
 }
 
 interface Heights {
@@ -263,28 +267,87 @@ function RoofPanels({ placement, heights, on, reduced }: { placement: Placement;
 }
 
 /** Camera: starts at a first guess of the roof height, then glides to the measured roof. */
-function Rig({ target, offset }: { target: THREE.Vector3; offset: THREE.Vector3 }) {
+const SAT_HOLD_MS = 2500; // longest wait for sharp tiles before the descent starts
+const SAT_HEIGHT = 800; // metres above the roof where the satellite intro starts
+const SAT_BACK = 150; // a little back along the final view, so the descent is one smooth arc
+const SAT_SMOOTH = 0.85; // camera-controls smoothTime for the descent (≈ 3 s to settle)
+const MAX_DIST = 220;
+
+/**
+ * Camera: starts at a first guess of the roof height, then glides to the measured roof. With the satellite intro it
+ * first waits high above the house looking down, and glides down once `go` (the first tiles are in).
+ */
+function Rig({ target, offset, intro, go, onLanded }: {
+  target: THREE.Vector3; offset: THREE.Vector3; intro: boolean; go: boolean; onLanded: () => void;
+}) {
   const ref = useRef<CameraControls>(null);
   const placed = useRef(false);
+  const phase = useRef<"wait" | "fly" | "done">("done");
+  const landed = useRef(onLanded);
+  useEffect(() => { landed.current = onLanded; });
+  const high = (t: THREE.Vector3) => {
+    const back = new THREE.Vector3(offset.x, 0, offset.z).normalize().multiplyScalar(SAT_BACK);
+    return t.clone().add(back).add(new THREE.Vector3(0, SAT_HEIGHT, 0));
+  };
+  const land = (c: CameraControls) => {
+    if (phase.current === "done") return;
+    phase.current = "done";
+    c.smoothTime = 0.6;
+    c.maxDistance = MAX_DIST;
+    landed.current();
+  };
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
-    if (placed.current) {
-      // later refinements only move the point the camera orbits, keeping the viewer's own angle and distance
-      void c.moveTo(target.x, target.y, target.z, true);
+    const p = target.clone().add(offset);
+    if (!placed.current) {
+      placed.current = true;
+      if (intro) {
+        phase.current = "wait";
+        c.maxDistance = SAT_HEIGHT * 1.4;
+        const h = high(target);
+        void c.setLookAt(h.x, h.y, h.z, target.x, target.y, target.z, false);
+      } else {
+        void c.setLookAt(p.x, p.y, p.z, target.x, target.y, target.z, false);
+        landed.current();
+      }
       return;
     }
-    const p = target.clone().add(offset);
-    void c.setLookAt(p.x, p.y, p.z, target.x, target.y, target.z, false);
-    placed.current = true;
+    if (phase.current === "wait") {
+      const h = high(target);
+      void c.setLookAt(h.x, h.y, h.z, target.x, target.y, target.z, false);
+    } else if (phase.current === "fly") {
+      void c.setLookAt(p.x, p.y, p.z, target.x, target.y, target.z, true).then(() => land(c));
+    } else {
+      // later refinements only move the point the camera orbits, keeping the viewer's own angle and distance
+      void c.moveTo(target.x, target.y, target.z, true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the first view only; later the viewer's angle wins
   }, [target]);
+  // the first tiles are in: glide down from the satellite view
+  useEffect(() => {
+    const c = ref.current;
+    if (!c || !go || phase.current !== "wait") return;
+    phase.current = "fly";
+    c.smoothTime = SAT_SMOOTH;
+    const p = target.clone().add(offset);
+    void c.setLookAt(p.x, p.y, p.z, target.x, target.y, target.z, true).then(() => land(c));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- start once, when the tiles arrive
+  }, [go]);
+  // grabbing the camera mid-flight lands it where the viewer took over
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    const take = () => { if (phase.current === "fly") land(c); };
+    c.addEventListener("controlstart", take);
+    return () => c.removeEventListener("controlstart", take);
+  }, []);
   return (
     <CameraControls
       ref={ref}
       makeDefault
       minDistance={18}
-      maxDistance={220}
+      maxDistance={MAX_DIST}
       minPolarAngle={0.2}
       maxPolarAngle={1.3}
       smoothTime={0.6}
@@ -323,7 +386,24 @@ function SunMap({ sun, on, reduced, uniforms }: { sun: SiteSceneProps["sun"]; on
   return null;
 }
 
-export default function SiteScene({ apiKey, placement, sun, sunOn, panelsOn, reduced, pvLabel, onFirstTiles, onError, onAttribution }: SiteSceneProps) {
+export default function SiteScene({ apiKey, placement, sun, sunOn, panelsOn, reduced, pvLabel, onFirstTiles, onError, onAttribution, intro, onLanded }: SiteSceneProps) {
+  const satellite = intro === "satellite" && !reduced;
+  const [tilesIn, setTilesIn] = useState(false);
+  const [landed, setLanded] = useState(!satellite);
+  const firstTiles = () => { setTilesIn(true); onFirstTiles(); };
+  // the satellite view holds until the house's tiles are sharp (its roofs measured) or 2.5 s, then glides down
+  const [holdOver, setHoldOver] = useState(false);
+  useEffect(() => {
+    if (!tilesIn) return;
+    const t = window.setTimeout(() => setHoldOver(true), SAT_HOLD_MS);
+    return () => window.clearTimeout(t);
+  }, [tilesIn]);
+  // "arrived": the tiles are on screen and the camera is at the house (after the flight, with the intro)
+  const landedCb = useRef(onLanded);
+  useEffect(() => { landedCb.current = onLanded; });
+  useEffect(() => { if (landed && tilesIn) landedCb.current?.(); }, [landed, tilesIn]);
+  // the panels drop in once the camera has arrived
+  const panelsShown = panelsOn && landed;
   const sunUniforms = useRef<SunUniforms>({
     uSunMap: { value: null }, uSunAmt: { value: 0 },
     uSunC: { value: new THREE.Vector2() }, uSunR: { value: new THREE.Vector2(1, 0) },
@@ -363,9 +443,9 @@ export default function SiteScene({ apiKey, placement, sun, sunOn, panelsOn, red
       <hemisphereLight args={["#ffffff", "#d8d2c8", 1.1]} />
       <directionalLight position={[-30, 60, 40]} intensity={2.2} color="#fff1dc" />
       <SunMap sun={sun} on={sunOn} reduced={reduced} uniforms={sunUniforms} />
-      <Tiles apiKey={apiKey} placement={placement} sunUniforms={sunUniforms} onFirstTiles={onFirstTiles} onError={onError} onAttribution={onAttribution} onHeights={onHeights} />
-      {heights && <RoofPanels placement={placement} heights={heights} on={panelsOn} reduced={reduced} />}
-      {heights && pvLabel && panelsOn && (
+      <Tiles apiKey={apiKey} placement={placement} sunUniforms={sunUniforms} onFirstTiles={firstTiles} onError={onError} onAttribution={onAttribution} onHeights={onHeights} />
+      {heights && <RoofPanels placement={placement} heights={heights} on={panelsShown} reduced={reduced} />}
+      {heights && pvLabel && panelsShown && (
         <Html position={[view.centre[0], heights.roof + 6.5, view.centre[1]]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
           <div aria-hidden className="flex w-max items-center gap-2 rounded-full border border-border bg-surface-1/95 py-1.5 pl-2.5 pr-3.5 text-ink shadow-[0_8px_24px_rgba(16,17,20,0.16)] backdrop-blur-sm">
             <span className="size-2.5 rounded-full bg-comp-pv" />
@@ -374,7 +454,7 @@ export default function SiteScene({ apiKey, placement, sun, sunOn, panelsOn, red
           </div>
         </Html>
       )}
-      <Rig target={target} offset={offset} />
+      <Rig target={target} offset={offset} intro={satellite} go={tilesIn && (holdOver || !!heights)} onLanded={() => setLanded(true)} />
     </Canvas>
   );
 }

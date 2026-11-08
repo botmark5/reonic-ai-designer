@@ -38,6 +38,12 @@ export interface HouseStageProps {
   highlight?: ComponentKey | null;
   /** The viewer clicked a part in the scene (null: clicked empty space / Esc). */
   onSelect?: (key: ComponentKey | null) => void;
+  /**
+   * "satellite": on the real street (tiles on, address known) the camera starts ~800 m above the city looking down
+   * and glides to the house in ~3 s; the panels drop in after and `onTilesReady` fires at the end. Reduced motion:
+   * no flight. No street (no key, no tiles, a failure): the model as always.
+   */
+  intro?: "satellite";
   /** Energy flow lines and sun rays: omit for the default (off in the planner, on elsewhere, with a toggle). */
   flows?: boolean;
   /** An uploaded floor plan (b-web): the Inside view draws its rooms and the parts snap into them. */
@@ -96,7 +102,7 @@ const STREET_WATCHDOG_MS = 6500;
  * Props that a renderer does not support yet are accepted and ignored, so pages can wire them now.
  */
 export function HouseStage({
-  design, home, mode = "homeowner", roof, location, view, zones, onZonesChange, sunMap, reveal, highlight, onSelect, focus, flows, floorPlan, onTilesReady, onFallbackShown, onPanelsPlaced, onEquipmentPlaced, cameraKey, timeOfDay,
+  design, home, mode = "homeowner", roof, location, view, zones, onZonesChange, sunMap, reveal, highlight, onSelect, focus, intro, flows, floorPlan, onTilesReady, onFallbackShown, onPanelsPlaced, onEquipmentPlaced, cameraKey, timeOfDay,
   onTimeOfDayChange, labels, controls, editable, onPanelsChange, static: forceStatic, flyIn, className,
 }: HouseStageProps) {
   const wanted = useSyncExternalStore(noop, () => tilesWanted(window.location.search, TILES_FLAG), () => false);
@@ -128,7 +134,10 @@ export function HouseStage({
   const cbs = useRef({ onTilesReady, onFallbackShown });
   useEffect(() => { cbs.current = { onTilesReady, onFallbackShown }; });
   useEffect(() => { if (modelOn && fallbackReason) cbs.current.onFallbackShown?.(fallbackReason); }, [modelOn, fallbackReason]);
-  useEffect(() => { if (ready) cbs.current.onTilesReady?.(); }, [ready]);
+  // the street is ready: at once, or (satellite intro) when the camera has arrived at the house
+  const [arrivedAt, setArrivedAt] = useState<string | null>(null);
+  const streetReady = intro === "satellite" ? tiles && arrivedAt === at : ready;
+  useEffect(() => { if (streetReady) cbs.current.onTilesReady?.(); }, [streetReady]);
 
   // watchdog: the street's first tiles must arrive in time, whatever happens inside it (a chunk that never loads, an
   // auth error the tiles library only logs): the model stays and the progress events still get their answer
@@ -238,6 +247,8 @@ export function HouseStage({
             veil={false}
             onReady={() => setReadyAt(at)}
             onPanelsPlaced={onPanelsPlaced}
+            intro={intro}
+            onArrived={() => setArrivedAt(at)}
             onFallback={(reason) => {
               if (process.env.NODE_ENV !== "production") console.info("[HouseStage] real outside unavailable:", reason);
               setFailReason({ at, reason });
