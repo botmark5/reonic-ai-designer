@@ -65,7 +65,7 @@ async function Login({
             autoFocus
             aria-invalid={sp.error ? true : undefined}
             aria-describedby={sp.error ? "pass-err" : undefined}
-            className="h-11 rounded-sm border border-border-strong/60 bg-surface-1 px-3 text-body outline-none focus-visible:border-focus"
+            className="h-11 rounded-sm border border-border-strong/60 bg-surface-1 px-3 text-body outline-none focus-visible:border-focus focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-focus/60"
           />
           {sp.error && (
             <p

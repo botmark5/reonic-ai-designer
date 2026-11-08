@@ -26,7 +26,7 @@ export function Field({
 }
 
 export const controlClass =
-  "h-9 w-full min-w-0 rounded-sm border border-border-strong/60 bg-surface-1 px-2.5 text-body-sm text-ink transition-colors outline-none hover:border-border-strong focus-visible:border-focus focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus/60 disabled:opacity-50 aria-invalid:border-critical";
+  "h-9 w-full min-w-0 rounded-sm border border-border-strong/60 bg-surface-1 px-2.5 text-body-sm text-ink transition-colors outline-none hover:border-border-strong focus-visible:border-focus focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-focus/60 disabled:opacity-50 aria-invalid:border-critical";
 
 export function TextInput(props: React.ComponentProps<"input">) {
   return <input {...props} className={cn(controlClass, "tabular", props.className)} />;

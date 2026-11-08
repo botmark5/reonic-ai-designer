@@ -359,7 +359,7 @@ function Editor({
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         placeholder="Why? (optional, saved with the change)"
-        className="h-8 rounded-sm border border-border bg-surface-1 px-2.5 text-[13px] outline-none placeholder:text-ink-muted focus-visible:border-focus"
+        className="h-8 rounded-sm border border-border bg-surface-1 px-2.5 text-[13px] outline-none placeholder:text-ink-muted focus-visible:border-focus focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-focus/60"
       />
       <div className="flex gap-2">
         <Button type="submit" size="sm">
