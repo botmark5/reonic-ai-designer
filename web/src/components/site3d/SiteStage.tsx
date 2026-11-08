@@ -5,7 +5,7 @@ import type { DesignResponse } from "../../lib/types";
 import { cn } from "../../lib/utils";
 import { useReducedMotion } from "../house3d/hooks";
 import type { StageLocation } from "../house3d/types";
-import type { Placement } from "./geo";
+import { sunFrame, type Placement, type SunFrame } from "./geo";
 
 const SiteScene = dynamic(() => import("./SiteScene"), { ssr: false });
 
@@ -19,6 +19,10 @@ export interface SiteStageProps {
   /** New panels on stage (the /live reveal); default true. */
   panelsOn?: boolean;
   labels?: boolean;
+  /** Drape the annual sunshine map on the roofs. Omit to let the viewer toggle it. */
+  sunMap?: boolean;
+  /** Show the overlay buttons (Sun map, Model view). */
+  buttons?: boolean;
   /** Called once when the real outside cannot be shown; the parent swaps in the procedural house. */
   onFallback: (reason: string) => void;
   /** The viewer asked for the model view instead. */
@@ -33,13 +37,17 @@ class Boundary extends Component<{ onError: () => void; children: ReactNode }, {
   render() { return this.state.failed ? null : this.props.children; }
 }
 
+const pillCls =
+  "inline-flex h-8 items-center rounded-full border border-border/80 bg-surface-1/85 px-3 text-[13px] font-medium text-ink outline-none backdrop-blur-md " +
+  "transition-[transform,background-color] duration-150 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-focus [@media(hover:hover)]:hover:bg-surface-2";
+
 const fmt = (x: number | null | undefined, unit: string) => (x ? `${Number(x.toFixed(2))} ${unit}` : null);
 
 /**
  * The real street: Google's photorealistic 3D tiles around the address with the engine's panels on the real roof.
  * Anything missing or slow calls `onFallback`. Google's attribution is always visible.
  */
-export function SiteStage({ apiKey, location, design, panelsOn = true, labels = false, onFallback, onModelView, className }: SiteStageProps) {
+export function SiteStage({ apiKey, location, design, panelsOn = true, labels = false, sunMap, buttons = true, onFallback, onModelView, className }: SiteStageProps) {
   const reduced = useReducedMotion();
   const d = design.design;
   const kwp = d.pv.include && d.pv.kwp ? d.pv.kwp : 0;
@@ -88,6 +96,26 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
   ].filter((c): c is { k: string; label: string; v: string | null; dot: string } => !!c);
 
   const p = placement?.key === key ? placement.p : null;
+
+  // sun map: fetched the first time it is switched on, for the same point the panels use
+  const [sunOwn, setSunOwn] = useState(false);
+  const sunOn = sunMap ?? sunOwn;
+  const [sun, setSun] = useState<{ at: string; image: string; frame: SunFrame; min: number; max: number; palette: string[] } | null>(null);
+  const [sunFailed, setSunFailed] = useState<string | null>(null);
+  const sunAt = p ? `${p.center.lat},${p.center.lng}` : null;
+  useEffect(() => {
+    if (!sunOn || !p || !sunAt || sun?.at === sunAt || sunFailed === sunAt) return;
+    const ctl = new AbortController();
+    fetch(`/api/solar/layers?${new URLSearchParams({ lat: String(p.center.lat), lng: String(p.center.lng) })}`, { signal: ctl.signal })
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.status !== "ok") { setSunFailed(sunAt); return; }
+        setSun({ at: sunAt, image: j.image, frame: sunFrame(j.local), min: j.flux.min, max: j.flux.max, palette: j.palette });
+      })
+      .catch((e: unknown) => { if ((e as Error).name !== "AbortError") setSunFailed(sunAt); });
+    return () => ctl.abort();
+  }, [sunOn, p, sunAt, sun?.at, sunFailed]);
+  const sunHere = sun?.at === sunAt ? sun : null;
   return (
     <figure className={cn("relative isolate w-full overflow-hidden rounded-lg border border-border bg-surface-1", className)}>
       <div data-h3d-stage className="relative aspect-[4/3] w-full md:aspect-[16/10]">
@@ -101,6 +129,8 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
               <SiteScene
                 apiKey={apiKey}
                 placement={p}
+                sun={sunHere}
+                sunOn={sunOn}
                 panelsOn={panelsOn}
                 reduced={reduced}
                 pvLabel={labels && kwp ? fmt(kwp, "kWp") : null}
@@ -121,15 +151,26 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
           <span className="font-semibold text-ink">Google</span>
           {attribution.replace(/^Google( · )?/, "") && <span> · {attribution.replace(/^Google( · )?/, "")}</span>}
         </p>
-        {onModelView && (
-          <button
-            type="button"
-            data-h3d-ui
-            onClick={onModelView}
-            className="absolute right-3 top-3 inline-flex h-8 items-center rounded-full border border-border/80 bg-surface-1/85 px-3 text-[13px] font-medium text-ink outline-none backdrop-blur-md transition-transform duration-150 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-focus [@media(hover:hover)]:hover:bg-surface-2"
-          >
-            Model view
-          </button>
+        {buttons && (
+          <div data-h3d-ui className="absolute right-3 top-3 flex items-center gap-1.5">
+            {sunMap === undefined && sunFailed !== sunAt && (
+              <button type="button" aria-pressed={sunOwn} onClick={() => setSunOwn((v) => !v)} className={cn(pillCls, sunOwn && "bg-primary text-primary-ink [@media(hover:hover)]:hover:bg-primary")}>
+                Sun map
+              </button>
+            )}
+            {onModelView && <button type="button" onClick={onModelView} className={pillCls}>Model view</button>}
+          </div>
+        )}
+        {/* legend: what the colours mean, only while the map shows */}
+        {sunOn && sunHere && (
+          <div data-h3d-ui className="absolute left-2 top-2 rounded-lg border border-border/80 bg-surface-1/90 px-3 py-2 backdrop-blur-md">
+            <p className="text-[12px] font-medium text-ink">Sunshine per year</p>
+            <div aria-hidden className="mt-1.5 h-2 w-40 rounded-full" style={{ background: `linear-gradient(90deg, ${sunHere.palette.join(", ")})` }} />
+            <p className="mt-1 flex justify-between font-mono text-[11px] tabular-nums text-ink-muted">
+              <span>{Math.round(sunHere.min)}</span>
+              <span>{Math.round(sunHere.max)} kWh/kWp</span>
+            </p>
+          </div>
         )}
         {labels && chips.length > 0 && (
           <ul data-h3d-ui className="absolute bottom-2 right-2 flex flex-wrap justify-end gap-1.5">

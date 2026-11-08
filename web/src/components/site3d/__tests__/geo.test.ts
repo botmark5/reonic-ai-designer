@@ -68,3 +68,24 @@ describe("segmentHeights", () => {
   });
   it("quantile", () => expect(quantile([5, 1, 3, 2, 4], 0.25)).toBe(2));
 });
+
+import { sunFrame, sunUv } from "../geo";
+describe("sun map frame", () => {
+  const local = { center: { x_m: 0, y_m: 0 }, width_m: 60, height_m: 60, rotation_deg: 0 };
+  it("north edge is v = 1, east edge u = 1", () => {
+    const f = sunFrame(local);
+    const [u1, v1] = sunUv(f, 0, -30); // 30 m north
+    expect(u1).toBeCloseTo(0.5);
+    expect(v1).toBeCloseTo(1);
+    const [u2, v2] = sunUv(f, 30, 0); // 30 m east
+    expect(u2).toBeCloseTo(1);
+    expect(v2).toBeCloseTo(0.5);
+  });
+  it("a clockwise grid rotation moves north-east points towards the top centre", () => {
+    const f = sunFrame({ ...local, rotation_deg: 45 });
+    const d = 30 / Math.SQRT2;
+    const [u, v] = sunUv(f, d, -d); // 30 m towards north-east = straight "up" in a 45° rotated image
+    expect(u).toBeCloseTo(0.5);
+    expect(v).toBeCloseTo(1);
+  });
+});
