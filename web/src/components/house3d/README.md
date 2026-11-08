@@ -91,3 +91,6 @@ same props. Props not yet supported by a renderer are accepted and ignored. Full
 - Google attribution is always visible bottom-left. `reveal.panels` drops the panels row by row; `labels` shows chips.
 - f-hero extras: `reveal.warm` (windows glow), heat pump shown as a permanent ghost when only offered
   (`design.options.heatpump.available`) and `reveal.heatpump` is on.
+- Sun map (`sunMap` prop, or the "Sun map" button when omitted): d-voice's `/api/solar/layers` image draped on every
+  tile surface by a world-position shader patch (chained with the tiles fade shader), fetched for the panels' centre
+  so both line up; legend top-left. Procedural house: no sun map (the flux is real data for the real roof).

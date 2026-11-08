@@ -5,11 +5,11 @@ import { TilesRenderer } from "3d-tiles-renderer";
 import {
   GLTFExtensionsPlugin, GoogleCloudAuthPlugin, ReorientationPlugin, TileCompressionPlugin, TilesFadePlugin,
 } from "3d-tiles-renderer/plugins";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { LAND, stepSpring, type SpringState } from "../house3d/spring";
-import { dropOrder, panelPose, quantile, segmentHeights, toScene, type PanelPose, type Placement } from "./geo";
+import { dropOrder, panelPose, quantile, segmentHeights, toScene, type PanelPose, type Placement, type SunFrame } from "./geo";
 
 const DRACO = "https://www.gstatic.com/draco/versioned/decoders/1.5.7/";
 /** Germany's geoid sits ≈ 36–50 m above the ellipsoid; Google gives roof heights above sea level. A first guess only: rays refine it. */
@@ -24,6 +24,9 @@ const VIEW = new THREE.Vector3(30, 52, 42); // camera offset from the roof: sout
 export interface SiteSceneProps {
   apiKey: string;
   placement: Placement;
+  /** Annual sunshine image to drape on every roof (d-voice /api/solar/layers), and whether it shows. */
+  sun: { image: string; frame: SunFrame } | null;
+  sunOn: boolean;
   /** New panels are on stage (the /live reveal). */
   panelsOn: boolean;
   reduced: boolean;
@@ -36,7 +39,48 @@ export interface SiteSceneProps {
 
 interface Heights { roof: number; segments: Map<number, number> }
 
-function Tiles({ apiKey, placement, onFirstTiles, onError, onAttribution, onHeights }: Omit<SiteSceneProps, "panelsOn" | "reduced" | "pvLabel"> & {
+type SunUniforms = Record<"uSunMap" | "uSunAmt" | "uSunC" | "uSunR" | "uSunU" | "uSunS", THREE.IUniform>;
+
+/**
+ * Drapes the sun map on whatever the tiles show: each tile material maps its world x/z into the image. Off the
+ * image or on transparent pixels (off-roof) the photo stays as it is. Mixed after the colour-space conversion,
+ * so the PNG's sRGB colours go in unchanged.
+ */
+function patchSun(root: THREE.Object3D, u: SunUniforms) {
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      if (m.userData.sunMap) continue;
+      m.userData.sunMap = true;
+      m.customProgramCacheKey = () => "sunmap";
+      const prev = m.onBeforeCompile.bind(m); // the fade plugin chains too: keep whatever ran before
+      m.onBeforeCompile = (sh, r) => {
+        prev(sh, r);
+        Object.assign(sh.uniforms, u);
+        sh.vertexShader = "varying vec3 vSunW;\n" + sh.vertexShader.replace(
+          "#include <project_vertex>",
+          "#include <project_vertex>\n  vSunW = (modelMatrix * vec4(transformed, 1.0)).xyz;",
+        );
+        sh.fragmentShader = "uniform sampler2D uSunMap;\nuniform float uSunAmt;\nuniform vec2 uSunC, uSunR, uSunU, uSunS;\nvarying vec3 vSunW;\n" +
+          sh.fragmentShader.replace("#include <dithering_fragment>", `
+  if (uSunAmt > 0.001) {
+    vec2 dSun = vSunW.xz - uSunC;
+    vec2 sUv = vec2(0.5) + vec2(dot(dSun, uSunR), dot(dSun, uSunU)) / uSunS;
+    if (all(greaterThanEqual(sUv, vec2(0.0))) && all(lessThanEqual(sUv, vec2(1.0)))) {
+      vec4 sCol = texture2D(uSunMap, sUv);
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, sCol.rgb, sCol.a * uSunAmt * 0.85);
+    }
+  }
+  #include <dithering_fragment>`);
+      };
+      m.needsUpdate = true;
+    }
+  });
+}
+
+function Tiles({ apiKey, placement, sunUniforms, onFirstTiles, onError, onAttribution, onHeights }: Omit<SiteSceneProps, "panelsOn" | "reduced" | "pvLabel" | "sun" | "sunOn"> & {
+  sunUniforms: RefObject<SunUniforms>;
   onHeights: (h: Heights) => void;
 }) {
   const { camera, gl } = useThree();
@@ -82,9 +126,11 @@ function Tiles({ apiKey, placement, onFirstTiles, onError, onAttribution, onHeig
       const ys = [...heights.values()];
       cb.current.onHeights({ roof: Math.max(...ys), segments: heights });
     };
-    const onModel = () => {
+    const onModel = (e: { scene?: THREE.Object3D }) => {
+      if (e.scene) patchSun(e.scene, sunUniforms.current);
       if (!first) { first = true; cb.current.onFirstTiles(); }
     };
+    patchSun(tiles.group, sunUniforms.current);
     const onEnd = () => {
       window.clearTimeout(timer);
       timer = window.setTimeout(measure, 150);
@@ -104,7 +150,7 @@ function Tiles({ apiKey, placement, onFirstTiles, onError, onAttribution, onHeig
       tiles.removeEventListener("load-error", onFail);
       tiles.dispose();
     };
-  }, [tiles, camera, gl, placement]);
+  }, [tiles, camera, gl, placement, sunUniforms]);
 
   useFrame(() => {
     tiles.setResolutionFromRenderer(camera, gl);
@@ -220,7 +266,42 @@ function Rig({ target }: { target: THREE.Vector3 }) {
   );
 }
 
-export default function SiteScene({ apiKey, placement, panelsOn, reduced, pvLabel, onFirstTiles, onError, onAttribution }: SiteSceneProps) {
+function setSun(u: SunUniforms, tex: THREE.Texture | null, f: SunFrame | null) {
+  u.uSunMap.value = tex;
+  if (!f) return;
+  (u.uSunC.value as THREE.Vector2).set(f.cx, f.cz);
+  (u.uSunR.value as THREE.Vector2).set(f.right[0], f.right[1]);
+  (u.uSunU.value as THREE.Vector2).set(f.up[0], f.up[1]);
+  (u.uSunS.value as THREE.Vector2).set(f.w, f.h);
+}
+
+function fadeSun(u: SunUniforms, target: number, dt: number, reduced: boolean) {
+  const cur = u.uSunAmt.value as number;
+  u.uSunAmt.value = reduced ? target : cur + (target - cur) * (1 - Math.exp(-6 * Math.min(dt, 0.1)));
+}
+
+/** Loads the sun-map texture into the shared uniforms and fades it in and out. */
+function SunMap({ sun, on, reduced, uniforms }: { sun: SiteSceneProps["sun"]; on: boolean; reduced: boolean; uniforms: RefObject<SunUniforms> }) {
+  useEffect(() => {
+    if (!sun) return;
+    const tex = new THREE.TextureLoader().load(sun.image);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    const u = uniforms.current;
+    setSun(u, tex, sun.frame);
+    return () => { setSun(u, null, null); tex.dispose(); };
+  }, [sun, uniforms]);
+  useFrame((_, dt) => fadeSun(uniforms.current, on && sun ? 1 : 0, dt, reduced));
+  return null;
+}
+
+export default function SiteScene({ apiKey, placement, sun, sunOn, panelsOn, reduced, pvLabel, onFirstTiles, onError, onAttribution }: SiteSceneProps) {
+  const sunUniforms = useRef<SunUniforms>({
+    uSunMap: { value: null }, uSunAmt: { value: 0 },
+    uSunC: { value: new THREE.Vector2() }, uSunR: { value: new THREE.Vector2(1, 0) },
+    uSunU: { value: new THREE.Vector2(0, -1) }, uSunS: { value: new THREE.Vector2(60, 60) },
+  });
   const guess = useMemo(() => {
     const h = placement.segments.map((s) => s.plane_height_m).find((v): v is number => typeof v === "number" && Number.isFinite(v));
     return new THREE.Vector3(0, (h ?? 500) + GEOID_M, 0);
@@ -242,7 +323,8 @@ export default function SiteScene({ apiKey, placement, panelsOn, reduced, pvLabe
     >
       <hemisphereLight args={["#ffffff", "#d8d2c8", 1.1]} />
       <directionalLight position={[-30, 60, 40]} intensity={2.2} color="#fff1dc" />
-      <Tiles apiKey={apiKey} placement={placement} onFirstTiles={onFirstTiles} onError={onError} onAttribution={onAttribution} onHeights={onHeights} />
+      <SunMap sun={sun} on={sunOn} reduced={reduced} uniforms={sunUniforms} />
+      <Tiles apiKey={apiKey} placement={placement} sunUniforms={sunUniforms} onFirstTiles={onFirstTiles} onError={onError} onAttribution={onAttribution} onHeights={onHeights} />
       {heights && <RoofPanels placement={placement} heights={heights} on={panelsOn} reduced={reduced} />}
       {heights && pvLabel && panelsOn && (
         <Html position={[0, heights.roof + 4.5, 0]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>

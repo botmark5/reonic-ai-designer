@@ -102,3 +102,20 @@ export function segmentHeights(
   }
   return { offset, heights };
 }
+
+/** Where the sun-map image lies in the scene: centre, unit axes of its right and up edges, size (metres). */
+export interface SunFrame { cx: number; cz: number; right: [number, number]; up: [number, number]; w: number; h: number }
+
+/** The image's "up" points `rotation_deg` clockwise of true north (UTM grid). Scene: +x east, −z north. */
+export function sunFrame(local: { center: { x_m: number; y_m: number }; width_m: number; height_m: number; rotation_deg: number }): SunFrame {
+  const r = rad(local.rotation_deg);
+  const [cx, cz] = toScene(local.center.x_m, local.center.y_m);
+  return { cx, cz, right: [Math.cos(r), Math.sin(r)], up: [Math.sin(r), -Math.cos(r)], w: local.width_m, h: local.height_m };
+}
+
+/** Texture coordinates of a scene point (x, z) in the sun map; outside [0, 1] = off the image. */
+export function sunUv(f: SunFrame, x: number, z: number): [number, number] {
+  const dx = x - f.cx;
+  const dz = z - f.cz;
+  return [0.5 + (dx * f.right[0] + dz * f.right[1]) / f.w, 0.5 + (dx * f.up[0] + dz * f.up[1]) / f.h];
+}

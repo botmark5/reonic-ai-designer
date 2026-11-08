@@ -63,7 +63,7 @@ const TILES_FLAG = process.env.NEXT_PUBLIC_HOUSE_TILES;
  * Props that a renderer does not support yet are accepted and ignored, so pages can wire them now.
  */
 export function HouseStage({
-  design, home, mode = "homeowner", roof, location, view = "outside", reveal, highlight, onSelect, cameraKey, timeOfDay,
+  design, home, mode = "homeowner", roof, location, view = "outside", sunMap, reveal, highlight, onSelect, cameraKey, timeOfDay,
   onTimeOfDayChange, labels, controls, static: forceStatic, flyIn, className,
 }: HouseStageProps) {
   const wanted = useSyncExternalStore(noop, () => tilesWanted(window.location.search, TILES_FLAG), () => false);
@@ -82,11 +82,13 @@ export function HouseStage({
         design={design}
         panelsOn={revealedFromKey(revealKey(reveal)).panels}
         labels={labels}
+        sunMap={sunMap}
+        buttons={controls !== "none"}
         onFallback={(reason) => {
           if (process.env.NODE_ENV !== "production") console.info("[HouseStage] real outside unavailable:", reason);
           setOff(at);
         }}
-        onModelView={controls === "none" ? undefined : () => setOff(at)}
+        onModelView={() => setOff(at)}
         className={className}
       />
     );
