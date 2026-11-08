@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mockDesign } from "@/lib/engine-mock";
 import { EMPTY_LOCKS, type DesignResponse } from "@/lib/types";
-import { callToLive, factsToHome, type Facts } from "./facts";
+import { callToLive, factsToHome, heardTurns, nextHeardOrder, type Facts } from "./facts";
 import { EMPTY_DESIGN, REVEAL_ORDER, revealFromFacts, stagedDesign, stepToward, type LiveReveal } from "./stage";
 
 const draftFor = (f: Facts): DesignResponse => mockDesign({ installer: "2a8ba8e2", home: factsToHome(f), locks: EMPTY_LOCKS });
@@ -169,5 +169,54 @@ describe("callToLive: a calls row from update_facts → chips, engine home, loca
     expect(l.facts.household).toBe(4);
     expect(l.home).toEqual(factsToHome({ annual_kwh: 4800, household: 4, has_ev: false }));
     expect(l.ready).toBe(true);
+  });
+});
+
+describe("d-voice review: a real call only drafts once the caller said a consumption fact", () => {
+  // the exact shape update_facts writes after the name alone: annual_kwh = 4,000 default, demand_is_default true
+  const nameOnly = {
+    customer_name: "Anna Weber", address: null,
+    facts: { annual_kwh: 4000, demand_is_default: true, has_ev: false, load_profile: "H0", voice: { customer_name: "Anna Weber", annual_kwh: null, household: null, monthly_bill_eur: null } },
+  };
+  it("name only: not ready, no estimate chip, no warm windows", () => {
+    const l = callToLive(nameOnly);
+    expect(l.ready).toBe(false);
+    expect(l.facts.annual_kwh_estimate).toBeNull();
+    expect(revealFromFacts(l.facts, null, true).warm).toBe(false);
+  });
+  it("household said → ready with an estimate; kWh said → ready; bill said → ready", () => {
+    const withHh = { ...nameOnly, facts: { ...nameOnly.facts, annual_kwh: 4250, voice: { ...nameOnly.facts.voice, household: 4 } } };
+    expect(callToLive(withHh).ready).toBe(true);
+    expect(callToLive(withHh).facts.annual_kwh_estimate).toBe(4250);
+    const kwh = { ...nameOnly, facts: { ...nameOnly.facts, annual_kwh: 4800, voice: { ...nameOnly.facts.voice, annual_kwh: 4800 } } };
+    expect(callToLive(kwh).ready).toBe(true);
+    expect(callToLive(kwh).facts.annual_kwh_estimate).toBeNull();
+    const bill = { ...nameOnly, facts: { ...nameOnly.facts, voice: { ...nameOnly.facts.voice, monthly_bill_eur: 120 } } };
+    expect(callToLive(bill).ready).toBe(true);
+  });
+  it("a roof looked up for an earlier address is not used after the caller corrects it", () => {
+    const base = { customer_name: null, address: "Neue Straße 2, Augsburg", facts: { annual_kwh: 4800, voice: { annual_kwh: 4800 }, solar: { status: "ok", lat: 48.1, lng: 11.5 } } };
+    expect(callToLive({ ...base, facts: { ...base.facts, solar_for: "Alte Straße 1, Augsburg" } }).location).toBeUndefined();
+    expect(callToLive({ ...base, facts: { ...base.facts, solar_for: "Neue Straße 2, Augsburg" } }).location).toMatchObject({ lat: 48.1 });
+    expect(callToLive(base).location).toMatchObject({ lat: 48.1 }); // older rows without solar_for
+    expect(callToLive({ ...base, facts: { ...base.facts, solar_for: "Alte Straße 1, Augsburg" } }).solar).toBeUndefined();
+  });
+});
+
+describe("heardTurns: the caller's answers in the order they were given, labelled", () => {
+  it("orders by arrival, labels each answer with its question", () => {
+    const order = nextHeardOrder([], { household: "family of four", has_ev: "planned" }, ["has_ev"]);
+    expect(order).toEqual(["household", "has_ev"]); // has_ev is this update: it was said last
+    const turns = heardTurns({ household: "family of four", has_ev: "planned" }, order);
+    expect(turns.map((t) => t.text)).toEqual(["Household: family of four", "Electric car: planned"]);
+  });
+  it("keeps the first order and appends new answers (this update's fields last: they were said most recently)", () => {
+    const o1 = nextHeardOrder([], { address: "Marienplatz 1" }, ["address"]);
+    const o2 = nextHeardOrder(o1, { address: "Marienplatz 1", has_existing_pv: "no", annual_kwh: "4800" }, ["annual_kwh"]);
+    expect(o2).toEqual(["address", "has_existing_pv", "annual_kwh"]);
+    expect(nextHeardOrder(o2, { address: "x" }, [])).toBe(o2); // nothing new: same array
+  });
+  it("skips empty values", () => {
+    expect(heardTurns({ a: "", b: null, household: 4 }, ["a", "b", "household"]).map((t) => t.text)).toEqual(["Household: 4"]);
   });
 });

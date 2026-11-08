@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Check, Phone, Play, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ServedBadge } from "@/components/ui/served-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { HouseStage, roofFromSolarResult, type StageLocation, type StageReveal } from "@/components/house3d";
-import { callToLive, factsToHome, pretty, type Facts } from "@/app/live/facts";
+import { callToLive, factsToHome, heardTurns, nextHeardOrder, pretty, type Facts } from "@/app/live/facts";
 import { revealFromFacts, stagedDesign, stepToward, type LiveReveal } from "@/app/live/stage";
 import { COMPONENTS, sizeOf } from "@/lib/diff";
 import { fmtInt, LABEL, UNIT } from "@/lib/format";
@@ -193,7 +192,8 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
   const [demoStart, setDemoStart] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
   const designAbort = useRef<AbortController | null>(null);
-  const router = useRouter();
+  // arrival order of the caller's answers (jsonb loses it), per call
+  const [heardOrder, setHeardOrder] = useState<{ callId: string; order: string[] }>({ callId: "", order: [] });
 
   // Poll real calls every 2 s (server route; calls are not readable from the browser). With update_facts on the
   // voice agent, each answer lands in calls.facts while the caller speaks.
@@ -211,6 +211,12 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
         if (fresh) {
           setMode("real");
           setCall(latest);
+          const f = (latest.facts ?? {}) as { stated?: Record<string, unknown>; updated_fields?: string[] };
+          setHeardOrder((prev) =>
+            prev.callId === latest.id
+              ? { callId: prev.callId, order: nextHeardOrder(prev.order, f.stated, f.updated_fields) }
+              : { callId: latest.id, order: nextHeardOrder([], f.stated, f.updated_fields) },
+          );
           setSavedDraft(latestDesign?.design ?? null);
           setDraftRowId(latestDesign?.id ?? null);
         }
@@ -292,12 +298,12 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
     const row = (await res.json()) as DesignRow;
     setSent(row.id);
     setDemoStep(SCRIPT.length);
-    toast.success("Draft is in the planner's inbox", { action: { label: "Open", onClick: () => router.push(`/?d=${row.id}`) } });
-  }, [demoFacts, router]);
+    // no toast: it covered "Open in planner", which already says the same thing (the card reads "In the planner's inbox")
+  }, [demoFacts]);
 
   // Real address → real roof and the street (Google), only for addresses the caller gave. d-voice already looks the
   // roof up during the call (facts.solar); otherwise ask /api/solar ourselves.
-  const callSolar = mode === "real" ? ((call?.facts as { solar?: SolarResult } | undefined)?.solar ?? null) : null;
+  const callSolar = mode === "real" ? ((real?.solar as SolarResult | undefined) ?? null) : null;
   const [solarFor, setSolarFor] = useState<{ address: string; result: SolarResult } | null>(null);
   const address = facts.address?.trim() || null;
   const solar = callSolar ?? (solarFor && solarFor.address === address ? solarFor.result : null);
@@ -326,7 +332,8 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
     [real?.location, solar, address],
   );
 
-  const shownDraft = draft ?? savedDraft;
+  // after hang-up, the stored create_design draft: the screen and the inbox link show the same numbers
+  const shownDraft = mode === "real" && call?.status !== "live" && savedDraft ? savedDraft : (draft ?? savedDraft);
   const home = useMemo(() => engineHome, [factsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const target = useMemo(() => revealFromFacts(facts, shownDraft, mode !== "idle"), [factsKey, shownDraft, mode]); // eslint-disable-line react-hooks/exhaustive-deps
   const reveal = useStagedReveal(target);
@@ -340,9 +347,7 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
 
   // The full transcript arrives after the call; until then show the caller's answers as the agent heard them.
   const stated = mode === "real" ? ((call?.facts as { stated?: Record<string, unknown> } | undefined)?.stated ?? null) : null;
-  const heard: TranscriptTurn[] = stated
-    ? Object.values(stated).filter((v): v is string | number => typeof v === "string" || typeof v === "number").map((v) => ({ role: "customer", text: String(v) }))
-    : [];
+  const heard: TranscriptTurn[] = heardTurns(stated, heardOrder.callId === call?.id ? heardOrder.order : []);
   const transcript: TranscriptTurn[] =
     mode === "demo" ? SCRIPT.slice(0, demoStep).map((t) => ({ role: t.role, text: t.text })) : call?.transcript?.length ? call.transcript : heard;
   const live = mode === "demo" ? !demoDone && !sent : call?.status === "live";

@@ -50,6 +50,8 @@ export interface LiveCallState {
   /** Enough to draft (a yearly use is known or derived). */
   ready: boolean;
   location?: { lat: number; lng: number; address?: string };
+  /** Google's roof for the CURRENT address (d-voice looks it up during the call). */
+  solar?: unknown;
   updatedAt?: string;
 }
 
@@ -62,17 +64,53 @@ export function callToLive(row: { customer_name: string | null; address: string 
   const voice = raw.voice && typeof raw.voice === "object" ? (raw.voice as Facts) : null;
   const solar = raw.solar as { lat?: unknown; lng?: unknown } | undefined;
   const address = row.address ?? voice?.address ?? (raw.address as string | undefined) ?? null;
+  // a roof looked up for an earlier address (the caller corrected it) is not this house
+  const solarFor = typeof raw.solar_for === "string" ? raw.solar_for : null;
+  const solarOk = !!solar && (!solarFor || solarFor === address);
   const location =
-    solar && typeof solar.lat === "number" && typeof solar.lng === "number" && Number.isFinite(solar.lat) && Number.isFinite(solar.lng)
+    solarOk && solar && typeof solar.lat === "number" && typeof solar.lng === "number" && Number.isFinite(solar.lat) && Number.isFinite(solar.lng)
       ? { lat: solar.lat, lng: solar.lng, address: address ?? undefined }
       : undefined;
   const updatedAt = typeof raw.facts_updated_at === "string" ? raw.facts_updated_at : undefined;
   if (!voice) {
     const facts = { ...(raw as Facts), customer_name: (raw.customer_name as string) ?? row.customer_name, address };
-    return { facts, home: factsToHome(facts), ready: facts.annual_kwh != null || facts.monthly_bill_eur != null, location, updatedAt };
+    return { facts, home: factsToHome(facts), ready: facts.annual_kwh != null || facts.monthly_bill_eur != null, location, solar: solarOk ? solar : undefined, updatedAt };
   }
   const home = Object.fromEntries(HOME_KEYS.filter((k) => k in raw).map((k) => [k, raw[k]])) as unknown as Home;
-  const estimate = voice.annual_kwh == null && typeof home.annual_kwh === "number" && home.annual_kwh > 0 ? home.annual_kwh : null;
+  // The derived home always has a yearly use (4,000 kWh default), so "known" means the caller SAID a consumption fact:
+  // the kWh, the bill, or the household size (then d-voice's estimate is shown as one).
+  const said = voice.annual_kwh != null || voice.monthly_bill_eur != null || voice.household != null;
+  const hasKwh = typeof home.annual_kwh === "number" && home.annual_kwh > 0;
+  const estimate = voice.annual_kwh == null && voice.monthly_bill_eur == null && voice.household != null && hasKwh ? home.annual_kwh : null;
   const facts: Facts = { ...voice, customer_name: row.customer_name ?? voice.customer_name ?? null, address, annual_kwh_estimate: estimate };
-  return { facts, home, ready: typeof home.annual_kwh === "number" && home.annual_kwh > 0, location, updatedAt };
+  return { facts, home, ready: said && hasKwh, location, solar: solarOk ? solar : undefined, updatedAt };
+}
+
+const HEARD_LABEL: Record<string, string> = {
+  customer_name: "Name", address: "Address", has_existing_pv: "Existing solar", existing_pv_kwp: "Existing solar size",
+  existing_battery_kwh: "Existing battery", annual_kwh: "Yearly use", monthly_bill_eur: "Monthly bill", household: "Household",
+  daytime_presence: "Home during the day", has_ev: "Electric car", ev_km_year: "Driving", heating: "Heating",
+  heating_age_years: "Heating age", roof_type: "Roof", roof_direction: "Roof direction", wishes: "Wishes", notes: "Notes",
+};
+
+/**
+ * Arrival order of the caller's answers. calls.facts.stated is jsonb (key order is not the spoken order), so /live
+ * remembers the order it first saw each key; keys this update changed (updated_fields) come last.
+ * Returns the same array when nothing is new.
+ */
+export function nextHeardOrder(prev: string[], stated: Record<string, unknown> | null | undefined, updated: string[] | null | undefined): string[] {
+  if (!stated) return prev;
+  const seen = new Set(prev);
+  // answers missed between two polls first, then the ones this update changed (said most recently)
+  const latest = (updated ?? []).filter((k) => k in stated);
+  const fresh = [...Object.keys(stated).filter((k) => !latest.includes(k)), ...latest].filter((k) => !seen.has(k) && (seen.add(k), true));
+  return fresh.length ? [...prev, ...fresh] : prev;
+}
+
+/** The answers as the agent heard them, labelled, in arrival order (shown until the full transcript arrives). */
+export function heardTurns(stated: Record<string, unknown> | null | undefined, order: string[]): { role: "customer"; text: string }[] {
+  if (!stated) return [];
+  return order
+    .filter((k) => (typeof stated[k] === "string" && (stated[k] as string).trim()) || typeof stated[k] === "number")
+    .map((k) => ({ role: "customer" as const, text: `${HEARD_LABEL[k] ?? pretty(k)}: ${String(stated[k])}` }));
 }
