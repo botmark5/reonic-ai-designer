@@ -37,9 +37,10 @@ _Web agent: replace this with what changed, what is next, what is blocking, and 
 - Blocking: nothing.
 
 ## d-voice (voice agent backend + Google Solar, web/src/app/api/{voice,solar}, web/src/lib/{voice,solar}.ts)
-- Changed: voice drafts now send `ev_km_year: 15000` when the caller has an EV but gave no distance (same as the planner
-  form; otherwise the engine gives no wallbox), and `demand_is_default: false` when the caller stated use or a bill.
-  docs/voice-agent.md asks the existing-solar question early and uses `<APP_URL>` instead of a host.
-- Engine: no new fields; `demand_is_default` is an optional extra the engine ignores until it supports it.
-- Next: signed production smoke (create-design + post-call with a good and a bad HMAC), then delete the test rows.
-- Blocking (needs-human, Mark): ELEVENLABS_WEBHOOK_SECRET, GOOGLE_MAPS_API_KEY, voice choice before audio is enabled.
+- Changed: household answers in words are now parsed (EN + DE: "family of four", "zu zweit", "couple with two kids",
+  "5+"), in create-design and post-call. `daytime_presence` sets the engine's own one-person presets
+  (`HomeOfficeOnePerson` / `FullTimeOnePerson`); larger households keep `H0`. Earlier: EV without km → 15,000 km/year,
+  `demand_is_default: false` for a stated use or bill, existing-solar question asked early.
+- Engine: no new fields; only existing `load_profile` preset names are sent.
+- Next: signed post-call test once the webhook secret is available locally; one paid explain + TTS check after Mark's OK.
+- Blocking (needs-human, Mark): GOOGLE_MAPS_API_KEY (Solar answers `no_key`), OK for a paid TTS test.

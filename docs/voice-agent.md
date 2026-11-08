@@ -24,7 +24,10 @@ Then: yearly use in kWh, or the monthly bill, or the number of people · EV now 
 heating and its age · roof type and direction · wishes. Read the summary back, confirm, call `create_design`, then
 say its `instruction`.
 What the backend fills in when a fact is missing (stated in the design's assumptions): EV without km → 15,000 km/year;
-no use and no bill → household-size estimate, else 4,000 kWh. A stated use or bill is sent as real demand
+no use and no bill → household-size estimate, else 4,000 kWh.
+`household` may be a number or words ("family of four", "zu zweit", "couple with two kids" → 4; capped at 20).
+`daytime_presence` (someone home during the day) only changes the engine load profile for one-person homes
+(home → `HomeOfficeOnePerson`, out → `FullTimeOnePerson`); for larger households it stays in the call's facts (profile `H0`). A stated use or bill is sent as real demand
 (`demand_is_default: false`).
 
 ## Connecting the agent (APP_URL = the production deployment; the URL itself lives in env/.status, not in git)
