@@ -111,6 +111,7 @@ def test_locked_pv_above_roof_cap_stays_inside_its_range_and_no_pv_lock_explains
 def test_heatpump_option_without_demand_has_consistent_text():
     labels, inputs = make_synthetic(n_per_installer=120, seed=3)
     model = DesignModel().fit(build_eval_table(labels, inputs))
+    model.catalogue_.setdefault("instA", {}).update(sells_heatpumps=True, heatpump_kw=[5.5, 7.5, 8.0, 10.5, 12.5])
     opt = model.heatpump_option({"annual_kwh": 4500, "heating": "Gas"}, "instA")
     assert opt["available"] and opt["kw"]
     text = " ".join(opt["reasons"])
