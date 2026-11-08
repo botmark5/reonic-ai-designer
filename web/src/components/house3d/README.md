@@ -110,6 +110,9 @@ same props. Props not yet supported by a renderer are accepted and ignored. Full
   `onFallbackShown(reason)` (the model is the outside: "off", "no key", "no location", "static", or the street's
   failure), `onPanelsPlaced(count)` (model's count, then the real roof's), `onEquipmentPlaced()`. Each fires once per
   new value. A HouseStage watchdog (6.5 s) falls back even if the street code never answers.
+- The camera looks at the new panels' centroid from the side their roof faces (a face seen edge-on hid them), and
+  each face's panels are raised together onto the photogrammetry (upper quartile of the gap, ≤ 3 m) so none are buried.
+  No energy flows on the street; with `labels` the Solar tag and product chips show.
 - Google attribution is always visible bottom-left. `reveal.panels` drops the panels row by row; `labels` shows chips.
 - f-hero extras: `reveal.warm` (windows glow), heat pump shown as a permanent ghost when only offered
   (`design.options.heatpump.available`) and `reveal.heatpump` is on.

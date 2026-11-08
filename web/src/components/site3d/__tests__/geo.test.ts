@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { downslope, dropOrder, median, panelPose, toScene } from "../geo";
+import { downslope, faceRaise, dropOrder, median, panelPose, panelView, toScene } from "../geo";
 
 const size = { width_m: 1.045, height_m: 1.879 };
 const seg = (az: number, pitch = 30) => ({ pitch_deg: pitch, azimuth_deg: az, center: { lat: 0, lng: 0, x_m: 0, y_m: 0 } });
@@ -87,5 +87,34 @@ describe("sun map frame", () => {
     const [u, v] = sunUv(f, d, -d); // 30 m towards north-east = straight "up" in a 45° rotated image
     expect(u).toBeCloseTo(0.5);
     expect(v).toBeCloseTo(1);
+  });
+});
+
+describe("panelView", () => {
+  const seg = (index: number, azimuth_deg: number) => ({ index, azimuth_deg, pitch_deg: 30, center: { lat: 0, lng: 0, x_m: 0, y_m: 0 } });
+  const panel = (x_m: number, y_m: number, segment_index: number) => ({ x_m, y_m, segment_index, orientation: "PORTRAIT" as const });
+  it("looks at the panels' centroid from the side they face", () => {
+    const v = panelView({ segments: [seg(0, 225)] as never, panels: [panel(4, -2, 0), panel(6, -2, 0)] as never });
+    expect(v.centre[0]).toBeCloseTo(5);
+    expect(v.centre[1]).toBeCloseTo(2); // north −2 m → scene z +2
+    // south-west facing: downhill towards −x (west) and +z (south)
+    expect(v.facing![0]).toBeLessThan(0);
+    expect(v.facing![1]).toBeGreaterThan(0);
+    expect(Math.hypot(...v.facing!)).toBeCloseTo(1);
+  });
+  it("has no facing for panels on opposite faces or no panels", () => {
+    expect(panelView({ segments: [seg(0, 90), seg(1, 270)] as never, panels: [panel(1, 0, 0), panel(-1, 0, 1)] as never }).facing).toBeNull();
+    expect(panelView({ segments: [], panels: [] } as never)).toEqual({ centre: [0, 0], facing: null });
+  });
+});
+
+describe("faceRaise", () => {
+  it("raises a face by the upper quartile of how far the mesh sits above it, one value for all its panels", () => {
+    expect(faceRaise([10, 10, 10, 10], [10.2, 10.8, 10.6, 10.4])).toBeCloseTo(0.6, 6); // nearest-rank upper quartile
+  });
+  it("never lowers, ignores misses and chimneys", () => {
+    expect(faceRaise([10, 10], [9, 9.5])).toBe(0);
+    expect(faceRaise([10, 10, 10], [Number.NaN, 15, undefined])).toBe(0);
+    expect(faceRaise([], [])).toBe(0);
   });
 });

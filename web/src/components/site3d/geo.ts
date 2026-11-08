@@ -57,6 +57,25 @@ export function panelPose(
   };
 }
 
+/**
+ * Where the new panels are and which way they face: their centroid (scene x / z) and the mean horizontal direction
+ * their roof faces slope down to (unit, or null when they face every way / there are none). The camera looks from
+ * that side so the panels face the viewer instead of being seen edge-on.
+ */
+export function panelView(placement: Pick<Placement, "panels" | "segments">): { centre: [number, number]; facing: [number, number] | null } {
+  const ps = placement.panels;
+  if (!ps.length) return { centre: [0, 0], facing: null };
+  let x = 0, z = 0, fx = 0, fz = 0;
+  for (const p of ps) {
+    const [px, pz] = toScene(p.x_m, p.y_m);
+    x += px; z += pz;
+    const seg = placement.segments.find((s) => s.index === p.segment_index);
+    if (seg) { const [dx, dz] = downslope(seg.azimuth_deg); fx += dx; fz += dz; }
+  }
+  const len = Math.hypot(fx, fz);
+  return { centre: [x / ps.length, z / ps.length], facing: len > ps.length * 0.3 ? [fx / len, fz / len] : null };
+}
+
 /** Drop order: per segment, the eave row first (lowest panels), then up the roof; segments best-first. */
 export function dropOrder(poses: PanelPose[], segmentOf: number[]): number[] {
   return poses
@@ -101,6 +120,22 @@ export function segmentHeights(
     else if (hits.has(s.index)) heights.set(s.index, hits.get(s.index)!);
   }
   return { offset, heights };
+}
+
+/**
+ * How far to raise one roof face's panels onto the photogrammetry: a plane slightly too low buries panels in the
+ * mesh. One raise per face keeps its panels coplanar (a tidy array, not a sawtooth): the upper quartile of how far
+ * the surface sits above the plane under each panel, ignoring misses, hits below and hits more than `maxRise` above
+ * (chimneys, trees). 0 when nothing is buried.
+ */
+export function faceRaise(planeYs: number[], hitYs: (number | null | undefined)[], maxRise = 3): number {
+  const gaps = planeYs.flatMap((y, i) => {
+    const h = hitYs[i];
+    if (h === null || h === undefined || !Number.isFinite(h)) return [];
+    const d = h - y;
+    return d > maxRise ? [] : [Math.max(0, d)];
+  });
+  return quantile(gaps, 0.75) ?? 0;
 }
 
 /** Where the sun-map image lies in the scene: centre, unit axes of its right and up edges, size (metres). */
