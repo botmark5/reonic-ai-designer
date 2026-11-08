@@ -476,6 +476,18 @@ describe("handleCreateDesign", () => {
     expect((await handleCreateDesign(post("/api/voice/create-design", FACTS), d)).status).toBe(401);
   });
 
+  it("an empty call (no facts at all) stores nothing: no empty incoming call on /live", async () => {
+    const s = fakeStore();
+    const d = deps({ store: s.store });
+    for (const body of [{}, { conversation_id: "conv_x" }, { customer_name: "", household: "unknown" }]) {
+      const res = await handleCreateDesign(post("/api/voice/create-design", body, { "x-agent-token": "tool-secret" }), d);
+      expect(res.status).toBe(400);
+      expect((await res.json()).instruction).toMatch(/Ask the caller/);
+    }
+    expect(s.calls.size).toBe(0);
+    expect(s.designs).toHaveLength(0);
+  });
+
   it("drafts a design, writes calls + designs rows and returns the spoken summary", async () => {
     const s = fakeStore();
     const d = deps({ store: s.store });
