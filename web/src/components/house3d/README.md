@@ -113,6 +113,10 @@ same props. Props not yet supported by a renderer are accepted and ignored. Full
 - The camera looks at the new panels' centroid from the side their roof faces (a face seen edge-on hid them), and
   each face's panels are raised together onto the photogrammetry (upper quartile of the gap, ≤ 3 m) so none are buried.
   No energy flows on the street; with `labels` the Solar tag and product chips show.
+- `intro="satellite"` (HouseStage): on the real street the camera waits ~800 m above the house looking down (until its
+  tiles are sharp, ≤ 2.5 s after the first ones), then glides down to the house framing (~2 s); the panels, Solar tag
+  and chips appear after it arrives, and `onTilesReady` fires then. Grabbing the camera mid-flight lands it. Reduced
+  motion: no flight. No street: the model as always.
 - Google attribution is always visible bottom-left. `reveal.panels` drops the panels row by row; `labels` shows chips.
 - f-hero extras: `reveal.warm` (windows glow), heat pump shown as a permanent ghost when only offered
   (`design.options.heatpump.available`) and `reveal.heatpump` is on.

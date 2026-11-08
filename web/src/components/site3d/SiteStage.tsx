@@ -36,6 +36,10 @@ export interface SiteStageProps {
   onReady?: () => void;
   /** Panels on the real roof (count), once the street is on screen. */
   onPanelsPlaced?: (count: number) => void;
+  /** "satellite": the camera starts high above the city and glides down to the house; the panels drop in after. */
+  intro?: "satellite";
+  /** The street is on screen and the camera has arrived at the house (after the satellite flight, if any). */
+  onArrived?: () => void;
   className?: string;
 }
 
@@ -56,7 +60,7 @@ const fmt = (x: number | null | undefined, unit: string) => (x ? `${Number(x.toF
  * The real street: Google's photorealistic 3D tiles around the address with the engine's panels on the real roof.
  * Anything missing or slow calls `onFallback`. Google's attribution is always visible.
  */
-export function SiteStage({ apiKey, location, design, panelsOn = true, labels = false, sunMap, buttons = true, onFallback, onModelView, veil = true, onReady, onPanelsPlaced, className }: SiteStageProps) {
+export function SiteStage({ apiKey, location, design, panelsOn = true, labels = false, sunMap, buttons = true, onFallback, onModelView, veil = true, onReady, onPanelsPlaced, intro, onArrived, className }: SiteStageProps) {
   const reduced = useReducedMotion();
   const d = design.design;
   const kwp = d.pv.include && d.pv.kwp ? d.pv.kwp : 0;
@@ -131,7 +135,9 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
     return () => ctl.abort();
   }, [sunOn, p, sunAt, sun?.at, sunFailed]);
   const sunHere = sun?.at === sunAt ? sun : null;
-  const placedNow = first && p && panelsOn ? p.panel_count : 0;
+  // with the satellite intro the panels count once the camera has arrived (they drop in then)
+  const [arrivedAt, setArrivedAt] = useState<string | null>(null);
+  const placedNow = first && p && panelsOn && (!intro || reduced || arrivedAt === at) ? p.panel_count : 0;
   const panelsCb = useRef(onPanelsPlaced);
   useEffect(() => { panelsCb.current = onPanelsPlaced; });
   useEffect(() => { if (placedNow > 0) panelsCb.current?.(placedNow); }, [placedNow]);
@@ -157,6 +163,8 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
                 onFirstTiles={() => { setFirstAt(at); onReady?.(); }}
                 onError={fail}
                 onAttribution={setAttribution}
+                intro={intro}
+                onLanded={() => { setArrivedAt(at); onArrived?.(); }}
               />
               </Suspense>
             </Boundary>
@@ -193,7 +201,7 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
             </p>
           </div>
         )}
-        {labels && shown && chips.length > 0 && (
+        {labels && shown && (!intro || reduced || arrivedAt === at) && chips.length > 0 && (
           <ul data-h3d-legend className="absolute bottom-2 right-2 flex flex-wrap justify-end gap-1.5">
             {chips.map((c) => (
               <li key={c.k} className="flex items-center gap-2 rounded-full border border-border bg-surface-1/95 py-1.5 pl-2.5 pr-3.5 text-ink shadow-[0_8px_24px_rgba(16,17,20,0.12)]">
