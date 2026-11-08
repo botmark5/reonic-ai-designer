@@ -54,7 +54,7 @@ export interface EngineClient {
   explain(req: ExplainRequest): Promise<{ stream: ReadableStream<Uint8Array>; served: Served }>;
   eval(): Promise<EvalResponse>;
   /** Real held-out projects only: throws on an unknown id or when the engine is unreachable (an invented project would mislead). */
-  project(id: string): Promise<ProjectResponse>;
+  project(id: string, opts?: { answered?: boolean }): Promise<ProjectResponse>;
 }
 
 export class EngineError extends Error {
@@ -168,10 +168,12 @@ export const engine: EngineClient = {
     return { stream: r.stream, served: r.served };
   },
   eval: () => withFallback(() => getJson<EvalResponse>("/eval", TIMEOUTS.eval), () => MOCK_EVAL),
-  project: async (id) => {
+  project: async (id, opts) => {
     if (!engineUrl()) throw new EngineError(503, "Engine not configured: held-out projects need the live engine.");
     const t0 = Date.now();
-    const data = await getJson<ProjectResponse>(`/project/${encodeURIComponent(id)}`, TIMEOUTS.project);
+    // engine #47: `?answered=true` builds our design with the planner's existing-solar answer (what-if)
+    const query = opts?.answered ? "?answered=true" : "";
+    const data = await getJson<ProjectResponse>(`/project/${encodeURIComponent(id)}${query}`, TIMEOUTS.project);
     return { ...data, served: { source: "engine" as const, ms: Date.now() - t0 } };
   },
 };
