@@ -344,7 +344,7 @@ export function House3D({
       ref={figure}
       className={cn("relative isolate w-full overflow-hidden rounded-lg border border-border bg-surface-0", className)}
     >
-      <div data-h3d-stage className="relative aspect-[4/3] w-full md:aspect-[16/10]">
+      <div data-h3d-stage className="@container relative aspect-[4/3] w-full md:aspect-[16/10]">
         {/* eslint-disable-next-line @next/next/no-img-element -- static fallback must work without the image optimiser */}
         <img
           src={FALLBACK_IMAGE[theme]}
@@ -394,7 +394,7 @@ export function House3D({
             data-h3d-ui
             role="toolbar"
             aria-label="Edit panels"
-            className={cn("absolute bottom-3 left-3 hidden items-center gap-1 p-1 sm:flex", glassPanel, "rounded-full")}
+            className={cn("absolute bottom-3 left-3 hidden items-center gap-1 p-1 @[520px]:flex", glassPanel, "rounded-full")}
           >
             <span className={cn("px-2.5 font-mono text-[12px] tabular-nums", placedPanels === enginePanels ? "text-ink-body" : "text-warning-text")}>
               Placed {placedPanels} of {enginePanels}
@@ -409,9 +409,10 @@ export function House3D({
           </div>
         )}
 
-        {/* camera presets: the only control over the model */}
+        {/* camera presets: the only control over the model; only on stages wide enough to keep them off the roof
+            (two houses side by side on /reality: none) */}
         {show3d && controls !== "none" && controls !== "time" && (
-          <div data-h3d-ui className="absolute right-3 top-3 hidden items-center gap-1.5 sm:flex">
+          <div data-h3d-ui className="absolute right-3 top-3 hidden items-center gap-1.5 @[640px]:flex">
             <div role="group" aria-label="Camera view" className={cn("flex gap-1 p-1", glassPanel, "rounded-full")}>
               {PRESETS.map((p) => (
                 <button
@@ -437,7 +438,7 @@ export function House3D({
               </button>
             )}
             {mode === "planner" && (
-              <button type="button" onClick={saveImage} className={cn(pill, glassPanel, "hidden rounded-full text-ink sm:inline-flex [@media(hover:hover)]:hover:bg-surface-2")}>
+              <button type="button" onClick={saveImage} className={cn(pill, glassPanel, "hidden rounded-full text-ink @[700px]:inline-flex [@media(hover:hover)]:hover:bg-surface-2")}>
                 Save image
               </button>
             )}

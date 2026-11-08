@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PANEL, capacity, layoutPanels, panelCount, type RoofPlane } from "../layout";
+import { PANEL, capacity, layoutPanels, panelCount, rowSizes, type RoofPlane } from "../layout";
 
 const main: RoofPlane = { id: "main", width: 13, slope: 6.1, margin: { side: 0.4, eave: 0.4, ridge: 0.3 } };
 const garage: RoofPlane = { id: "garage", width: 5.0, slope: 4.2, margin: { side: 0.3, eave: 0.3, ridge: 0.3 } };
@@ -93,5 +93,15 @@ describe("layoutPanels", () => {
 
   it("returns nothing for zero panels", () => {
     expect(layoutPanels(0, [main])).toEqual({ slots: [], requested: 0, placed: 0, overflow: 0 });
+  });
+
+  it("never leaves one or two panels alone on a last row (Mark: no islands)", () => {
+    expect(rowSizes(21, 10)).toEqual([10, 6, 5]);
+    expect(rowSizes(11, 10)).toEqual([6, 5]);
+    expect(rowSizes(13, 10)).toEqual([10, 3]);
+    expect(rowSizes(20, 10)).toEqual([10, 10]);
+    expect(rowSizes(2, 10)).toEqual([2]);
+    const top = (n: number) => { const l = layoutPanels(n, [main]); const v = Math.max(...l.slots.map((s) => s.v)); return l.slots.filter((s) => s.v === v).length; };
+    expect(top(21)).toBeGreaterThan(2);
   });
 });
