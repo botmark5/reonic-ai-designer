@@ -15,7 +15,7 @@ export interface PresetRequest {
 
 /** Camera position and target in house coordinates (+z south, +x east / garage side). */
 const VIEWS: Record<Preset, { pos: [number, number, number]; target: [number, number, number] }> = {
-  street: { pos: [20, 12, 31], target: [2.5, 1.5, 3.5] },
+  street: { pos: [20, 14.2, 31], target: [2.5, 3.7, 3.5] },
   roof: { pos: [3, 21, 24], target: [2, 5, 0.5] },
   garage: { pos: [22, 5.5, 17], target: [8.5, 1.4, 4] },
 };
