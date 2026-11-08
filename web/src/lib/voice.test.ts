@@ -26,6 +26,7 @@ import {
   numbersAllowed,
   offerSegmentsTemplate,
   parseScript,
+  plainSpoken,
   setStaticClips,
   timeSegments,
 } from "./voice";
@@ -697,6 +698,17 @@ describe("offer timeline", () => {
     expect(parseScript("```json\n" + ok + "\n```", withBattery)?.length).toBe(4);
   });
 
+  it("speaks plain text: markdown and voice tags never reach TTS or the screen", () => {
+    expect(plainSpoken("**What you get:** a *bright* roof [excited] and __more__.")).toBe("What you get: a bright roof and more.");
+    expect(plainSpoken("## Heading\n- point one")).toBe("Heading point one");
+    const md = JSON.stringify({ segments: [
+      { text: "**We suggest** 10.8 kWp.", moment: "none" }, { text: "Morning sun.", moment: "morning" },
+      { text: "Noon surplus.", moment: "noon" }, { text: "Evening *battery*.", moment: "evening" },
+    ] });
+    const d = design({ annual_kwh: 5000 }, { ...EMPTY_LOCKS, pv_kwp: 10.8, battery_kwh: 10 });
+    expect(parseScript(md, d)!.map((x) => x.text)).toEqual(["We suggest 10.8 kWp.", "Morning sun.", "Noon surplus.", "Evening battery."]);
+  });
+
   it("allows the engine's numbers in any rounding or separator style", () => {
     const facts = { pv_kwp: 10.8, battery_kwh: 10, wallbox: true, heatpump_kw: null, heatpump_possible_later: false, yearly_solar_yield_kwh: 10234,
       share_of_own_power_used_pct: 41, share_of_needs_covered_pct: 69, investment_eur: 23950, first_year_savings_eur: 1890, payback_years: 12.4, reasons: [] };
@@ -846,6 +858,18 @@ describe("handleExplain", () => {
     for (let i = 0; i < 12; i++) codes.push((await handleExplain(post("/api/voice/explain", { design_response: d0 }), d)).status);
     expect(codes.slice(0, 10).every((c) => c === 200)).toBe(true);
     expect(codes[11]).toBe(429);
+  });
+
+  it("explains a stored row that has no engine answer yet by designing it from its home and locks", async () => {
+    const s = fakeStore();
+    const home = normaliseFacts({ annual_kwh: 4500 }).home;
+    let seen: DesignRequest | null = null;
+    const store = { ...s.store, getDesign: async () => null, getDesignInputs: async (id: string) => (id === "row-1" ? { home, locks: EMPTY_LOCKS } : null) };
+    const d = deps({ store, allowInlineDesign: false, design: async (req) => ((seen = req), mockDesign(req)) });
+    const res = await handleExplain(post("/api/voice/explain", { design_id: "row-1" }), d);
+    expect(res.status).toBe(200);
+    expect(seen!.home).toMatchObject({ annual_kwh: 4500 });
+    expect((await handleExplain(post("/api/voice/explain", { design_id: "missing" }), d)).status).toBe(404);
   });
 
   it("404 for an unknown design id, 400 without a design", async () => {
