@@ -60,6 +60,8 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 
 ## Decisions
 - Sun 04:40 · Engine: physics plausibility flags are calibrated on expert practice (PV yield/consumption info > 2.5, warn > 4.0, error > 5.5; battery warn > 2.0 kWh/kWp) and a PV warning is downgraded when similar homes show the size is typical; small homes keep the expert-style 6-7 kWp + battery (#66). `/project?answered=true` = what-if with the planner's answer (#47). PV/battery alternatives = one smaller + one larger size with shares.
+- Sun 03:00 · Deck charts follow docs/pitch-facts.md: accuracy charts use the mode WITHOUT the existing-PV answer, except new full systems (fair); chart 3 is the only answered chart and is titled what-if; new chart 5 = add-on sales without the answer
+- Sun 03:00 · /reality two-houses cases (engine/demo_set.py --reality → demo_reality.json on data-v1): held-out typical PV+battery, EV+wallbox, battery retrofit; a case qualifies only if the held-out model AND /project's design are close (same components, PV ±1 kWp, battery ±2.5 kWh)
 - Sun 00:05 · Vercel stays on Hobby: PRs touching web/ are merged by botmark5; engine-only merges by Cala are skipped on Vercel (#35)
 - Sat 23:45 · Web: Google Solar roof (max kWp, azimuth, pitch) fills home.roof_* once per design with an address; planner can edit or remove; /reality headline = new full systems when /eval reports that slice, add-ons separate
 - Sat 20:30 · Web: engine called only from server routes (key never in the browser); offline estimate after 4 s (design) or on any engine error, 15 s cooldown, "Offline estimate" badge
