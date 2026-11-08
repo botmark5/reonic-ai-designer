@@ -97,7 +97,10 @@ same props. Props not yet supported by a renderer are accepted and ignored. Full
 - `controls`: "full" (time bar + readout UNDER the model), "minimal" (camera presets), "none".
 
 ### Real outside (site3d, behind a flag)
-- On with `?tiles=1` or `NEXT_PUBLIC_HOUSE_TILES=1`; needs `location` and `NEXT_PUBLIC_GOOGLE_MAPS_TILES_KEY`
+- **The drawn model is the default** (Mark: the photo 3D is blurry, panels looked like they float). With the street
+  offered, the view switcher reads "3D model | Street (beta) | Inside" (a lone pill pair where there is no switcher);
+  `onFallbackShown("model")` reports the default. `?tiles=1` opens on the street.
+- Offered with `?tiles=1` or `NEXT_PUBLIC_HOUSE_TILES=1`; needs `location` and `NEXT_PUBLIC_GOOGLE_MAPS_TILES_KEY`
   (referrer-locked: production, localhost:3123, localhost:3125). `?tiles=0` forces it off, `?static=1` forces the still.
 - Google photorealistic 3D tiles re-centred on the address (+x east, −z north, like the model). Panels come from
   `/api/solar/panels` (d-voice): each roof segment sits at Google's plane height + one geoid offset calibrated by

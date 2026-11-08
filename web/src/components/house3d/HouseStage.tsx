@@ -7,7 +7,7 @@ import { cn } from "../../lib/utils";
 import { House3D } from "./House3D";
 import { InsideStage } from "./InsideStage";
 import type { Zone } from "./insideRules";
-import { modelReason, revealedFromKey, revealKey, stageRoof, staticWanted, tilesWanted } from "./stage";
+import { modelReason, revealedFromKey, revealKey, stageRoof, staticWanted, tilesForced, tilesWanted } from "./stage";
 import type {
   ComponentKey, House3DMode, RoofInput, StageControls, StageLocation, StagePanel, StageReveal, StageView,
 } from "./types";
@@ -113,7 +113,18 @@ export function HouseStage({
   const [off, setOff] = useState<string | null>(null);
   const [ownView, setOwnView] = useState<StageView>("outside");
   const shownView = view ?? ownView;
-  const tiles = wanted && !!TILES_KEY && !!at && shownView === "outside" && !still && off !== at;
+  // the drawn model is the default (Mark: the photo 3D is too blurry, panels look like they float); the street is a
+  // choice ("Street (beta)") wherever it is offered, and `?tiles=1` opens on it
+  const forced = useSyncExternalStore(noop, () => tilesForced(window.location.search), () => false);
+  const [streetFor, setStreetFor] = useState<string | null>(null);
+  const chosen = forced || (!!at && streetFor === at);
+  const available = wanted && !!TILES_KEY && !!at && !still;
+  const tiles = available && chosen && shownView === "outside" && off !== at;
+  const chooseStreet = (on: boolean) => {
+    setOwnView("outside");
+    if (on) { setStreetFor(at); if (off === at) { setOff(null); setFailReason(null); } }
+    else setStreetFor(null);
+  };
   // Inside mounts the first time it is shown and then stays (hidden while Outside shows)
   const insideOn = shownView === "inside";
   const [insideOpen, setInsideOpen] = useState(insideOn);
@@ -130,6 +141,7 @@ export function HouseStage({
   const fallbackReason = modelReason({
     outside: shownView === "outside", tiles, still, wanted, key: !!TILES_KEY, at,
     failed: failReason && failReason.at === at ? failReason.reason : null,
+    chosen,
   });
   const cbs = useRef({ onTilesReady, onFallbackShown });
   useEffect(() => { cbs.current = { onTilesReady, onFallbackShown }; });
@@ -154,25 +166,37 @@ export function HouseStage({
   }, [ready, settled, at]);
   const overlays = controls !== "none" && controls !== "time";
   const switcher = view === undefined && overlays && !still && !reveal;
+  // the view choices: Outside / Inside; with the street on offer, the outside splits into the model and the street
+  const streetOn = tiles || (chosen && available && off !== at && shownView === "outside");
+  const views = [
+    ...(available
+      ? [
+          { id: "model", label: "3D model", on: shownView === "outside" && !streetOn, pick: () => chooseStreet(false) },
+          { id: "street", label: "Street (beta)", on: shownView === "outside" && streetOn, pick: () => chooseStreet(true) },
+        ]
+      : switcher ? [{ id: "outside", label: "Outside", on: shownView === "outside", pick: () => setOwnView("outside") }] : []),
+    ...(switcher ? [{ id: "inside", label: "Inside", on: shownView === "inside", pick: () => setOwnView("inside") }] : []),
+  ];
 
   return (
     // className goes to the figure only (pages size it via [data-h3d-stage] descendant selectors)
     <div className="relative">
       {renderStage()}
-      {switcher && (
+      {(switcher || (available && shownView === "outside" && !still)) && (
         <div role="group" aria-label="View" data-h3d-ui className="absolute left-3 top-3 z-10 flex gap-1 rounded-full border border-border/80 bg-surface-1/85 p-1 shadow-[0_1px_2px_rgba(16,17,20,0.05)] backdrop-blur-md">
-          {(["outside", "inside"] as const).map((v) => (
+          {views.map((v) => (
             <button
-              key={v}
+              key={v.id}
               type="button"
-              aria-pressed={shownView === v}
-              onClick={() => setOwnView(v)}
+              aria-pressed={v.on}
+              title={v.id === "street" ? "Google's photo 3D of the street. A known limitation: blurry in places, panels approximate." : undefined}
+              onClick={v.pick}
               className={
                 "inline-flex h-7 items-center rounded-full px-3 text-[13px] font-medium outline-none transition-[background-color,color,transform] duration-150 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-focus " +
-                (shownView === v ? "bg-primary text-primary-ink" : "text-ink-body [@media(hover:hover)]:hover:bg-surface-2")
+                (v.on ? "bg-primary text-primary-ink" : "text-ink-body [@media(hover:hover)]:hover:bg-surface-2")
               }
             >
-              {v === "outside" ? "Outside" : "Inside"}
+              {v.label}
             </button>
           ))}
         </div>
@@ -254,7 +278,7 @@ export function HouseStage({
               setFailReason({ at, reason });
               setOff(at);
             }}
-            onModelView={() => { setFailReason({ at, reason: "model view" }); setOff(at); }}
+            onModelView={undefined}
             className={className}
           />
           </Suspense>

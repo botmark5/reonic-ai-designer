@@ -404,8 +404,6 @@ export function House3D({
             {editedSlots && (
               <button type="button" onClick={() => { setEdited(null); setPicked(null); onPanelsChange?.(null); }} className={cn(pill, "h-7 text-ink-body [@media(hover:hover)]:hover:bg-surface-2")}>Reset</button>
             )}
-            {/* first-time affordance: gone once anything is picked or edited */}
-            {!pickedSlot && !editedSlots && <span className="hidden pl-1 pr-2.5 text-[12px] text-ink-muted lg:inline">Drag a panel to move it</span>}
           </div>
         )}
 

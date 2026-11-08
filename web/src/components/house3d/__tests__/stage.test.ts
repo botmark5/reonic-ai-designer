@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { modelReason, stageRoof, tilesWanted } from "../stage";
+import { modelReason, stageRoof, tilesForced, tilesWanted } from "../stage";
 
 describe("stageRoof", () => {
   it("passes the roof through without a location", () => {
@@ -114,5 +114,17 @@ describe("modelReason (the /visit progress step)", () => {
     expect(modelReason({ ...base, at: null })).toBe("no location");
     expect(modelReason({ ...base, failed: "tiles: slow" })).toBe("tiles: slow");
     expect(modelReason(base)).toBe("street unavailable");
+  });
+});
+
+describe("drawn model by default (Mark: tiles too blurry)", () => {
+  const base = { outside: true, tiles: false, still: false, wanted: true, key: true, at: "48,11", failed: null };
+  it("says 'model' when the street is offered but not chosen", () => {
+    expect(modelReason({ ...base, chosen: false })).toBe("model");
+    expect(modelReason({ ...base, chosen: false, failed: "tiles: slow" })).toBe("tiles: slow");
+  });
+  it("only ?tiles=1 opens on the street", () => {
+    expect(tilesForced("?tiles=1")).toBe(true);
+    expect(tilesForced("")).toBe(false);
   });
 });

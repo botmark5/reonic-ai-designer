@@ -11,21 +11,30 @@ export function stageRoof(roof: RoofInput | undefined, location: StageLocation |
  * Why the procedural model is the outside (the /visit progress step), or null while the real street is on (or the
  * Inside view shows). `failed` is the street's failure for this address, if any.
  */
-export function modelReason(o: { outside: boolean; tiles: boolean; still: boolean; wanted: boolean; key: boolean; at: string | null; failed: string | null }): string | null {
+export function modelReason(o: {
+  outside: boolean; tiles: boolean; still: boolean; wanted: boolean; key: boolean; at: string | null; failed: string | null;
+  /** The viewer (or `?tiles=1`) chose the street; without it the drawn model is the default. Omitted: chosen. */
+  chosen?: boolean;
+}): string | null {
   if (!o.outside || o.tiles) return null;
   if (o.still) return "static";
   if (!o.wanted) return "off";
   if (!o.key) return "no key";
   if (!o.at) return "no location";
-  return o.failed ?? "street unavailable";
+  if (o.failed) return o.failed;
+  if (o.chosen === false) return "model";
+  return "street unavailable";
 }
+
+/** `?tiles=1` opens on the street (testing); otherwise the drawn model is the default and the street is a choice. */
+export const tilesForced = (search: string) => new URLSearchParams(search).get("tiles") === "1";
 
 /** `?static=1` forces the still image (a stuttering projector: reload without WebGL). */
 export const staticWanted = (search: string) => new URLSearchParams(search).get("static") === "1";
 
 /**
- * Real photogrammetry outside is behind a flag until verified on production: `?tiles=1` in the URL or
- * NEXT_PUBLIC_HOUSE_TILES=1. It also needs a location and the Google key; otherwise the procedural house.
+ * The real photogrammetry street is OFFERED (a "Street (beta)" choice; the drawn model stays the default) with
+ * `?tiles=1` in the URL or NEXT_PUBLIC_HOUSE_TILES=1. It also needs a location and the Google key.
  */
 export function tilesWanted(search: string, envFlag: string | undefined): boolean {
   const q = new URLSearchParams(search).get("tiles");
