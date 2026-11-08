@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { handleIntake } from "./intake";
+import { factsFromForm, formDraft, handleIntake } from "./intake";
 import type { SolarResult } from "./solar";
 import type { DesignRequest, DesignResponse } from "./types";
 import { normaliseFacts } from "./voice";
@@ -58,5 +58,41 @@ describe("POST /api/intake", () => {
     expect((await handleIntake(new Request("http://x", { method: "POST", body: "nope" }), deps())).status).toBe(400);
     expect((await handleIntake(post([1, 2]), deps())).status).toBe(400);
     expect((await handleIntake(post(null), deps())).status).toBe(400);
+  });
+});
+
+describe("factsFromForm / formDraft (/visit)", () => {
+  const form = {
+    customer_name: "Anna Weber", address: "Ungererstraße 80", has_existing_pv: false, monthly_bill_eur: 120, household: 4,
+    daytime_presence: true, has_ev: "planned" as const, ev_km_year: null, heating: "gas", heating_age_years: 18, roof_type: "clay_tile",
+    roof_direction: "", wishes: "", annual_kwh: null,
+  };
+
+  it("a form gives the same home as the call with the same answers", () => {
+    const spoken = normaliseFacts({
+      customer_name: "Anna Weber", address: "Ungererstraße 80", has_existing_pv: "no", monthly_bill_eur: 120, household: "family of four",
+      daytime_presence: "yes", has_ev: "planned", heating: "gas", heating_age_years: 18, roof_type: "clay_tile",
+    });
+    const typed = factsFromForm(form);
+    expect(typed.home).toEqual(spoken.home);
+    expect(typed.assumptions).toEqual(spoken.assumptions);
+    expect(typed.home).toMatchObject({ annual_kwh: 4100, has_ev: true, ev_km_year: 15000, has_existing_pv: false, roof_type: "clay_tile", load_profile: "H0" });
+  });
+
+  it("empty fields are 'not answered'; 'now' means an EV today; booleans work", () => {
+    expect(factsFromForm({ has_ev: "now" }).home.has_ev).toBe(true);
+    expect(factsFromForm({ has_ev: false, ev_km_year: null }).home).toMatchObject({ has_ev: false, ev_km_year: null });
+    expect(factsFromForm({ has_existing_pv: true, existing_pv_kwp: 8 }).home).toMatchObject({ has_existing_pv: true, existing_pv_kwp: 8 });
+    expect(factsFromForm({ roof_direction: "" }).home.orientation_deg).toBeNull();
+  });
+
+  it("formDraft = /intake: Google's roof when no direction is given, then the engine", async () => {
+    const d = deps();
+    const r = await formDraft(form, d);
+    expect(r).toMatchObject({ ready: true, design });
+    expect((d.design.mock.calls[0] as [DesignRequest])[0].home).toEqual({ ...factsFromForm(form).home, orientation_deg: 178, tilt_deg: 32 });
+    const viaIntake = deps();
+    await handleIntake(post({ customer_name: "Anna Weber", address: "Ungererstraße 80", has_existing_pv: "no", monthly_bill_eur: 120, household: 4, daytime_presence: "yes", has_ev: "planned", heating: "gas", heating_age_years: 18, roof_type: "clay_tile" }), viaIntake);
+    expect((viaIntake.design.mock.calls[0] as [DesignRequest])[0]).toEqual((d.design.mock.calls[0] as [DesignRequest])[0]);
   });
 });
