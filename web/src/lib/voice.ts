@@ -73,6 +73,13 @@ export function parseBool(v: unknown): boolean | null {
   return null;
 }
 
+/** EV answer: a car that is planned ("next year") counts as yes, because the wallbox goes in with the system. */
+export function parseEv(v: unknown): boolean | null {
+  const t = typeof v === "string" ? v.trim().toLowerCase() : "";
+  if (["planned", "soon", "next year", "geplant", "bald", "nächstes jahr"].includes(t)) return true;
+  return parseBool(v);
+}
+
 export function parseText(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const t = v.trim();
@@ -162,7 +169,7 @@ export function normaliseFacts(raw: unknown): NormalisedFacts {
     monthly_bill_eur: parsePositive(r.monthly_bill_eur),
     household: parseHousehold(r.household),
     daytime_presence: parsePresence(r.daytime_presence),
-    has_ev: parseBool(r.has_ev),
+    has_ev: parseEv(r.has_ev),
     ev_km_year: parsePositive(r.ev_km_year),
     heating: parseKey(r.heating),
     heating_age_years: parsePositive(r.heating_age_years),
@@ -300,6 +307,8 @@ export interface VoiceStore {
   saveDesign(row: { call_id: string | null; home: Home; locks: Locks; design: DesignResponse }): Promise<string | null>;
   callHasDesign(callId: string): Promise<boolean>;
   getDesign(id: string): Promise<DesignResponse | null>;
+  /** The stored facts of the call with this conversation_id, or null. */
+  getCallFacts(conversationId: string): Promise<Record<string, unknown> | null>;
 }
 
 const log = (msg: string) => console.info(`[voice] ${msg}`);
@@ -314,6 +323,7 @@ export const nullStore: VoiceStore = {
   saveDesign: async () => null,
   callHasDesign: async () => false,
   getDesign: async () => null,
+  getCallFacts: async () => null,
 };
 
 /** Postgres/PostgREST "column does not exist" (migration 20261107_calls_conversation_id not applied yet). */
@@ -354,6 +364,11 @@ export function supabaseStore(db: SupabaseClient): VoiceStore {
 
   return {
     saveCall: (p) => saveCall(p),
+    async getCallFacts(conversationId) {
+      const { data, error } = await db.from("calls").select("facts").eq("conversation_id", conversationId).maybeSingle();
+      if (error) log(`calls read failed: ${error.message}`);
+      return (data?.facts as Record<string, unknown> | undefined) ?? null;
+    },
     async saveDesign(row) {
       const save = async (retried: boolean): Promise<string | null> => {
         if (row.call_id) {
@@ -549,9 +564,114 @@ export async function handleCreateDesign(req: Request, deps: VoiceDeps, opts = {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return Response.json({ instruction: SAY_SORRY }, { status: 400 });
   }
-  const result = await createDraftFromFacts(body, deps, { budgetMs: opts.budgetMs, callStatus: "live" });
+  // Answers update_facts stored during the call fill whatever the agent did not repeat now.
+  const cid = parseText((body as Record<string, unknown>).conversation_id);
+  if (cid) {
+    const prev = await withTimeout(deps.store.getCallFacts(cid), 300, "stored facts");
+    const stated = prev?.stated as Record<string, unknown> | undefined;
+    if (stated) body = { ...mergeStated(stated, body as Record<string, unknown>).stated, conversation_id: cid };
+  }
+  const left = Math.max(250, opts.budgetMs - (deps.now() - t0));
+  const result = await createDraftFromFacts(body, deps, { budgetMs: left, callStatus: "live" });
   log(`create-design ${deps.now() - t0} ms, design ${result.pending ? "pending" : (result.design_id ?? "not stored")}`);
   return Response.json(result);
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/voice/update-facts (agent server tool, called after each answer during the call)
+// ---------------------------------------------------------------------------
+/** The facts the agent may send (same names as create_design and the post-call data collection). */
+export const FACT_FIELDS = [
+  "customer_name", "address", "annual_kwh", "monthly_bill_eur", "household", "daytime_presence", "has_ev", "ev_km_year",
+  "heating", "heating_age_years", "roof_type", "roof_direction", "has_existing_pv", "existing_pv_kwp", "existing_battery_kwh",
+  "wishes", "notes",
+] as const;
+
+const meaningful = (v: unknown) =>
+  v != null && (typeof v === "number" ? Number.isFinite(v) : typeof v === "boolean" || parseText(v) != null);
+
+/** Newly stated answers over earlier ones. Empty / "unknown" never erases an answer; unknown keys are ignored. */
+export function mergeStated(prev: Record<string, unknown> | undefined, next: Record<string, unknown>) {
+  const stated: Record<string, unknown> = { ...(prev ?? {}) };
+  const changed: string[] = [];
+  for (const k of FACT_FIELDS) {
+    const v = next[k];
+    if (!meaningful(v)) continue;
+    if (JSON.stringify(stated[k]) !== JSON.stringify(v)) changed.push(k);
+    stated[k] = v;
+  }
+  return { stated, changed };
+}
+
+// One writer per conversation at a time (per server instance): answers arrive back to back.
+const factQueues = new Map<string, Promise<unknown>>();
+function serialised<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = factQueues.get(key) ?? Promise.resolve();
+  const run = prev.catch(() => {}).then(fn);
+  factQueues.set(key, run);
+  void run.finally(() => {
+    if (factQueues.get(key) === run) factQueues.delete(key);
+  }).catch(() => {});
+  return run;
+}
+
+export async function handleUpdateFacts(req: Request, deps: VoiceDeps): Promise<Response> {
+  const t0 = deps.now();
+  const bearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? null;
+  if (!checkAgentToken(req.headers.get("x-agent-token") ?? bearer, deps.toolSecret)) {
+    log("update-facts rejected: bad or missing agent token");
+    return Response.json({ ok: false, error: "unauthorised" }, { status: 401 });
+  }
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    body = null;
+  }
+  const raw = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
+  const cid = raw ? parseText(raw.conversation_id) : null;
+  if (!raw || !cid) return Response.json({ ok: false, error: "conversation_id is required" }, { status: 400 });
+
+  const result = await serialised(cid, async () => {
+    const prev = (await deps.store.getCallFacts(cid)) ?? {};
+    const { stated, changed } = mergeStated(prev.stated as Record<string, unknown> | undefined, raw);
+    const { facts, home, assumptions } = normaliseFacts({ ...stated, conversation_id: cid });
+    // Keep a roof found earlier for this address unless the caller stated the direction.
+    const solar = prev.solar as SolarResult | undefined;
+    const roof = solar ? roofFromSolar(solar) : null;
+    const solarForAddress = Boolean(solar && prev.solar_for === facts.address);
+    if (roof && solarForAddress) {
+      if (home.orientation_deg == null) home.orientation_deg = roof.orientation_deg;
+      if (home.tilt_deg == null) home.tilt_deg = roof.tilt_deg;
+    }
+    const callId = await deps.store.saveCall({
+      conversation_id: cid,
+      status: "live",
+      customer_name: facts.customer_name ?? undefined,
+      address: facts.address ?? undefined,
+      facts: { ...home, voice: facts, stated, assumptions, updated_fields: changed, facts_updated_at: new Date(deps.now()).toISOString() },
+    });
+    if (facts.address && !solarForAddress) {
+      const address = facts.address;
+      deps.defer(async () => {
+        const found = await withTimeout(deps.solar(address), 5000, "solar (update-facts)");
+        if (!found) return;
+        await serialised(cid, async () => {
+          const now = (await deps.store.getCallFacts(cid)) ?? {};
+          if ((now.voice as VoiceFacts | undefined)?.address !== address) return; // address changed meanwhile
+          const r = roofFromSolar(found);
+          const v = now.voice as VoiceFacts;
+          const patch: Record<string, unknown> = { solar: found, solar_for: address };
+          if (r && v.roof_direction == null && now.orientation_deg == null) patch.orientation_deg = r.orientation_deg;
+          if (r && now.tilt_deg == null) patch.tilt_deg = r.tilt_deg;
+          await deps.store.saveCall({ conversation_id: cid, facts: patch });
+        });
+      });
+    }
+    return { callId, changed };
+  });
+  log(`update-facts ${deps.now() - t0} ms, updated ${result.changed.join(", ") || "nothing new"}`);
+  return Response.json({ ok: true, call_id: result.callId, updated: result.changed });
 }
 
 // ---------------------------------------------------------------------------

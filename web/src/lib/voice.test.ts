@@ -19,6 +19,7 @@ import {
   type VoiceDeps,
   type VoiceStore,
   voiceDeps,
+  handleUpdateFacts,
 } from "./voice";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,10 @@ function fakeStore() {
     },
     async getDesign(id) {
       return designs.find((d) => d.id === id)?.design ?? null;
+    },
+    async getCallFacts(conversationId) {
+      await new Promise((r) => setTimeout(r, 1)); // a real round trip: lets concurrent writers interleave
+      return [...calls.values()].find((c) => c.patch.conversation_id === conversationId)?.patch.facts ?? null;
     },
   };
   return { store, calls, designs };
@@ -216,6 +221,12 @@ describe("normaliseFacts", () => {
     expect(seen!.home).toMatchObject({ inhabitants: 4, annual_kwh: 4250, load_profile: "H0" });
   });
 
+  it("counts a planned EV as yes, but not a planned existing PV", () => {
+    expect(normaliseFacts({ has_ev: "planned" }).home).toMatchObject({ has_ev: true, ev_km_year: 15000 });
+    expect(normaliseFacts({ has_ev: "Next year" }).home.has_ev).toBe(true);
+    expect(normaliseFacts({ has_existing_pv: "planned" }).home.has_existing_pv).toBeNull();
+  });
+
   it("reads EV answers", () => {
     expect(normaliseFacts({ has_ev: "yes", ev_km_year: "15000" }).home).toMatchObject({ has_ev: true, ev_km_year: 15000 });
     expect(normaliseFacts({ has_ev: false, ev_km_year: 15000 }).home).toMatchObject({ has_ev: false, ev_km_year: null });
@@ -293,6 +304,99 @@ const FACTS = {
   heating: "gas",
   roof_direction: "south",
 };
+
+describe("handleUpdateFacts", () => {
+  const auth = { "x-agent-token": "tool-secret" };
+  const upd = (d: ReturnType<typeof deps>, body: unknown, headers: Record<string, string> = auth) =>
+    handleUpdateFacts(post("/api/voice/update-facts", body, headers), d);
+  const stored = (store: ReturnType<typeof fakeStore>, cid = "c1") =>
+    [...store.calls.values()].find((c) => c.patch.conversation_id === cid)?.patch;
+
+  it("rejects a missing token (401) and a missing conversation_id (400)", async () => {
+    const d = deps();
+    expect((await upd(d, { conversation_id: "c1", household: 4 }, {})).status).toBe(401);
+    expect((await upd(d, { household: 4 })).status).toBe(400);
+    expect((await upd(d, "not json")).status).toBe(400);
+  });
+
+  it("stores each answer as it comes, merges partial facts, and is idempotent", async () => {
+    const fs = fakeStore();
+    const d = deps({ store: fs.store });
+    const r1 = await upd(d, { conversation_id: "c1", household: "family of four" });
+    expect(await r1.json()).toMatchObject({ ok: true, call_id: "call-1", updated: ["household"] });
+    expect(stored(fs)).toMatchObject({ status: "live", facts: { inhabitants: 4, annual_kwh: 4250, stated: { household: "family of four" } } });
+
+    const r2 = await upd(d, { conversation_id: "c1", has_ev: "yes" });
+    expect((await r2.json()).updated).toEqual(["has_ev"]);
+    expect(stored(fs)?.facts).toMatchObject({ inhabitants: 4, has_ev: true, ev_km_year: 15000 });
+
+    const before = JSON.stringify({ ...stored(fs)?.facts, facts_updated_at: null, updated_fields: null });
+    const r3 = await upd(d, { conversation_id: "c1", has_ev: "yes", household: "family of four" });
+    expect((await r3.json()).updated).toEqual([]);
+    expect(JSON.stringify({ ...stored(fs)?.facts, facts_updated_at: null, updated_fields: null })).toBe(before);
+    expect(fs.calls.size).toBe(1);
+  });
+
+  it("empty or unknown answers never erase an earlier one; a correction overwrites it", async () => {
+    const fs = fakeStore();
+    const d = deps({ store: fs.store });
+    await upd(d, { conversation_id: "c1", household: 4, customer_name: "Anna Test" });
+    await upd(d, { conversation_id: "c1", household: "", customer_name: "unknown", roof_direction: null });
+    expect(stored(fs)).toMatchObject({ customer_name: "Anna Test", facts: { inhabitants: 4 } });
+    await upd(d, { conversation_id: "c1", household: 3 });
+    expect(stored(fs)?.facts).toMatchObject({ inhabitants: 3 });
+  });
+
+  it("ignores fields that are not facts", async () => {
+    const fs = fakeStore();
+    const d = deps({ store: fs.store });
+    const r = await upd(d, { conversation_id: "c1", annual_kwh: 5000, design: { pv: 99 }, status: "sent" });
+    expect((await r.json()).updated).toEqual(["annual_kwh"]);
+    expect(stored(fs)?.status).toBe("live");
+    expect((stored(fs)?.facts as Record<string, unknown>).stated).toEqual({ annual_kwh: 5000 });
+  });
+
+  it("serialises concurrent answers for one call so none is lost", async () => {
+    const fs = fakeStore();
+    const d = deps({ store: fs.store });
+    await Promise.all([
+      upd(d, { conversation_id: "c1", household: 2 }),
+      upd(d, { conversation_id: "c1", has_ev: "yes" }),
+      upd(d, { conversation_id: "c1", roof_direction: "south" }),
+    ]);
+    expect((stored(fs)?.facts as Record<string, unknown>).stated).toEqual({ household: 2, has_ev: "yes", roof_direction: "south" });
+  });
+
+  it("looks the roof up from a new address after answering, and keeps it on later answers", async () => {
+    const fs = fakeStore();
+    const solar = vi.fn(async (): Promise<SolarResult> => ({
+      status: "ok", address: "Musterstr 1", lat: 48.1, lng: 11.5, max_panels: 30, panel_watts: 400, sunshine_hours_year: 1100,
+      imagery_quality: "HIGH", imagery_date: null,
+      segments: [{ pitch_deg: 35, azimuth_deg: 170, area_m2: 50 }, { pitch_deg: 35, azimuth_deg: 350, area_m2: 50 }],
+    }));
+    const d = deps({ store: fs.store, solar });
+    await upd(d, { conversation_id: "c1", address: "Musterstr 1, München" });
+    expect(solar).not.toHaveBeenCalled(); // not on the answer path
+    await Promise.all(d.deferred.map((fn) => fn()));
+    expect(solar).toHaveBeenCalledTimes(1);
+    expect(stored(fs)?.facts).toMatchObject({ orientation_deg: 170, tilt_deg: 35, solar: { status: "ok" } });
+    await upd(d, { conversation_id: "c1", household: 2 });
+    expect(stored(fs)?.facts).toMatchObject({ orientation_deg: 170, tilt_deg: 35, inhabitants: 2 });
+    await Promise.all(d.deferred.slice(1).map((fn) => fn()));
+    expect(solar).toHaveBeenCalledTimes(1); // same address: no second lookup
+  });
+
+  it("create-design fills in answers the agent stored earlier but did not repeat", async () => {
+    const fs = fakeStore();
+    let seen: DesignRequest | null = null;
+    const d = deps({ store: fs.store, design: async (req) => ((seen = req), mockDesign(req)) });
+    await upd(d, { conversation_id: "c1", household: 4, has_ev: "yes", has_existing_pv: "no" });
+    const res = await handleCreateDesign(post("/api/voice/create-design", { conversation_id: "c1", annual_kwh: 5000 }, auth), d);
+    expect(res.status).toBe(200);
+    expect(seen!.home).toMatchObject({ annual_kwh: 5000, inhabitants: 4, has_ev: true, has_existing_pv: false });
+    expect(fs.calls.size).toBe(1);
+  });
+});
 
 describe("handleCreateDesign", () => {
   it("401 with an instruction when the token is wrong or missing", async () => {
