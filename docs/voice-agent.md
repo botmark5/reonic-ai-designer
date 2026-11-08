@@ -38,10 +38,45 @@ no use and no bill → household-size estimate, else 4,000 kWh.
 3. While developing locally, a cloudflared tunnel can stand in for APP_URL (see the end of this file).
 See docs/rosi-notes.md for the pitfalls (raw-body HMAC, null → '', defaults for dynamic variables).
 
+## Tool config: `update_facts` (HQ attaches it; no new env var)
+- Type: webhook / server tool · Method `POST` · URL `<APP_URL>/api/voice/update-facts` · response timeout 5 s.
+- Header: `x-agent-token` = secret `ELEVENLABS_TOOL_SECRET` (the same secret as `create_design`).
+- Description: "Save the caller's answer right after they give it, silently, without telling the caller. Send
+  conversation_id and ONLY the fields the caller just stated or corrected. Never guess or fill in values."
+- Prompt line: "After each answer, call update_facts with just that answer, then continue the conversation."
+- Body parameters (all optional except `conversation_id`; the same descriptions as `create_design`):
+```json
+{
+  "type": "object",
+  "required": ["conversation_id"],
+  "properties": {
+    "conversation_id": { "type": "string", "description": "Dynamic variable system__conversation_id" },
+    "customer_name": { "type": "string" },
+    "address": { "type": "string", "description": "Street, number, postcode, town" },
+    "annual_kwh": { "type": "number", "description": "Yearly electricity use in kWh, if the caller knows it" },
+    "monthly_bill_eur": { "type": "number", "description": "Monthly electricity bill in euros" },
+    "household": { "type": "string", "description": "People living there, as said: a number or words like 'family of four'" },
+    "daytime_presence": { "type": "string", "description": "Is someone home during the day? yes / no / as said" },
+    "has_ev": { "type": "string", "enum": ["yes", "no", "planned", "unknown"] },
+    "ev_km_year": { "type": "number", "description": "Kilometres per year, only if stated" },
+    "heating": { "type": "string", "enum": ["gas", "oil", "heatpump", "electric", "district", "wood", "other", "unknown"] },
+    "heating_age_years": { "type": "number" },
+    "roof_type": { "type": "string", "enum": ["concrete_tile", "clay_tile", "flat", "metal", "slate", "other", "unknown"] },
+    "roof_direction": { "type": "string", "enum": ["south", "south_east", "south_west", "east_west", "east", "west", "north", "unknown"] },
+    "has_existing_pv": { "type": "string", "enum": ["yes", "no", "unknown"] },
+    "existing_pv_kwp": { "type": "number", "description": "Size of existing solar in kWp, only if stated" },
+    "existing_battery_kwh": { "type": "number" },
+    "wishes": { "type": "string" }
+  }
+}
+```
+Note: "planned" for `has_ev` counts as yes (an EV next year needs the wallbox now).
+
 ## Endpoints (session D, `web/src/app/api/{voice,solar}`, logic in `web/src/lib/{voice,solar}.ts`)
 | Endpoint | Auth | What it does |
 |---|---|---|
 | `POST /api/voice/create-design` | `x-agent-token` (or `Authorization: Bearer`) = `ELEVENLABS_TOOL_SECRET` | Normalises the facts (bill → kWh at 0.35 €/kWh, household-size estimate, heating/roof vocab), fills a missing roof orientation/tilt from Google Solar (≤ 0.9 s), calls the engine (budget 2.5 s), writes `calls` (status `live`, in parallel with the engine) + ONE `designs` row per call (source `voice`, status `draft`; a second tool call updates it while it is still a draft), returns `{ instruction, call_id, design_id, pending }`. Engine slow or down → `pending: true`, "in the inbox in a minute"; after the response it waits up to 10 s for the slow answer, else retries once after the engine client's 15 s cool-down. Never stores the engine client's offline estimate as a voice draft. |
+| `POST /api/voice/update-facts` | `x-agent-token` (or Bearer) = `ELEVENLABS_TOOL_SECRET` (same as create-design) | Agent tool called after EACH answer during the call. Body: `conversation_id` + only the fields just stated or corrected. Merges into `calls.facts.stated` (empty/unknown never erases; corrections overwrite; idempotent), re-normalises, and writes the same `calls.facts` shape as create-design (home fields + `voice` + `assumptions`) plus `stated`, `updated_fields`, `facts_updated_at`; status `live`. A new address triggers a Google roof lookup after the answer (fills `orientation_deg` / `tilt_deg`, `solar`). Answers `{ ok, call_id, updated }` in ~0.2-0.5 s. create-design later fills any field the agent did not repeat from these stored answers. |
 | `POST /api/voice/post-call` | `ElevenLabs-Signature` HMAC on the raw body, `ELEVENLABS_WEBHOOK_SECRET`, ±30 min | `post_call_transcription` → transcript, summary, data-collection values and evaluation results onto the same `calls` row (by `conversation_id`), status `ended`/`failed`. If the agent never called the tool and use/bill/household is known, drafts the design then. Other webhook types → `{ ignored: true }`. |
 | `GET /api/solar?address=…` | none (server key); 20/min per client | `{ status: ok, lat, lng, segments[{pitch_deg, azimuth_deg, area_m2}], max_panels, panel_watts, sunshine_hours_year, imagery_quality }` or `{ status: not_covered | not_found | no_key | error, reason }`. Roof = the most south-facing face with ≥ 70 % of the largest face's area. Cached 24 h (errors are not cached). |
 | `GET /api/solar/panels?lat=&lng=&kwp=` (or `address=&kwp=`) | none (server key); 20/min per client | Panel placement for the 3D house: Google's panels best-first, N = round(kWp / 0.45), capped at what fits (`capped`). Returns `center`, `building_bbox`, `panel_size`, `panels[{lat, lng, x_m, y_m, orientation, segment_index, yearly_kwh}]` (x/y = metres east/north of the centre) and `segments[{index, pitch_deg, azimuth_deg, area_m2, plane_height_m (above sea level), plane_height_rel_m (above the lowest segment), center, bbox, panel_count}]`. buildingInsights cached 24 h per building, so kWp changes are free. Failures: `{status: not_covered | not_found | no_key | error, reason}`. |
