@@ -5,6 +5,7 @@ Before pasting:
 - Replace `<APP_URL>`; the passcode goes to the judges separately, never into this text.
 - Lines marked **[if merged]** describe hero moments still being built tonight. All of them are merged (#89 /live, #103 /offer); keep each line if it works on the stage build, otherwise delete it.
 - Line marked **[if TTS on]**: keep only if "Listen to your offer" plays audio on production.
+- Lines marked **[if deployed]** are merged on main but were not on Vercel production on 8 Nov (rate limit): keep them only if production serves them (or the judges get the stage build).
 
 ---
 
@@ -20,6 +21,10 @@ In Reonic's words, planners "spend hours on every single design", and "the first
 - **Voice intake.** An ElevenLabs agent takes the site-visit call. It asks about existing solar first, collects the facts, reads them back, and a draft design lands in the planner's inbox before the caller hangs up.
 - **Planner.** The draft with a 3D house on top and four system cards below. Each card shows its P10–P90 range, the reasons and similar past homes. The planner can lock any component or type a change; the chain re-plans the rest. When a planner overrides a size, the card says how it compares with the 40 most similar past homes ("Larger than 99 % of similar homes").
 - **Reality check.** A page that shows one past home as two houses, the engine's design next to what the expert sold, and below them the evaluation numbers on held-out homes, live from the engine, including where it is only on par. The two houses are a picture of how the engine designs, not a test: it learned from that home too.
+- **[if deployed] Site visit on the phone.** `/visit` is a one-thumb form for the installer at the house: only the address is required. "Build the design" lights up five real steps (found the house, built the 3D model, placed the panels, added battery, wallbox and heat pump, draft ready), and the draft lands in the planner inbox marked "From site visit". Same normalisation and engine as the call.
+- **Typed intake.** `/intake` asks the voice agent's questions on screen and goes through the same normalisation as the call, so a typed draft and a called draft with the same facts are the same design.
+- **The real house.** The planner types an address and presses **Find house**: Google Solar fills the roof limit, direction and pitch, and the house can sit in its real street. An uploaded floor plan is read by Claude into rooms for the Inside view; it is layout only and never changes a size. Panels can be added, removed and moved one by one; the engine's kWp stays.
+- **The installer decides what the homeowner may change.** Before sending, the planner narrows the engine's own options (solar size, battery sizes, car charger, heat pump option). The homeowner's page shows only those, and the server rejects anything else.
 - **Homeowner offer.** A share link with the 3D house, the system and a plain-language explanation they can read or listen to.
 
 ## How we meet Reonic's criteria
@@ -46,7 +51,7 @@ In Reonic's words, planners "spend hours on every single design", and "the first
 
 ### 4. Execution and demo
 - The demo runs end to end on production: phone call → draft in the inbox → "buying an EV next year" → design adapts → compared with the real expert design and the metrics across 315 held-out homes → homeowner link.
-- 410 engine tests and 345 web tests (main 5cd83fd, 8 Nov; re-count right before submitting).
+- 410 engine tests and 419 web tests (main 5daaafc, 8 Nov; re-count right before submitting).
 - The engine evaluation is reproducible from the repository, given Reonic's data.
 
 ## Best use of ElevenLabs
@@ -60,9 +65,10 @@ The phone call is the front door of the product. An **ElevenLabs conversational 
 ## How to try it
 - Open `<APP_URL>`. The planner passcode is given to the judges separately.
 - **Live call:** press "Play demo call" for the scripted call, then "End call and send draft", then "Open in planner".
+- **Typed intake:** `/intake`, answer the questions, then "Open in planner".
 - **Planner:** try "They are buying an EV next year", lock any component, or set "Solar already on the roof?" to Yes.
 - **Reality check:** `/reality` shows example past homes next to the real expert design, and the held-out numbers below them.
-- **Homeowner:** "Use this design", then "Send to homeowner", then open the link.
+- **Homeowner:** "Use this design", then "Send to homeowner", choose what the homeowner may change, "Copy homeowner link", then open the link.
 
 ## Known limits
 - **PV size has hit the ceiling of these inputs.** On new systems the engine is on par with the best rule of thumb, not better. Roof size and customer wishes are not in the data; roof capacity from Google Solar is an optional input that caps the size.
@@ -72,3 +78,4 @@ The phone call is the front door of the product. An **ElevenLabs conversational 
 - **Economics use placeholder prices.** Payback and savings are illustrations, not quotes.
 - **Two installers only.** Transfer to a new installer works in our test, but it rests on one pair.
 - **No win-rate or time-saved claim.** Every project in the data is a signed deal.
+- **Learning sizes from every offer option** (Reonic's answer that every option is a valid design) was tested on a staging engine and not shipped: size errors were slightly lower, but the expert's PV among our three options fell from 69 % to 66 % of new systems and the EV-owner example moved away from the expert.

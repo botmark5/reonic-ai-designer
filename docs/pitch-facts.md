@@ -40,6 +40,18 @@ Sources:
 | PV within ±1.5 kWp, all homes | 40 % | 43 % | `/eval` `metrics.*.pv_kwp_within_1.5_pct` | Caveat: **below the rule**. Say it before a judge asks: "on exact size we are no better than the band median; the gains are the yes/no decisions and the ranges". |
 | Exact PV package match | 9 % | 9 % | RESULTS.md, "PV exact match" | Don't |
 
+### Alternative scoring: against the closest of the expert's options (Reonic, 8 Nov)
+Reonic (Niklas, 8 Nov): the export has no "signed" flag, and every option is a valid planner's design. So scoring against the expert's *closest* option is a fair alternative to scoring against the first option. Same model, same 315 homes, same rules of thumb scored the same way.
+
+| fact (all 315 homes) | engine | best rule | first-option number | source | say it |
+|---|---|---|---|---|---|
+| PV size where both chose PV, vs closest option | **2.45 kWp** | 2.60 (band median) | 2.48 vs 2.64 | offline run of today's model with #127's `pv_kwp_mae_nearest_option` (a-labels) | Caveat: say "scored against the closest of the expert's options". |
+| PV within ±1.5 kWp, vs closest option | **45 %** | 45 % (band median, 44.96) | 40 vs 43 | same, `pv_kwp_within_1.5_nearest_option_pct` (45.45) | Caveat: "level with the rule" (not below it) once every option counts. Never "better". |
+| Battery within one size step, vs closest option | **58 %** | 53 % (band median) | 54 vs 51 | same, `battery_within_one_step_nearest_option_pct` (57.78 vs 53.17) | Caveat: alternative scoring, say it as such. |
+
+Also available (same run): new systems (answered) PV 2.47 vs 2.57 kWp, within ±1.5 46 vs 45 %; whole-project PV error, all homes, 2.89 vs 3.71.
+Don't: mix the two scorings in one sentence, or replace the first-option headline (2.94 vs 3.77, 2.50 vs 2.62) with these. Not on `/eval` in production (#127 was not shipped), so the source is "offline, a-labels".
+
 ## 3. What-if: the planner answers "Solar already on the roof?" (never as accuracy)
 In this test the answer is taken from the expert offer itself, so these rows show what the question is worth **if** answered correctly. Quote them only with the words "what-if" or "if the planner answers", never as "our accuracy". Why the question exists: the data records existing solar for only 5 % of the homes that got a battery-only add-on (`engine/README.md`).
 
@@ -113,7 +125,7 @@ Expert range means the smallest to largest PV across the variants the expert off
 | Planner overrides are validated | a locked component is compared with the 40 most similar past homes and physics; "Larger than 99 % of similar homes" shown on the card | `/validate`; planner card | Safe: this is the brief's second use case, "design validation". |
 | Consistency | same inputs → same design, deterministic (fixed seeds; two trainings give identical predictions) | `engine/tests/test_audit_regressions.py` | Safe: "junior planners design like the installer's own history". |
 | Three use cases, one engine | planner draft, planner validation, homeowner offer (+ voice intake) | the product | Safe |
-| Engine tests / web tests | 410 pytest (397 run without the data, 13 need it); 345 vitest in 33 files (main 5cd83fd, 8 Nov, all passing; engine unchanged since dadf8f3). Re-count right before submitting. | `pytest`; `npm test` | Safe |
+| Engine tests / web tests | 410 pytest (397 run without the data, 13 need it); 419 vitest in 43 files (main 5daaafc, 8 Nov, all passing; engine code unchanged since dadf8f3). Re-count right before submitting. | `pytest`; `npm test` | Safe |
 | Who decides sizes | the engine only. Claude turns planner text into input changes and writes explanations. | `CLAUDE.md`, `engine/README.md` | Safe |
 
 ## Don't say
