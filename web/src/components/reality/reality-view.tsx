@@ -321,7 +321,7 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
             value={manual}
             onChange={(e) => setManual(e.target.value)}
             placeholder="Open a past project by ID"
-            className="h-8 min-w-0 flex-1 rounded-sm border border-border bg-surface-1 px-2.5 font-mono text-[13px] outline-none focus-visible:border-focus"
+            className="h-8 min-w-0 flex-1 rounded-sm border border-border bg-surface-1 px-2.5 font-mono text-[13px] outline-none focus-visible:border-focus focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-focus/60"
           />
           <Button type="submit" size="sm" variant="ghost">Open</Button>
         </form>

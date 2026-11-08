@@ -263,7 +263,7 @@ function Workspace({
 
         <div aria-live="polite" className="empty:hidden">
           {!s.busy && s.change && (s.change.diff.lines.length > 0 || s.change.note) && (
-            <p key={s.change.id} className="m-0 flex flex-wrap items-center gap-2 text-[13px] text-ink-body animate-in fade-in slide-in-from-top-1 duration-300">
+            <p key={s.change.id} className="m-0 flex flex-wrap items-center gap-2 text-[13px] text-ink-body animate-in fade-in motion-safe:slide-in-from-top-1 duration-300">
               <span className="rounded-sm bg-highlight px-2 py-0.5 font-medium text-[#1b1d20]">Changed</span>
               {s.change.diff.lines.length > 0 && <span className="font-mono tabular">{s.change.diff.lines.join(" · ")}</span>}
               {s.change.note && <span>{s.change.diff.lines.length > 0 ? "· " : ""}{s.change.note}</span>}
