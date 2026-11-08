@@ -7,6 +7,7 @@ import { HouseStage } from "@/components/house3d";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/field";
 import { ServedBadge } from "@/components/ui/served-badge";
+import { choicesFor } from "@/lib/allowed";
 import { sizeOf } from "@/lib/diff";
 import { fmtEur, fmtInt } from "@/lib/format";
 import type { Offer } from "@/lib/offer";
@@ -91,18 +92,23 @@ export function OfferView({ offer }: { offer: Offer }) {
   const reqId = useRef(0);
   const batteryAllowed = (offer.allowed.find((a) => a.component === "battery")?.values ?? []) as number[];
   const wallboxAllowed = offer.allowed.find((a) => a.component === "wallbox")?.values ?? [];
+  // Only what the installer allowed when sending (the server rejects anything else).
+  const pvAllowed = choicesFor(offer.allowed, "pv") as number[];
+  const hpAllowed = choicesFor(offer.allowed, "heatpump").length > 1;
+  const recommendedPv = sizeOf(base.design, "pv") ?? 0;
+  const [pv, setPv] = useState<number>(recommendedPv);
   const [battery, setBattery] = useState<number>(sizeOf(base.design, "battery") ?? 0);
   const [wallbox, setWallbox] = useState<boolean>(base.design.wallbox.include);
   const [heatpump, setHeatpump] = useState(false);
 
-  async function choose(next: { battery_kwh: number; wallbox: boolean }) {
+  async function choose(next: { pv_kwp?: number; battery_kwh: number; wallbox: boolean }) {
     const id = ++reqId.current; // only the latest choice may update the page
     setBusy(true);
     try {
       const res = await fetch(`/api/offer/${offer.token}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "variant", ...next }),
+        body: JSON.stringify({ action: "variant", ...(pvAllowed.length ? { pv_kwp: pv } : {}), ...next }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Please try again.");
       const d = (await res.json()) as DesignResponse;
@@ -122,7 +128,7 @@ export function OfferView({ offer }: { offer: Offer }) {
   const n = view.numbers;
   const panels = n.pv ? Math.round(n.pv / 0.45) : 0;
   const recommendedBattery = sizeOf(base.design, "battery") ?? 0;
-  const changed = battery !== recommendedBattery || wallbox !== base.design.wallbox.include || (heatpump && hpOffered);
+  const changed = pv !== recommendedPv || battery !== recommendedBattery || wallbox !== base.design.wallbox.include || (heatpump && hpOffered);
 
   // The house's clock: the viewer's slider, or the voice while "Listen" plays.
   const [hour, setHour] = useState(12.5);
@@ -178,6 +184,7 @@ export function OfferView({ offer }: { offer: Offer }) {
               reqId.current++;
               setBusy(false);
               setHeatpump(false);
+              setPv(recommendedPv);
               setBattery(recommendedBattery);
               setWallbox(base.design.wallbox.include);
               setDesign(base);
@@ -193,9 +200,21 @@ export function OfferView({ offer }: { offer: Offer }) {
             <Choice
               icon={<SunMedium className="size-5 text-comp-pv" strokeWidth={1.5} />}
               title="Solar panels"
-              inline
+              inline={pvAllowed.length === 0}
               sub={n.pv ? `${panels} panels on your roof · sized by your installer` : "No new panels: you already have solar"}
             >
+              {pvAllowed.length > 0 && (
+                <Segmented
+                  label="Solar size"
+                  value={pv}
+                  onChange={(v) => {
+                    setPv(v);
+                    choose({ pv_kwp: v, battery_kwh: battery, wallbox });
+                  }}
+                  options={pvAllowed.map((v) => ({ value: v, label: `${kwp.format(v)} kWp${v === recommendedPv ? " ★" : ""}` }))}
+                />
+              )}
+              {pvAllowed.length === 0 && (
               <span className="font-mono text-[22px] font-medium tabular">
                 {n.pv ? (
                   <>
@@ -205,6 +224,7 @@ export function OfferView({ offer }: { offer: Offer }) {
                   "–"
                 )}
               </span>
+              )}
             </Choice>
             {batteryAllowed.length > 1 && (
               <Choice icon={<BatteryMedium className="size-5 text-comp-battery" strokeWidth={1.5} />} title="Battery" sub="Stores midday sun for the evening">
@@ -219,7 +239,7 @@ export function OfferView({ offer }: { offer: Offer }) {
                 />
               </Choice>
             )}
-            {hpOffered && hpOption?.available && (
+            {hpOffered && hpAllowed && hpOption?.available && (
               <Choice
                 icon={<Fan className="size-5 text-comp-heatpump" strokeWidth={1.5} />}
                 title="Heat pump"
@@ -254,7 +274,7 @@ export function OfferView({ offer }: { offer: Offer }) {
               </Choice>
             )}
           </fieldset>
-          {(batteryAllowed.length > 1 || wallboxAllowed.length > 1) && <p className="-mt-4 m-0 text-[13px] text-ink-muted">★ what your installer recommends</p>}
+          {(pvAllowed.length > 1 || batteryAllowed.length > 1 || wallboxAllowed.length > 1) && <p className="-mt-4 m-0 text-[13px] text-ink-muted">★ what your installer recommends</p>}
 
           <section aria-label="What it means for you" className="grid grid-cols-2 gap-3">
             {(
@@ -298,7 +318,7 @@ export function OfferView({ offer }: { offer: Offer }) {
                   const res = await fetch(`/api/offer/${offer.token}`, {
                     method: "POST",
                     headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ action: "accept", battery_kwh: battery, wallbox }),
+                    body: JSON.stringify({ action: "accept", ...(pvAllowed.length ? { pv_kwp: pv } : {}), battery_kwh: battery, wallbox, ...(heatpump && hpOffered ? { heatpump: true } : {}) }),
                   });
                   if (!res.ok) return toast.error("Could not send your answer. Please try again.");
                   setAccepted(true);

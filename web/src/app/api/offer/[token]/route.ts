@@ -17,7 +17,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/offer/[token]">
   try {
     if (!allowRequest("offer", clientKey(req), 40, 60_000)) return Response.json({ error: "Too many requests. Wait a minute." }, { status: 429 });
     const { token } = await ctx.params;
-    const body = (await readJsonCapped<{ action?: string; battery_kwh?: number; wallbox?: boolean }>(req, 4_000)) ?? {};
+    const body = (await readJsonCapped<{ action?: string; pv_kwp?: number; battery_kwh?: number; wallbox?: boolean; heatpump?: boolean }>(req, 4_000)) ?? {};
     const offer = await getOfferWithId(token);
     if (!offer) return Response.json({ error: "This offer link is not valid." }, { status: 404 });
     if (body.action === "listen") {
@@ -31,7 +31,9 @@ export async function POST(req: Request, ctx: RouteContext<"/api/offer/[token]">
       const { stream } = await engine.explain({ design_response: offer.design, audience: "homeowner" });
       return new Response(stream, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
     }
-    const choice = { battery_kwh: body.battery_kwh, wallbox: body.wallbox };
+    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+    const bool = (v: unknown) => (typeof v === "boolean" ? v : undefined);
+    const choice = { pv_kwp: num(body.pv_kwp), battery_kwh: num(body.battery_kwh), wallbox: bool(body.wallbox), heatpump: bool(body.heatpump) };
     if (!choiceAllowed(offer.allowed, choice)) return Response.json({ error: "Your installer did not offer this option." }, { status: 400 });
 
     if (body.action === "accept") {
@@ -44,6 +46,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/offer/[token]">
     }
     const locks = {
       ...offer.locks,
+      ...(choice.pv_kwp !== undefined ? { pv_kwp: choice.pv_kwp } : {}),
       ...(choice.battery_kwh !== undefined ? { battery_kwh: choice.battery_kwh } : {}),
       ...(choice.wallbox !== undefined ? { wallbox: choice.wallbox } : {}),
     };
