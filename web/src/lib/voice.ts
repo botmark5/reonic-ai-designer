@@ -15,6 +15,7 @@ import { DEFAULT_INSTALLER, engine, engineUrl } from "./engine";
 import { allowRequest, clientKey, lookupSolar, roofFromSolar, type SolarResult } from "./solar";
 import { getServerSupabase, type TranscriptTurn } from "./supabase";
 import { EMPTY_LOCKS, type DesignRequest, type DesignResponse, type Home, type Locks } from "./types";
+import staticVoiceCache from "./voice-cache.json";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -771,36 +772,68 @@ export async function handlePostCall(req: Request, deps: VoiceDeps): Promise<Res
 type Lang = "en" | "de";
 const pct = (x: number | undefined) => Math.round((x ?? 0) * 100);
 
-/** Deterministic fallback when Claude is not available. ≤ 110 words. */
-export function offerTemplate(d: DesignResponse, lang: Lang): string {
+// ---------------------------------------------------------------------------
+// The offer as a timeline: each sentence may belong to a moment of the house's day ("Listen to your offer"
+// drives the 3D house's clock: morning 8 h, noon 12.5 h, evening 19 h).
+// ---------------------------------------------------------------------------
+export type Moment = "morning" | "noon" | "evening" | null;
+export const MOMENT_HOUR: Record<Exclude<Moment, null>, number> = { morning: 8, noon: 12.5, evening: 19 };
+export interface ScriptSegment {
+  text: string;
+  moment: Moment;
+}
+export interface TimedSegment extends ScriptSegment {
+  start_s: number;
+  end_s: number;
+  /** clock time the house should show while this sentence plays; null = keep the current time */
+  time_of_day_h: number | null;
+}
+const SCRIPT_VERSION = 2; // bump when the script/timing format changes (invalidates cached audio)
+
+/** Deterministic script (fallback when Claude is not available), with a morning / noon / evening day story. ≤ 110 words. */
+export function offerSegmentsTemplate(d: DesignResponse, lang: Lang): ScriptSegment[] {
   const e = d.economics;
   const autarky = pct(d.physics?.autarky);
+  const { pv, battery, wallbox, heatpump } = d.design;
+  const solar = pv.include && Boolean(pv.kwp);
+  const bat = battery.include && Boolean(battery.kwh);
+  const s = (text: string, moment: Moment = null): ScriptSegment | null => (text ? { text, moment } : null);
   if (lang === "de") {
     const n = (x: number) => x.toLocaleString("de-DE");
-    const { pv, battery, wallbox, heatpump } = d.design;
     const parts = [
-      pv.include && pv.kwp ? `${n(pv.kwp)} kWp Photovoltaik` : "",
-      battery.include && battery.kwh ? `einen ${n(battery.kwh)} kWh Speicher` : "",
+      solar ? `${n(pv.kwp!)} kWp Photovoltaik` : "",
+      bat ? `einen ${n(battery.kwh!)} kWh Speicher` : "",
       wallbox.include ? "eine Wallbox" : "",
       heatpump.include && heatpump.kw ? `eine ${n(heatpump.kw)} kW Wärmepumpe` : "",
     ].filter(Boolean);
     return [
-      `Ihr Angebot in Kürze: Wir empfehlen ${parts.length ? joinList(parts, "und") : "vorerst keine neue Anlage"}.`,
-      heatpumpLater(d) ? "Eine Wärmepumpe ist später möglich." : "",
-      autarky > 0 ? `Damit decken Sie etwa ${autarky} % Ihres Stroms selbst.` : "",
-      e ? `Die Anlage kostet etwa ${n(e.capex_total_eur)} € und spart im ersten Jahr etwa ${n(e.savings_first_year_eur)} €` +
-        (e.payback_years ? `; sie hat sich nach etwa ${n(e.payback_years)} Jahren bezahlt gemacht.` : ".") : "",
-      "Ihr Installateur bespricht jedes Detail mit Ihnen und passt alles an, was Sie möchten.",
-    ].filter(Boolean).join(" ");
+      s(`Ihr Angebot in Kürze: Wir empfehlen ${parts.length ? joinList(parts, "und") : "vorerst keine neue Anlage"}.`),
+      s(heatpumpLater(d) ? "Eine Wärmepumpe ist später möglich." : ""),
+      s(solar ? "Am Morgen wachen die Module mit der Sonne auf und decken schon das Frühstück." : "", "morning"),
+      s(solar ? `Mittags erzeugt das Dach mehr, als Sie brauchen${bat ? ", und der Speicher füllt sich" : ""}${wallbox.include ? ", das Auto lädt mit Sonnenstrom" : ""}.` : "", "noon"),
+      s(solar ? (bat ? "Am Abend übernimmt der Speicher." : "Am Abend kommt der Strom wie gewohnt aus dem Netz.") : "", "evening"),
+      s(autarky > 0 ? `So decken Sie etwa ${autarky} % Ihres Stroms selbst.` : ""),
+      s(e ? `Die Anlage kostet etwa ${n(e.capex_total_eur)} € und spart im ersten Jahr etwa ${n(e.savings_first_year_eur)} €` +
+        (e.payback_years ? `; sie hat sich nach etwa ${n(e.payback_years)} Jahren bezahlt gemacht.` : ".") : ""),
+      s("Ihr Installateur bespricht jedes Detail mit Ihnen."),
+    ].filter((x): x is ScriptSegment => x !== null);
   }
   const n = (x: number) => x.toLocaleString("en-US");
   return [
-    `Here is your offer in short. We suggest ${spokenSummary(d)}`,
-    autarky > 0 ? `Together, this lets you cover about ${autarky}% of your electricity yourself.` : "",
-    e ? `The system costs about €${n(e.capex_total_eur)} and saves about €${n(e.savings_first_year_eur)} in the first year` +
-      (e.payback_years ? `, so it pays for itself in about ${n(e.payback_years)} years.` : ".") : "",
-    "Your installer will go through every detail with you and can adjust anything you like.",
-  ].filter(Boolean).join(" ");
+    s(`Here is your offer in short. We suggest ${spokenSummary(d)}`),
+    s(solar ? "In the morning, the panels wake up with the sun and already cover breakfast." : "", "morning"),
+    s(solar ? `At midday the roof makes more than you need${bat ? ", so the battery fills up" : ""}${wallbox.include ? " and the car charges on sunshine" : ""}.` : "", "noon"),
+    s(solar ? (bat ? "In the evening, the battery takes over." : "In the evening, you use grid power as before.") : "", "evening"),
+    s(autarky > 0 ? `Altogether you cover about ${autarky}% of your electricity yourself.` : ""),
+    s(e ? `The system costs about €${n(e.capex_total_eur)} and saves about €${n(e.savings_first_year_eur)} in the first year` +
+      (e.payback_years ? `, so it pays for itself in about ${n(e.payback_years)} years.` : ".") : ""),
+    s("Your installer will go through every detail with you."),
+  ].filter((x): x is ScriptSegment => x !== null);
+}
+
+/** The template as one text. */
+export function offerTemplate(d: DesignResponse, lang: Lang): string {
+  return offerSegmentsTemplate(d, lang).map((x) => x.text).join(" ");
 }
 
 /** Only engine numbers go to Claude; it phrases them, it never sizes anything. */
@@ -823,8 +856,51 @@ function offerFacts(d: DesignResponse) {
   };
 }
 
-export async function offerScript(d: DesignResponse, lang: Lang, deps: VoiceDeps): Promise<{ text: string; by: "claude" | "template" }> {
-  if (!deps.anthropicKey) return { text: offerTemplate(d, lang), by: "template" };
+/** Every number Claude writes must be one of the engine's (any rounding / separator style). */
+export function numbersAllowed(text: string, facts: ReturnType<typeof offerFacts>): boolean {
+  const ok = new Set<number>();
+  for (const v of Object.values(facts)) {
+    if (typeof v !== "number" || !Number.isFinite(v)) continue;
+    [v, Math.round(v), Math.round(v * 10) / 10, Math.round(v / 100) * 100, Math.round(v / 1000) * 1000].forEach((x) => ok.add(x));
+  }
+  const found = text.match(/\d[\d.,]*/g) ?? [];
+  return found.every((raw) => {
+    const t = raw.replace(/[.,]$/, "");
+    const asThousands = /^\d{1,3}([.,]\d{3})+$/.test(t) ? Number(t.replace(/[.,]/g, "")) : NaN;
+    const asDecimal = Number(t.replace(",", "."));
+    return ok.has(asThousands) || ok.has(asDecimal);
+  });
+}
+
+/** Claude's JSON script → segments, or null if it is not usable (then the template is used). */
+export function parseScript(raw: string, d: DesignResponse): ScriptSegment[] | null {
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(m[0]);
+  } catch {
+    return null;
+  }
+  const list = (parsed as { segments?: unknown })?.segments;
+  if (!Array.isArray(list) || !list.length) return null;
+  const segments: ScriptSegment[] = [];
+  for (const x of list) {
+    const text = typeof x?.text === "string" ? x.text.trim() : "";
+    const mo = x?.moment;
+    const moment: Moment = mo === "morning" || mo === "noon" || mo === "evening" ? mo : null;
+    if (text) segments.push({ text, moment });
+  }
+  const words = segments.map((x) => x.text).join(" ").split(/\s+/).length;
+  const hasDay = ["morning", "noon", "evening"].every((mo) => segments.some((x) => x.moment === mo));
+  if (words > 130 || (d.design.pv.include && !hasDay)) return null;
+  if (!numbersAllowed(segments.map((x) => x.text).join(" "), offerFacts(d))) return null;
+  return segments;
+}
+
+export async function offerScript(d: DesignResponse, lang: Lang, deps: VoiceDeps): Promise<{ segments: ScriptSegment[]; by: "claude" | "template" }> {
+  const template = { segments: offerSegmentsTemplate(d, lang), by: "template" as const };
+  if (!deps.anthropicKey) return template;
   try {
     const res = await deps.fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -832,44 +908,119 @@ export async function offerScript(d: DesignResponse, lang: Lang, deps: VoiceDeps
       headers: { "content-type": "application/json", "x-api-key": deps.anthropicKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
         model: EXPLAIN_MODEL,
-        max_tokens: 600,
+        max_tokens: 900,
         thinking: { type: "between_tools" }, // = no thinking before the answer (thinking ate the whole budget; "disabled" is rejected by this model)
         system:
-          "You write a short spoken summary of a home energy offer for the homeowner, to be read aloud. " +
-          "Plain everyday words, warm and factual, no jargon, no lists, no markdown. At most 110 words (about 45 seconds). " +
-          "Use ONLY the numbers in the facts; never invent or change a size, price or saving; leave out anything missing. " +
-          `Write in ${lang === "de" ? "German (Sie-Form)" : "English"}. End by saying the installer will go through the details.`,
+          "You write a short spoken summary of a home energy offer for the homeowner, to be read aloud while a 3D model " +
+          "of their house plays through one sunny day. Plain everyday words, warm and factual, no jargon, no markdown. " +
+          "At most 110 words in total (about 45 seconds). Use ONLY the numbers in the facts; never invent or change a size, " +
+          "price or saving, and write no other numbers (no clock times). Leave out anything missing. " +
+          "Structure: 5 to 7 sentences. Exactly one sentence each for the morning, midday and evening, saying what the " +
+          "system does for this household at that time (solar, battery, car), in that order, after the opening sentence. " +
+          "End by saying the installer will go through the details. " +
+          `Write in ${lang === "de" ? "German (Sie-Form)" : "English"}. ` +
+          'Answer with JSON only: {"segments":[{"text":"…","moment":"none|morning|noon|evening"}]}',
         messages: [{ role: "user", content: `Offer facts (from the design engine):\n${JSON.stringify(offerFacts(d), null, 2)}` }],
       }),
     });
     if (!res.ok) throw new Error(`Anthropic ${res.status}`);
     const json = await res.json();
-    const text = (json?.content ?? []).filter((c: { type?: string }) => c?.type === "text").map((c: { text: string }) => c.text).join("").trim();
-    if (!text) {
-      const kinds = (json?.content ?? []).map((c: { type?: string }) => c?.type).join("+") || "none";
-      throw new Error(`no text (stop_reason ${json?.stop_reason ?? "?"}, blocks ${kinds})`);
-    }
-    return { text, by: "claude" };
+    const raw = (json?.content ?? []).filter((c: { type?: string }) => c?.type === "text").map((c: { text: string }) => c.text).join("").trim();
+    const segments = parseScript(raw, d);
+    if (!segments) throw new Error(raw ? "script not usable (format, length or numbers)" : `no text (stop_reason ${json?.stop_reason ?? "?"})`);
+    return { segments, by: "claude" };
   } catch (e) {
     log(`explain via Claude failed, using template: ${e instanceof Error ? e.message : "unknown error"}`);
-    return { text: offerTemplate(d, lang), by: "template" };
+    return template;
   }
 }
 
-export async function speak(text: string, deps: VoiceDeps): Promise<ArrayBuffer> {
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(deps.voiceId ?? "")}?output_format=mp3_44100_128`;
+export interface Alignment {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+}
+const CHARS_PER_SECOND = 14.5; // ElevenLabs narration pace, for estimates without audio
+const GAP_S = 0.3;
+const r2 = (x: number) => Math.round(x * 100) / 100;
+
+/** Start/end of every sentence: from the TTS character alignment when there is audio, else estimated. */
+export function timeSegments(segments: ScriptSegment[], alignment: Alignment | null): { segments: TimedSegment[]; duration_s: number } {
+  const hour = (m: Moment) => (m ? MOMENT_HOUR[m] : null);
+  const total = segments.reduce((n, x) => n + x.text.length, 0) + Math.max(0, segments.length - 1);
+  const starts = alignment?.character_start_times_seconds ?? [];
+  const ends = alignment?.character_end_times_seconds ?? [];
+  const usable = alignment && starts.length > 0 && ends.length === starts.length;
+  const at = (i: number, arr: number[]) => arr[Math.min(arr.length - 1, Math.round((i * (arr.length - 1)) / Math.max(1, total - 1)))];
+  let offset = 0;
+  let clock = 0;
+  const timed = segments.map((x) => {
+    const first = offset;
+    const last = offset + x.text.length - 1;
+    offset += x.text.length + 1;
+    let start_s: number;
+    let end_s: number;
+    if (usable) {
+      const exact = starts.length === total;
+      start_s = exact ? starts[first] : at(first, starts);
+      end_s = exact ? ends[last] : at(last, ends);
+    } else {
+      start_s = clock;
+      end_s = clock + x.text.length / CHARS_PER_SECOND;
+      clock = end_s + GAP_S;
+    }
+    return { ...x, start_s: r2(start_s), end_s: r2(end_s), time_of_day_h: hour(x.moment) };
+  });
+  const duration_s = usable ? r2(ends[ends.length - 1]) : r2(Math.max(0, clock - GAP_S));
+  return { segments: timed, duration_s };
+}
+
+/** ElevenLabs TTS with character timestamps → mp3 (base64) + alignment. */
+export async function speak(text: string, deps: VoiceDeps): Promise<{ audio_base64: string; alignment: Alignment | null }> {
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(deps.voiceId ?? "")}/with-timestamps?output_format=mp3_44100_128`;
   const res = await deps.fetch(url, {
     method: "POST",
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(45000),
     headers: { "content-type": "application/json", "xi-api-key": deps.elevenLabsKey ?? "" },
     body: JSON.stringify({ text, model_id: "eleven_multilingual_v2" }),
   });
   if (!res.ok) throw new Error(`ElevenLabs TTS ${res.status}`);
-  return res.arrayBuffer();
+  const json = (await res.json()) as { audio_base64?: string; alignment?: Alignment | null };
+  if (!json.audio_base64) throw new Error("ElevenLabs TTS: no audio in the answer");
+  return { audio_base64: json.audio_base64, alignment: json.alignment ?? null };
+}
+
+// ---------------------------------------------------------------------------
+// Cache: same engine facts + language + voice → same script and audio. Memory per server instance, plus clips
+// committed under public/voice/ (listed in voice-cache.json) so the demo offer never calls ElevenLabs again.
+// ---------------------------------------------------------------------------
+interface CachedExplain {
+  text: string;
+  by: "claude" | "template";
+  language: Lang;
+  segments: TimedSegment[];
+  duration_s: number;
+  timing: "audio" | "estimated";
+  audio_base64: string | null;
+  audio_url?: string;
+}
+const explainCache = new Map<string, CachedExplain>();
+export function clearExplainCache() {
+  explainCache.clear();
+}
+type StaticClip = Omit<CachedExplain, "audio_base64" | "audio_url"> & { audio_path: string };
+let staticClips: Record<string, StaticClip> = staticVoiceCache as Record<string, StaticClip>;
+/** Tests only: replace the committed clip list. */
+export function setStaticClips(c: Record<string, StaticClip>) {
+  staticClips = c;
+}
+
+export function explainKey(d: DesignResponse, lang: Lang, voiceId: string | undefined): string {
+  return createHash("sha256").update(JSON.stringify({ v: SCRIPT_VERSION, lang, voice: voiceId ?? "", facts: offerFacts(d) })).digest("hex").slice(0, 16);
 }
 
 export async function handleExplain(req: Request, deps: VoiceDeps): Promise<Response> {
-  // Public endpoint that spends Anthropic (and later ElevenLabs) credit: limit per client.
+  // Public endpoint that spends Anthropic (and ElevenLabs) credit: limit per client.
   if (!allowRequest("explain", clientKey(req), 10, 60_000)) return Response.json({ error: "too many requests" }, { status: 429 });
   let body: { design_id?: unknown; design_response?: DesignResponse; language?: unknown; audio?: unknown };
   try {
@@ -885,20 +1036,62 @@ export async function handleExplain(req: Request, deps: VoiceDeps): Promise<Resp
   if (!d?.design?.pv) return Response.json({ error: "design_id is required" }, { status: 400 });
 
   const lang: Lang = body.language === "de" ? "de" : "en";
-  const { text, by } = await offerScript(d, lang, deps);
-
-  let audio_base64: string | null = null;
+  const wantAudio = body.audio === true;
   let audio_reason: string | undefined;
-  if (body.audio !== true) audio_reason = "not_requested";
+  if (!wantAudio) audio_reason = "not_requested";
   else if (!deps.ttsEnabled) audio_reason = "tts_disabled"; // no audio until Mark confirms the voice
   else if (!deps.elevenLabsKey || !deps.voiceId) audio_reason = "tts_not_configured";
-  else {
+  const canSpeak = wantAudio && !audio_reason;
+  const key = explainKey(d, lang, deps.voiceId);
+  const reply = (c: CachedExplain, cached: string | null, reason = audio_reason) =>
+    Response.json({
+      ...c,
+      audio_base64: wantAudio ? c.audio_base64 : null,
+      ...(wantAudio ? {} : { audio_url: undefined }),
+      cache_key: key,
+      cached,
+      ...(reason ? { audio_reason: reason } : {}),
+    });
+
+  // 1. A committed clip (the demo offer): no Claude, no ElevenLabs.
+  const clip = staticClips[key];
+  if (clip) {
+    const { audio_path, ...rest } = clip;
+    let audio_base64: string | null = null;
+    if (wantAudio) {
+      try {
+        const r = await deps.fetch(new URL(audio_path, req.url));
+        if (r.ok) audio_base64 = Buffer.from(await r.arrayBuffer()).toString("base64");
+      } catch (e) {
+        log(`cached clip unreadable: ${e instanceof Error ? e.message : "unknown error"}`);
+      }
+    }
+    return reply({ ...rest, audio_base64, audio_url: audio_path }, "clip", undefined);
+  }
+
+  // 2. This instance already made it (with audio if audio is wanted).
+  const hit = explainCache.get(key);
+  if (hit && (hit.audio_base64 || !canSpeak)) return reply(hit, "memory");
+
+  // 3. Make it: script (Claude or template), then audio with timestamps.
+  const script = hit ? { segments: hit.segments.map(({ text, moment }) => ({ text, moment })), by: hit.by } : await offerScript(d, lang, deps);
+  const text = script.segments.map((x) => x.text).join(" ");
+  let audio_base64: string | null = null;
+  let alignment: Alignment | null = null;
+  if (canSpeak) {
     try {
-      audio_base64 = Buffer.from(await speak(text, deps)).toString("base64");
+      ({ audio_base64, alignment } = await speak(text, deps));
     } catch (e) {
       log(`tts failed: ${e instanceof Error ? e.message : "unknown error"}`);
       audio_reason = "error";
     }
   }
-  return Response.json({ text, by, language: lang, audio_base64, ...(audio_reason ? { audio_reason } : {}) });
+  const { segments, duration_s } = timeSegments(script.segments, audio_base64 ? alignment : null);
+  const made: CachedExplain = {
+    text, by: script.by, language: lang, segments, duration_s,
+    timing: audio_base64 && alignment ? "audio" : "estimated", audio_base64,
+  };
+  if (explainCache.size >= 50) explainCache.delete(explainCache.keys().next().value as string);
+  explainCache.set(key, made);
+  return reply(made, null);
 }
