@@ -174,7 +174,7 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex min-w-0 flex-col gap-1">
             <h2 id="one-home" className="m-0 text-label uppercase text-ink-muted">One past home</h2>
-            <p className="m-0 text-body-sm text-ink-body" aria-live="polite" title={project?.project_id ? `Held-out project ${project.project_id}` : undefined}>
+            <p className="m-0 text-body-sm text-ink-body" aria-live="polite">
               {project ? describeHome(project) : projectId ? "Loading…" : "No held-out projects available"}
             </p>
           </div>
