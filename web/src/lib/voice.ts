@@ -582,6 +582,7 @@ export async function createDraftFromFacts(
 // ---------------------------------------------------------------------------
 // POST /api/voice/create-design
 // ---------------------------------------------------------------------------
+const NO_FACTS = "No answers were sent. Ask the caller for their name, address and electricity use, then call create_design again with them.";
 const SAY_SORRY = "Tell the caller: I could not save the design right now, a planner will follow up with you.";
 
 export async function handleCreateDesign(req: Request, deps: VoiceDeps, opts = { budgetMs: CREATE_BUDGET_MS }): Promise<Response> {
@@ -610,6 +611,12 @@ export async function handleCreateDesign(req: Request, deps: VoiceDeps, opts = {
     const merged = mergeStated(existing?.facts.stated as Record<string, unknown> | undefined, body as Record<string, unknown>);
     if (existing?.facts.stated) body = { ...merged.stated, conversation_id: cid };
     extraFacts = { stated: merged.stated };
+  }
+  // Nothing the caller said (an empty or malformed tool call): store nothing, so no empty "incoming call" reaches /live.
+  const said = normaliseFacts(body).facts;
+  if (!FACT_FIELDS.some((k) => said[k] != null)) {
+    log("create-design rejected: no facts");
+    return Response.json({ instruction: NO_FACTS }, { status: 400 });
   }
   const left = Math.max(250, opts.budgetMs - (deps.now() - t0));
   const result = await createDraftFromFacts(body, deps, { budgetMs: left, callStatus: "live", existing, extraFacts });
