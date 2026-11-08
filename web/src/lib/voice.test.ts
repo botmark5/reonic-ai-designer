@@ -371,6 +371,9 @@ describe("handleUpdateFacts", () => {
     expect(await r1.json()).toMatchObject({ ok: true, call_id: "call-1", updated: ["household"] });
     expect(stored(fs)).toMatchObject({ status: "live", facts: { inhabitants: 4, annual_kwh: 4250, stated: { household: "family of four" } } });
 
+    // /live reads the caller's own answers at the top level of calls.facts
+    await upd(d, { conversation_id: "c1", monthly_bill_eur: "120", roof_direction: "south west", customer_name: "Anna Test" });
+    expect(stored(fs)?.facts).toMatchObject({ household: 4, monthly_bill_eur: 120, roof_direction: "south_west", customer_name: "Anna Test", annual_kwh: 4100 });
     const r2 = await upd(d, { conversation_id: "c1", has_ev: "yes" });
     expect((await r2.json()).updated).toEqual(["has_ev"]);
     expect(stored(fs)?.facts).toMatchObject({ inhabitants: 4, has_ev: true, ev_km_year: 15000 });
