@@ -13,6 +13,7 @@ import { ADDON_HEADLINES, expertDesign, headlines, headlineSource, top3, trusted
 import type { ComponentKey, EvalResponse, ExpertVariant, MetricSet, ProjectResponse } from "@/lib/types";
 import { PREDICTORS } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { bandRows, transferRows } from "@/lib/deviation";
 
 const DOT: Record<ComponentKey, string> = { pv: "bg-comp-pv", battery: "bg-comp-battery", wallbox: "bg-comp-wallbox", heatpump: "bg-comp-heatpump" };
 const TONE: Record<VerdictKind, Tone> = { match: "success", range: "success", close: "success", option: "success", off: "warning", missing: "critical", extra: "critical" };
@@ -143,17 +144,16 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
   // Shown only when /eval reports coverage (engine #43). 80 % is not an engine number: a P10–P90 range should hold 90 − 10 = 80 % by definition.
   const cov = trustedCoverage(HM) ?? trustedCoverage(src.overall[PREDICTORS.model]);
   const top3Pct = top3(HM);
+  const bands = bandRows(evalRes.by_band);
+  const transfers = transferRows(evalRes.transfer);
   const addOnCov = src.addOns ? trustedCoverage(src.addOns[PREDICTORS.model]) : null; // null or < 20 homes: no row
   const answered = evalRes.with_existing_pv_answer?.metrics?.[PREDICTORS.model];
   const fmt = (x: number | null, unit: "kWp" | "%") => (x == null ? "–" : unit === "kWp" ? x.toFixed(2) : `${Math.round(x)}`);
   const nTest = n(HM, "n_projects") ?? (src.fullOnly ? null : ((evalRes.protocol?.n_test as number | undefined) ?? null));
   const nAll = n(M, "n_projects") ?? (evalRes.protocol?.n_test as number | undefined) ?? null;
-  const transfer = Object.entries(evalRes.transfer ?? {});
-  const installerIds = Array.from(new Set(transfer.flatMap(([k]) => k.split("->").map((x) => x.trim())))).sort();
   const [headline, ...otherHeads] = heads;
   // on new full systems nearly every home has solar on both sides: the "where both chose solar" tile repeats the headline
   const restHeads = otherHeads.filter((t) => !(t.key === "pv_kwp_mae_when_both_pv" && headline && fmt(t.ours, t.unit) === fmt(headline.ours, headline.unit)));
-  const installerName = (id: string) => `Installer ${String.fromCharCode(65 + Math.max(0, installerIds.indexOf(id)))}`;
   const noNewSolar = addOns.find((t) => t.key === "has_pv_accuracy");
   const otherAddOns = addOns.filter((t) => t !== noNewSolar);
   const shown = project && project.project_id === projectId ? project : null;
@@ -408,6 +408,58 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
             </div>
           </>
         )}
+        {!offline && (bands.length > 0 || transfers.length > 0) && (
+          <div className="flex flex-col gap-4 rounded-lg border border-border bg-surface-1 p-5 md:p-6">
+            <div className="flex flex-col gap-1">
+              <h3 className="m-0 text-[15px] font-medium text-ink">Where we differ from the experts</h3>
+              <p className="m-0 text-[12px] leading-4 text-ink-muted">Solar size error where both chose solar, held-out homes, without the answer to “Solar already on the roof?”.</p>
+            </div>
+            {bands.length > 0 && (
+              <table className="w-full border-collapse text-[13px]">
+                <caption className="sr-only">Solar size error by yearly consumption</caption>
+                <thead>
+                  <tr className="text-left text-[12px] text-ink-muted">
+                    <th scope="col" className="border-b border-border py-1.5 font-medium">Yearly use</th>
+                    <th scope="col" className="border-b border-border py-1.5 text-right font-medium">Homes</th>
+                    <th scope="col" className="border-b border-border py-1.5 text-right font-medium">Our error</th>
+                    <th scope="col" className="hidden border-b border-border py-1.5 text-right font-medium sm:table-cell">Band median</th>
+                    <th scope="col" className="hidden border-b border-border py-1.5 pl-4 font-medium md:table-cell">Why</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bands.map((r) => (
+                    <tr key={r.key} className={cn("border-b border-surface-2 last:border-0", r.hardest && "bg-warning-tint/60")}>
+                      <td className="py-2">
+                        {r.label}
+                        {r.hardest && <span className="ml-2 text-[12px] font-medium text-warning-text">hardest</span>}
+                        <span className="mt-0.5 block text-[12px] text-ink-muted md:hidden">{r.sentence}</span>
+                      </td>
+                      <td className="py-2 text-right font-mono tabular">{fmtInt(r.n)}</td>
+                      <td className="py-2 text-right font-mono tabular">{r.ours.toFixed(1)} kWp</td>
+                      <td className="hidden py-2 text-right font-mono text-ink-muted tabular sm:table-cell">{r.base == null ? "–" : `${r.base.toFixed(1)} kWp`}</td>
+                      <td className="hidden py-2 pl-4 text-ink-body md:table-cell">{r.sentence}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {transfers.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <span className="text-[13px] font-medium text-ink-body">Learned on one installer, tested on the other</span>
+                {transfers.map((t) => (
+                  <div key={t.key} className="flex flex-col gap-1 border-t border-border pt-2 text-[13px] sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                    <span className="text-ink-body">{t.sentence}</span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="font-mono tabular">{kwp(t.ours)} kWp</span>
+                      <span className="text-ink-muted">vs {kwp(t.base)}</span>
+                      <StatusBadge tone={t.carries ? "success" : "warning"}>{t.carries ? "Transfers" : "Weaker"}</StatusBadge>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {!offline && answered && (
           <div className="flex flex-col gap-2 rounded-lg border border-border bg-ai-tint/50 p-4">
             <span className="text-[13px] font-medium text-ink">What-if: the planner answers “Solar already on the roof?”</span>
@@ -430,31 +482,6 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
               All {nAll ? fmtInt(nAll) : ""} held-out homes, add-ons included. Not an accuracy: in this test the answer is derived from the expert offer itself,
               so these numbers show what the question is worth when it is answered correctly, which is why the planner form and the voice agent ask it first.
             </span>
-          </div>
-        )}
-        {!offline && transfer.length > 0 && (
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-1 p-4">
-            <span className="text-[13px] text-ink-body">Learned on one installer, tested on the other (solar size error where both chose PV)</span>
-            {transfer.map(([name, preds]) => {
-              const ours = n(preds[PREDICTORS.model], "pv_kwp_mae_when_both_pv");
-              const base = n(preds[PREDICTORS.bandMedian], "pv_kwp_mae_when_both_pv");
-              const better = ours != null && base != null && ours < base;
-              return (
-                <div key={name} className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
-                  <span className="text-ink-muted" title={name.replace("->", " → ")}>
-                    {name
-                      .split("->")
-                      .map((x) => installerName(x.trim()))
-                      .join(" → ")}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="font-mono tabular">{kwp(ours)} kWp</span>
-                    <span className="text-ink-muted">vs {kwp(base)} band median</span>
-                    <StatusBadge tone={better ? "success" : "warning"}>{better ? "Transfers" : "Weaker"}</StatusBadge>
-                  </span>
-                </div>
-              );
-            })}
           </div>
         )}
         {!offline && <details className="rounded-lg border border-border bg-surface-1 p-4">
