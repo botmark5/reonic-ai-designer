@@ -116,3 +116,17 @@ curl -X POST $APP_URL/api/voice/create-design -H "x-agent-token: $ELEVENLABS_TOO
 curl "$APP_URL/api/solar?address=Marienplatz%201%20M%C3%BCnchen"
 curl -X POST $APP_URL/api/voice/post-call -d '{}'        # → 401 invalid signature (expected)
 ```
+
+## Voice demo pre-flight
+1. Deployed main includes #91 (offer mp3 public), #101 (Listen for any stored design), #106 (/live shows household/bill/roof); `<APP_URL>/api/engine/health` shows `served.source = engine`.
+2. Agent "Reonic AI Designer - Site Visit Agent" (id above): tools `create_design` and `update_facts` → `<APP_URL>/api/voice/…` with header `x-agent-token`; post-call webhook → `/api/voice/post-call` (HMAC secret set).
+3. Big screen: sign in, open `/live` before dialling (it polls every 2 s); call from the ElevenLabs "Test call" link with a headset.
+4. Persona: "Anna Weber, Ungererstraße 80, München; family of four; about €120 a month; buying an EV next year; no solar yet; gas heating; south-facing roof."
+5. Expect on /live within ~2–3 s of each answer: name → address (Google roof fills orientation/tilt) → 4 people → €120 → ~4,100 kWh → EV + 15,000 km (assumed) → no existing PV.
+6. Close: the agent reads the facts back, calls `create_design` and says "Your draft design is ready: … kWp solar, a … kWh battery and a wallbox"; the draft appears on /live and in the inbox.
+7. "EV next year" counts as yes (`has_ev: planned`), so the wallbox is in the first design; that is the "design adapts" beat.
+8. After hang-up: the post-call webhook sets the call to `ended` with transcript and summary (≤ 1 min).
+9. Fallbacks: engine slow → agent says "in the inbox in a minute" and the draft lands later; `update_facts` not attached → /live fills only at `create_design`; Google off → roof from the caller's answer; call fails → /live demo mode (scripted).
+10. Homeowner beat: `/offer/demo` → Listen plays the cached 40 s clip (no ElevenLabs cost) and the house clock runs 8 → 12.5 → 19 h. Afterwards delete test calls by conversation_id (service role, Mark's OK).
+
+**Which persona on stage (decision for Mark).** The persona above says "buying an EV next year", so the wallbox is in the first design and the EV shows up during the call. `docs/demo-runbook.md` uses a caller with **no** EV, so that the planner's "They are buying an EV next year" step visibly changes the design (9.9 → 11.25 kWp, wallbox added). Pick one story and use the matching persona.
