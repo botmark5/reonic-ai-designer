@@ -41,8 +41,8 @@ function box(w: number, h: number, d: number, mat: THREE.Material, x: number, y:
 function buildRoom(p: Palette) {
   const g = new THREE.Group();
   const wall = new THREE.MeshStandardMaterial({ color: p.wall, roughness: 0.92 });
-  const board = new THREE.MeshStandardMaterial({ color: p.board, roughness: 0.95 });
-  const edge = new THREE.MeshStandardMaterial({ color: p.board, roughness: 0.95 });
+  const board = new THREE.MeshStandardMaterial({ color: p.floor, roughness: 0.95 });
+  const edge = new THREE.MeshStandardMaterial({ color: p.plinth, roughness: 0.95 });
   const paving = new THREE.MeshStandardMaterial({ color: p.paving, roughness: 0.95 });
   const glass = new THREE.MeshStandardMaterial({ color: p.glass, roughness: 0.4 });
   const [z0, z1] = DEPTH;
