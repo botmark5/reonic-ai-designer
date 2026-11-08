@@ -1,7 +1,7 @@
 "use client";
 import { ContactShadows, Environment, Html, Lightformer, PerformanceMonitor } from "@react-three/drei";
 import { Canvas, useFrame, type RootState } from "@react-three/fiber";
-import { Component, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { AmbientOcclusion } from "./AmbientOcclusion";
 import { CameraRig, type PresetRequest } from "./CameraRig";
@@ -10,7 +10,7 @@ import { EnergyFlow } from "./EnergyFlow";
 import { Appear, Battery, Car, Layer, Panels, WarmWindows, type PanelEditing, type Pointer } from "./Equipment";
 import { batteryModuleCount, buildEquipment } from "./equipmentGeometry";
 import { GlbHouse } from "./GlbHouse";
-import { GLB_HOUSE, glbWanted } from "./glbFit";
+import { GLB_HOUSE } from "./glbFit";
 import { buildHouse, slotToWorld, type BuiltHouse, type Mount } from "./houseGeometry";
 import type { Palette } from "./palette";
 import type { CompKey, SceneSpec } from "./sceneSpec";
@@ -46,6 +46,8 @@ export interface SceneProps {
   cameraKey?: string;
   /** Planner panel editing (null: off). */
   panelEdit?: PanelEditing | null;
+  /** `?house=glb`: the ready-made building (GLB_HOUSE) replaces the procedural shell and roof. */
+  glb: boolean;
   /** false while the canvas is scrolled out of view: the render loop pauses. */
   inView: boolean;
   onMiss: () => void;
@@ -158,12 +160,11 @@ function Exposure({ dark }: { dark: boolean }) {
   return null;
 }
 
-function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn, shown, building, hpOption, hpOptionKw, labels: showLabels, cameraKey, panelEdit }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
+function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn, shown, building, hpOption, hpOptionKw, labels: showLabels, cameraKey, panelEdit, glb }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
   const rotationY = THREE.MathUtils.degToRad(180 - spec.roof.azimuthDeg);
-  // `?house=glb`: the generated building (GlbHouse) replaces the procedural shell and roof; the panels then sit on a
-  // procedural roof plane at the model's pitch, everything else is unchanged
-  const glb = useSyncExternalStore(noSubscribe, () => glbWanted(window.location.search, process.env.NEXT_PUBLIC_HOUSE_GLB), () => false);
-  const house = useMemo(() => buildHouse(glb ? GLB_HOUSE.pitchDeg : spec.roof.pitchDeg, palette), [glb, spec.roof.pitchDeg, palette]);
+  // `?house=glb`: the ready-made building (GlbHouse) replaces the procedural shell and roof; the panels then sit on
+  // the plane measured on that model (GLB_HOUSE.roof), everything else is unchanged
+  const house = useMemo(() => buildHouse(glb ? GLB_HOUSE.pitchDeg : spec.roof.pitchDeg, palette, glb ? GLB_HOUSE.roof : undefined), [glb, spec.roof.pitchDeg, palette]);
   const equipment = useMemo(() => buildEquipment(palette), [palette]);
   useEffect(() => () => { for (const part of Object.values(house.parts)) dispose(part); }, [house]);
   useEffect(() => () => Object.values(equipment).forEach(dispose), [equipment]);
@@ -249,7 +250,7 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
         {glb ? (
           <GlbBoundary fallback={<ProceduralBuilding house={house} shown={shown} reduced={reduced} />}>
             <Suspense fallback={<ProceduralBuilding house={house} shown={shown} reduced={reduced} />}>
-              <GlbHouse cfg={GLB_HOUSE} visible={shown.shell} />
+              <GlbHouse cfg={GLB_HOUSE} palette={palette} visible={shown.shell} />
             </Suspense>
           </GlbBoundary>
         ) : (
@@ -277,8 +278,6 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
     </>
   );
 }
-
-const noSubscribe = () => () => {};
 
 /** The procedural walls, windows and roof (the default building, and the fallback while or if the GLB does not load). */
 function ProceduralBuilding({ house, shown, reduced }: { house: BuiltHouse; shown: Shown; reduced: boolean }) {

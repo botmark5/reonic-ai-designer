@@ -4,6 +4,7 @@
  * driveway, a couple of trees. World axes: y up, +z south, +x east. The main roof plane faces +z.
  */
 import * as THREE from "three";
+import type { GlbRoof } from "./glbFit";
 import type { RoofPlane } from "./layout";
 import type { Palette } from "./palette";
 
@@ -64,22 +65,27 @@ export interface BuiltHouse {
 
 const rad = (d: number) => (d * Math.PI) / 180;
 
-export function roofPlanes(pitchDeg: number): RoofPlane[] {
+/**
+ * The planes the panels can go on. With `glb` (a ready-made building, see glbFit.ts) the main plane is the one
+ * measured on that model, and the garage plane is the model's garage roof, or left out when it has none.
+ */
+export function roofPlanes(pitchDeg: number, glb?: GlbRoof): RoofPlane[] {
   const g = HOUSE.garage;
-  return [
-    {
-      id: "main",
-      width: HOUSE.length + 2 * HOUSE.gableOverhang,
-      slope: (HOUSE.depth / 2 + HOUSE.eaveOverhang) / Math.cos(rad(pitchDeg)),
-      margin: { side: 0.45, eave: 0.35, ridge: 0.3 },
-    },
-    {
-      id: "garage",
-      width: g.width + 2 * g.overhang,
-      slope: (g.depth + 2 * g.overhang) / Math.cos(rad(g.pitchDeg)),
-      margin: { side: 0.45, eave: 0.3, ridge: 0.45 },
-    },
-  ];
+  const main: RoofPlane = {
+    id: "main",
+    width: glb ? glb.widthM : HOUSE.length + 2 * HOUSE.gableOverhang,
+    slope: glb ? glb.slopeM : (HOUSE.depth / 2 + HOUSE.eaveOverhang) / Math.cos(rad(pitchDeg)),
+    margin: { side: 0.45, eave: 0.35, ridge: 0.3 },
+  };
+  const garage: RoofPlane = glb?.garage
+    ? { id: "garage", width: glb.garage.widthM, slope: glb.garage.slopeM, margin: { side: 0.45, eave: 0.2, ridge: 0.2 } }
+    : {
+        id: "garage",
+        width: g.width + 2 * g.overhang,
+        slope: (g.depth + 2 * g.overhang) / Math.cos(rad(g.pitchDeg)),
+        margin: { side: 0.45, eave: 0.3, ridge: 0.45 },
+      };
+  return glb && !glb.garage ? [main] : [main, garage];
 }
 
 export function slotToWorld(frame: PlaneFrame, u: number, v: number, lift = 0): THREE.Vector3 {
@@ -112,6 +118,19 @@ function frameFor(plane: RoofPlane, sign: 1 | -1, pitchDeg: number, eave: THREE.
     uAxis: new THREE.Vector3(sign, 0, 0),
     vAxis: new THREE.Vector3(0, s, -sign * c),
     normal: new THREE.Vector3(0, c, sign * s),
+  };
+}
+
+/** Plane frame for a roof that slopes down towards the east (eave along z, panels face east), e.g. a lean-to garage. */
+function frameEast(plane: RoofPlane, pitchDeg: number, eave: THREE.Vector3): PlaneFrame {
+  const s = Math.sin(rad(pitchDeg));
+  const c = Math.cos(rad(pitchDeg));
+  return {
+    plane,
+    origin: eave,
+    uAxis: new THREE.Vector3(0, 0, -1),
+    vAxis: new THREE.Vector3(-c, s, 0),
+    normal: new THREE.Vector3(s, c, 0),
   };
 }
 
@@ -222,7 +241,11 @@ function board(g: THREE.Group, m: Mats) {
 
 // ---------- the house ----------
 
-export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
+/**
+ * The procedural house. With `glb` the walls and roof built here are only the stand-in while the model loads (or if it
+ * fails), and `frames.main` (where the panels go) is the plane measured on the model instead of the drawn roof.
+ */
+export function buildHouse(pitchDeg: number, palette: Palette, glb?: GlbRoof): BuiltHouse {
   const m = materials(palette);
   const g = new THREE.Group();
   g.name = "house";
@@ -265,9 +288,10 @@ export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
   shell.add(box(L + 0.06, 0.45, D + 0.06, m.plinth, 0, 0.225, 0));
 
   // Roof planes
-  const mainFrame = frameFor(mainPlane, 1, pitchDeg, new THREE.Vector3(0, H - oh * tanP, D / 2 + oh));
+  const southFrame = frameFor(mainPlane, 1, pitchDeg, new THREE.Vector3(0, H - oh * tanP, D / 2 + oh));
   const northFrame = frameFor({ ...mainPlane }, -1, pitchDeg, new THREE.Vector3(0, H - oh * tanP, -D / 2 - oh));
-  for (const f of [mainFrame, northFrame]) {
+  const mainFrame = glb ? frameFor(roofPlanes(pitchDeg, glb)[0], 1, pitchDeg, new THREE.Vector3(...glb.eave)) : southFrame;
+  for (const f of [southFrame, northFrame]) {
     const slope = f.plane.slope;
     top.add(onPlane(f, f.plane.width, HOUSE.roofThickness, slope, 0, slope / 2, -HOUSE.roofThickness / 2, m.roof));
     // concrete-tile banding
@@ -313,9 +337,16 @@ export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
   gGeo.translate(GARAGE_X0, 0, 0);
   shell.add(mesh(gGeo, m.wall));
   shell.add(box(G.width + 0.04, 0.45, G.depth + 0.04, m.plinth, GARAGE_CX, 0.225, FRONT_Z - G.depth / 2));
-  const garageFrame = frameFor(garagePlane, 1, G.pitchDeg, new THREE.Vector3(GARAGE_CX, G.height - G.overhang * gTan, FRONT_Z + G.overhang));
-  top.add(onPlane(garageFrame, garagePlane.width, 0.2, garagePlane.slope, 0, garagePlane.slope / 2, -0.1, m.roofEdge));
-  top.add(onPlane(garageFrame, garagePlane.width + 0.04, 0.26, 0.06, 0, 0.03, -0.1, m.roofEdge));
+  const garageDrawFrame = frameFor(garagePlane, 1, G.pitchDeg, new THREE.Vector3(GARAGE_CX, G.height - G.overhang * gTan, FRONT_Z + G.overhang));
+  top.add(onPlane(garageDrawFrame, garagePlane.width, 0.2, garagePlane.slope, 0, garagePlane.slope / 2, -0.1, m.roofEdge));
+  top.add(onPlane(garageDrawFrame, garagePlane.width + 0.04, 0.26, 0.06, 0, 0.03, -0.1, m.roofEdge));
+  // with a model, the panels' garage plane is the model's garage roof (which may face east), not the drawn one
+  const gl = glb?.garage;
+  const garageFrame = gl
+    ? gl.facing === "east"
+      ? frameEast(roofPlanes(pitchDeg, glb)[1], gl.pitchDeg, new THREE.Vector3(...gl.eave))
+      : frameFor(roofPlanes(pitchDeg, glb)[1], 1, gl.pitchDeg, new THREE.Vector3(...gl.eave))
+    : garageDrawFrame;
   // Sectional garage door with grooves
   shell.add(box(2.6, 2.2, 0.08, m.garageDoor, GARAGE_CX - 0.3, 1.1, FRONT_Z + 0.04));
   for (let y = 0.55; y < 2.2; y += 0.55) shell.add(box(2.6, 0.03, 0.1, m.plinth, GARAGE_CX - 0.3, y, FRONT_Z + 0.05));

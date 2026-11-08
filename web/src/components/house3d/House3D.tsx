@@ -9,6 +9,7 @@ import { PRESETS, type Preset, type PresetRequest } from "./CameraRig";
 import { activeFlows, dayInputFrom, sampleDay, simulateDay, type Day } from "./energyDay";
 import type { Pointer } from "./Equipment";
 import { useReducedMotion, useThemeName } from "./hooks";
+import { GLB_HOUSE, glbWanted } from "./glbFit";
 import { roofPlanes } from "./houseGeometry";
 import { getPalette } from "./palette";
 import { chooseRenderMode, detectEnv, type RenderMode } from "./renderMode";
@@ -113,7 +114,10 @@ export function House3D({
   const [failed, setFailed] = useState(false);
   const renderMode = useRenderMode(forceStatic || failed);
   const palette = useMemo(() => getPalette(theme), [theme]);
-  const baseSpec = useMemo(() => buildSceneSpec(design, home, mode, roofPlanes, roof), [design, home, mode, roof]);
+  // `?house=glb`: a ready-made building stands in for the procedural one, and the panels go on its roof plane
+  const glb = useSyncExternalStore(noop, () => glbWanted(window.location.search, process.env.NEXT_PUBLIC_HOUSE_GLB), () => false);
+  const planes = useMemo(() => (glb ? () => roofPlanes(GLB_HOUSE.pitchDeg, GLB_HOUSE.roof) : roofPlanes), [glb]);
+  const baseSpec = useMemo(() => buildSceneSpec(design, home, mode, planes, roof), [design, home, mode, planes, roof]);
   // planner edits of where the panels sit; a new design (another layout) starts from the engine's layout again
   const layoutKey = baseSpec.layout.slots.map((s) => s.id).join(",") + "|" + baseSpec.roof.pitchDeg;
   const [edited, setEdited] = useState<{ for: string; slots: PanelSlot[] } | null>(null);
@@ -123,7 +127,7 @@ export function House3D({
     () => (editedSlots ? { ...baseSpec, layout: { ...baseSpec.layout, slots: editedSlots, placed: editedSlots.length } } : baseSpec),
     [baseSpec, editedSlots],
   );
-  const grid = useMemo(() => fullGrid(roofPlanes(baseSpec.roof.pitchDeg)), [baseSpec.roof.pitchDeg]);
+  const grid = useMemo(() => fullGrid(planes(baseSpec.roof.pitchDeg)), [planes, baseSpec.roof.pitchDeg]);
   const place: Place = useMemo(
     () => ({ ...MAY_DAY, lat: roof?.latitude ?? MAY_DAY.lat, lon: roof?.longitude ?? MAY_DAY.lon }),
     [roof?.latitude, roof?.longitude],
@@ -302,6 +306,7 @@ export function House3D({
             <SceneBoundary onError={() => setFailed(true)}>
               <Scene
                 spec={spec}
+                glb={glb}
                 palette={palette}
                 dark={theme === "dark"}
                 reduced={reduced}

@@ -113,13 +113,22 @@ same props. Props not yet supported by a renderer are accepted and ignored. Full
 - Placement only: M is the engine's panel count and never changes. `onPanelsChange(panels)` reports
   `{id, segment (0 main, 1 garage), u, v, portrait}`; Reset sends []. Off during a reveal. Rules: `panelEdit.ts`.
 
-## Generated building (`?house=glb`)
+## Ready-made building (`?house=glb`)
 
-An AI-generated house (a GLB from Tripo, Meshy or a CC0 model) can replace the procedural walls and roof: put the file at
-`web/public/models/house.glb`, open any page with the house with `?house=glb` (or set `NEXT_PUBLIC_HOUSE_GLB=1`). The site,
-the panels, the battery, wallbox, heat pump, flows and labels stay procedural, so the engine's design is drawn exactly as
-before; the panels sit on a procedural roof plane at the model's pitch. `GlbHouse.tsx` fits the model to the footprint
-(uniform scale to `targetLengthM` along x, centred, on the ground); tune `GLB_HOUSE` in `glbFit.ts` once per model
-(rotation so the main roof faces +z, pitch, offset): the dev console prints the model's bounding box on load. While the
-file downloads, and if it fails, the procedural building shows. `?house=procedural` forces the built one. Keep the GLB
-under about 3 MB (`npx @gltf-transform/cli optimize house.glb house.glb --texture-compress webp`).
+A GLB can replace the procedural walls and roof: `web/public/models/house.glb`, shown on any page with the house with
+`?house=glb` (or `NEXT_PUBLIC_HOUSE_GLB=1`; `?house=procedural` forces the built one). The site, the panels, the battery,
+wallbox, heat pump, flows and labels stay procedural, so the engine's design is drawn exactly as before. `GlbHouse.tsx`
+fits the model to the footprint (uniform scale to `targetLengthM` along x, centred, on the ground, plus `offset`) and
+recolours its materials to the scene palette by material name, so it reads as the same matte model in both themes. The
+panels go on the planes measured on the model (`GLB_HOUSE.roof` in `glbFit.ts`: the main plane, and the garage roof,
+which may face east); the procedural house is the stand-in while the file downloads and the fallback if it fails.
+
+The current file is Kenney's two-storey house with attached garage (City Kit Suburban, CC0 1.0,
+https://poly.pizza/m/htvFgnVP4d), rebuilt by `python -I scripts/house/clean_house.py <download.glb> public/models/house.glb`:
+scale baked in, turned so the door faces the street and the garage sits east, the front dormer removed (the panels need
+a clear plane) and the roof patched under it; 648 triangles, 50 KB. It holds 18 panels on the main roof (9 × 2) and 12
+on the garage (6 × 2); the procedural roof holds 39, so very large systems report "n panels don't fit" sooner with it.
+
+For another model (a Tripo or Meshy export works the same way): put it at the same path, open a page with `?house=glb`,
+read the bounding box the dev console prints, and set `GLB_HOUSE` (rotation, target length, offset, pitch, the measured
+planes, the material map). Keep it under about 3 MB (`npx @gltf-transform/cli optimize house.glb house.glb --texture-compress webp`).
