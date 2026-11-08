@@ -1,7 +1,7 @@
 "use client";
 import { ContactShadows, Environment, Html, Lightformer, PerformanceMonitor } from "@react-three/drei";
 import { Canvas, useFrame, type RootState } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Component, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import * as THREE from "three";
 import { AmbientOcclusion } from "./AmbientOcclusion";
 import { CameraRig, type PresetRequest } from "./CameraRig";
@@ -9,7 +9,9 @@ import type { DayStep, FlowNodeId, LiveFlow } from "./energyDay";
 import { EnergyFlow } from "./EnergyFlow";
 import { Appear, Battery, Car, Layer, Panels, WarmWindows, type PanelEditing, type Pointer } from "./Equipment";
 import { batteryModuleCount, buildEquipment } from "./equipmentGeometry";
-import { buildHouse, slotToWorld, type Mount } from "./houseGeometry";
+import { GlbHouse } from "./GlbHouse";
+import { GLB_HOUSE, glbWanted } from "./glbFit";
+import { buildHouse, slotToWorld, type BuiltHouse, type Mount } from "./houseGeometry";
 import type { Palette } from "./palette";
 import type { CompKey, SceneSpec } from "./sceneSpec";
 import { sunDirection, sunLight } from "./sun";
@@ -158,7 +160,10 @@ function Exposure({ dark }: { dark: boolean }) {
 
 function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn, shown, building, hpOption, hpOptionKw, labels: showLabels, cameraKey, panelEdit }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
   const rotationY = THREE.MathUtils.degToRad(180 - spec.roof.azimuthDeg);
-  const house = useMemo(() => buildHouse(spec.roof.pitchDeg, palette), [spec.roof.pitchDeg, palette]);
+  // `?house=glb`: the generated building (GlbHouse) replaces the procedural shell and roof; the panels then sit on a
+  // procedural roof plane at the model's pitch, everything else is unchanged
+  const glb = useSyncExternalStore(noSubscribe, () => glbWanted(window.location.search, process.env.NEXT_PUBLIC_HOUSE_GLB), () => false);
+  const house = useMemo(() => buildHouse(glb ? GLB_HOUSE.pitchDeg : spec.roof.pitchDeg, palette), [glb, spec.roof.pitchDeg, palette]);
   const equipment = useMemo(() => buildEquipment(palette), [palette]);
   useEffect(() => () => { for (const part of Object.values(house.parts)) dispose(part); }, [house]);
   useEffect(() => () => Object.values(equipment).forEach(dispose), [equipment]);
@@ -241,9 +246,15 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
     <>
       <group rotation-y={rotationY}>
         <primitive object={house.parts.site} />
-        <Layer object={house.parts.shell} shown={shown.shell} kind="rise" reduced={reduced} />
-        <WarmWindows glass={house.glass} on={shown.warm} reduced={reduced} />
-        <Layer object={house.parts.roof} shown={shown.roof} kind="settle" reduced={reduced} />
+        {glb ? (
+          <GlbBoundary fallback={<ProceduralBuilding house={house} shown={shown} reduced={reduced} />}>
+            <Suspense fallback={<ProceduralBuilding house={house} shown={shown} reduced={reduced} />}>
+              <GlbHouse cfg={GLB_HOUSE} visible={shown.shell} />
+            </Suspense>
+          </GlbBoundary>
+        ) : (
+          <ProceduralBuilding house={house} shown={shown} reduced={reduced} />
+        )}
         <Panels slots={slots} frames={frames} palette={palette} reduced={reduced} intro={intro} pointer={pointer} edit={panelEdit} />
         <Appear object={equipment.inverter} mount={anchors.inverter} visible={c.inverter.visible && shown.inverter} reduced={reduced} intro={intro} delay={0.05} hitKey="inverter" pointer={pointer} />
         <Appear object={equipment.wallbox} mount={anchors.wallbox} visible={c.wallbox.visible && shown.car} reduced={reduced} intro={intro} delay={0.05} hitKey="wallbox" pointer={pointer} />
@@ -268,6 +279,33 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
       <CameraRig request={preset} rotationY={rotationY} reduced={reduced} flyIn={flyIn} syncKey={cameraKey} />
     </>
   );
+}
+
+const noSubscribe = () => () => {};
+
+/** The procedural walls, windows and roof (the default building, and the fallback while or if the GLB does not load). */
+function ProceduralBuilding({ house, shown, reduced }: { house: BuiltHouse; shown: Shown; reduced: boolean }) {
+  return (
+    <>
+      <Layer object={house.parts.shell} shown={shown.shell} kind="rise" reduced={reduced} />
+      <WarmWindows glass={house.glass} on={shown.warm} reduced={reduced} />
+      <Layer object={house.parts.roof} shown={shown.roof} kind="settle" reduced={reduced} />
+    </>
+  );
+}
+
+/** A GLB that fails to download or parse falls back to the procedural building instead of the still image. */
+class GlbBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(err: unknown) {
+    if (process.env.NODE_ENV !== "production") console.warn("[GlbHouse] model not shown:", err);
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
 }
 
 function spinFan(fan: THREE.Object3D, by: number) {
