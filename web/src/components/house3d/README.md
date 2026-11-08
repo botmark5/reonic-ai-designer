@@ -103,3 +103,10 @@ same props. Props not yet supported by a renderer are accepted and ignored. Full
 - `onZonesChange(zones)` reports the planner's choice. Labels sit on the floor in front of each part (hidden < sm).
 - kWp sizes keep two decimals (11.25, not 11.3). Offered-only heat pump gets an "option N kW" label.
 - drei `Html` under React 19: the first instance in a canvas can lose its root; both scenes mount a hidden placeholder first.
+
+### Panel editing (planner, `editable`)
+- Click a panel: it rises on an amber frame. Drag: an amber ghost shows the free grid spot under the pointer; drop
+  moves it there. Toolbar bottom-left: "Placed N of M" (warning colour when N ≠ M), Add (next to the picked one,
+  spills to the garage), Remove (or Delete / Backspace), Reset. Escape lets go. Camera orbit pauses while dragging.
+- Placement only: M is the engine's panel count and never changes. `onPanelsChange(panels)` reports
+  `{id, segment (0 main, 1 garage), u, v, portrait}`; Reset sends []. Off during a reveal. Rules: `panelEdit.ts`.

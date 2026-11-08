@@ -1,10 +1,11 @@
 "use client";
-import { useFrame, type ThreeEvent } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { BATTERY_MODULE, MAX_BATTERY_MODULES, buildBatteryParts } from "./equipmentGeometry";
 import { slotToWorld, type Mount, type PlaneFrame } from "./houseGeometry";
-import { PANEL, type PanelSlot } from "./layout";
+import { PANEL, type PanelSlot, type PlaneId } from "./layout";
+import { nearestFree } from "./panelEdit";
 import type { Palette } from "./palette";
 import type { CompKey } from "./sceneSpec";
 import { LAND, ROLL, SETTLE, stepSpring, type SpringState } from "./spring";
@@ -191,17 +192,39 @@ const SCRATCH = {
   pos: new THREE.Vector3(), q: new THREE.Quaternion(), back: new THREE.Vector3(),
 };
 
+/** Planner editing: pick a panel, drag it to a free spot (ghost preview), the parent owns the list. */
+export interface PanelEditing {
+  selected: string | null;
+  grid: PanelSlot[];
+  onPick: (id: string | null) => void;
+  onMove: (id: string, to: PanelSlot) => void;
+}
+
+const PICKED = new THREE.Color("#ffc773");
+const PICK_LIFT = 0.18; // the picked panel rises off the roof, its amber frame shows underneath
+const PLAIN = new THREE.Color("#ffffff");
+const LOCAL = { inv: new THREE.Matrix4(), ray: new THREE.Ray(), plane: new THREE.Plane(), hit: new THREE.Vector3(), d: new THREE.Vector3() };
+
+function setControls(c: unknown, on: boolean) {
+  const ctl = c as { enabled?: boolean } | null;
+  if (ctl && "enabled" in ctl) ctl.enabled = on;
+}
+
 /** All panels as one InstancedMesh (glass) + one for frames. Dark glass with clearcoat catches the sun. */
-export function Panels({ slots, frames, palette, reduced, intro = true, pointer, maxCount = 96 }: {
+export function Panels({ slots, frames, palette, reduced, intro = true, pointer, maxCount = 96, edit }: {
   slots: PanelSlot[]; frames: Record<PanelSlot["plane"], PlaneFrame>; palette: Palette; reduced: boolean;
-  intro?: boolean; pointer: Pointer; maxCount?: number;
+  intro?: boolean; pointer: Pointer; maxCount?: number; edit?: PanelEditing | null;
 }) {
+  const order = useRef<string[]>([]);
+  const controls = useThree((st) => st.controls);
+  const drag = useRef<{ id: string; x: number; y: number; moved: boolean; to: PanelSlot | null } | null>(null);
+  const [ghost, setGhost] = useState<PanelSlot | null>(null);
   const glass = useRef<THREE.InstancedMesh>(null);
   const rim = useRef<THREE.InstancedMesh>(null);
   const states = useRef(new Map<string, PanelState>());
   const latest = useRef<PanelSlot[]>(slots);
   const synced = useRef<PanelSlot[] | null>(null);
-  const atRest = useRef<{ frames: unknown; geo: unknown } | null>(null);
+  const atRest = useRef<{ frames: unknown; geo: unknown; picked: string | null } | null>(null);
   useEffect(() => { latest.current = slots; }, [slots]);
 
   const { glassGeo, rimGeo, glassMats, rimMat } = useMemo(() => {
@@ -231,7 +254,8 @@ export function Panels({ slots, frames, palette, reduced, intro = true, pointer,
       atRest.current = null;
     }
     // nothing moving and nothing changed: the instance matrices are already right
-    if (atRest.current && atRest.current.frames === frames && atRest.current.geo === glassGeo) return;
+    const picked = edit?.selected ?? null;
+    if (atRest.current && atRest.current.frames === frames && atRest.current.geo === glassGeo && atRest.current.picked === picked) return;
     const { m4, basis, scale, pos, q, back } = SCRATCH;
     let i = 0;
     let moving = false;
@@ -245,12 +269,14 @@ export function Panels({ slots, frames, palette, reduced, intro = true, pointer,
       const f = frames[st.slot.plane];
       const up = st.drop.x; // may dip slightly below 0 on landing: the bounce
       const v = Math.min(1, Math.max(0, 1 - up));
-      pos.copy(slotToWorld(f, st.slot.u, st.slot.v, PANEL_LIFT + up * DROP));
+      pos.copy(slotToWorld(f, st.slot.u, st.slot.v, PANEL_LIFT + up * DROP + (id === picked ? PICK_LIFT : 0)));
       back.copy(f.vAxis).negate();
       q.setFromRotationMatrix(basis.makeBasis(f.uAxis, f.normal, back));
       scale.setScalar(v < 0.02 ? 0 : 0.94 + 0.06 * v);
       m4.compose(pos, q, scale);
       glass.current.setMatrixAt(i, m4);
+      glass.current.setColorAt(i, id === picked ? PICKED : PLAIN);
+      order.current[i] = id;
       pos.addScaledVector(f.normal, -0.01);
       m4.compose(pos, q, scale);
       rim.current.setMatrixAt(i, m4);
@@ -259,15 +285,88 @@ export function Panels({ slots, frames, palette, reduced, intro = true, pointer,
     glass.current.count = i;
     rim.current.count = i;
     glass.current.instanceMatrix.needsUpdate = true;
+    if (glass.current.instanceColor) glass.current.instanceColor.needsUpdate = true;
     rim.current.instanceMatrix.needsUpdate = true;
     glass.current.computeBoundingSphere();
     rim.current.computeBoundingSphere();
-    atRest.current = moving ? null : { frames, geo: glassGeo };
+    atRest.current = moving ? null : { frames, geo: glassGeo, picked };
   });
 
+  /** The roof spot under the pointer: tries the dragged panel's own plane first, then the other one. */
+  const spotAt = (ray: THREE.Ray, prefer: PlaneId, id: string): PanelSlot | null => {
+    const g = glass.current;
+    if (!g || !edit) return null;
+    LOCAL.inv.copy(g.matrixWorld).invert();
+    LOCAL.ray.copy(ray).applyMatrix4(LOCAL.inv);
+    for (const plane of [prefer, prefer === "main" ? "garage" : "main"] as PlaneId[]) {
+      const f = frames[plane];
+      LOCAL.plane.setFromNormalAndCoplanarPoint(f.normal, f.origin);
+      if (!LOCAL.ray.intersectPlane(LOCAL.plane, LOCAL.hit)) continue;
+      LOCAL.d.copy(LOCAL.hit).sub(f.origin);
+      const u = LOCAL.d.dot(f.uAxis);
+      const v = LOCAL.d.dot(f.vAxis);
+      if (Math.abs(u) > f.plane.width / 2 + 0.5 || v < -0.5 || v > f.plane.slope + 0.5) continue;
+      return nearestFree(slots, edit.grid, plane, u, v, id);
+    }
+    return null;
+  };
+  const editHandlers = edit ? {
+    onPointerDown: (e: ThreeEvent<PointerEvent>) => {
+      const id = e.instanceId !== undefined ? order.current[e.instanceId] : undefined;
+      if (!id) return;
+      e.stopPropagation();
+      (e.target as unknown as Element).setPointerCapture?.(e.pointerId);
+      drag.current = { id, x: e.clientX, y: e.clientY, moved: false, to: null };
+      setControls(controls, false);
+    },
+    onPointerMove: (e: ThreeEvent<PointerEvent>) => {
+      const d = drag.current;
+      if (!d) return;
+      if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 5) return;
+      d.moved = true;
+      const from = slots.find((s) => s.id === d.id);
+      d.to = from ? spotAt(e.ray, from.plane, d.id) : null;
+      setGhost(d.to);
+      document.body.style.cursor = "grabbing";
+    },
+    onPointerUp: (e: ThreeEvent<PointerEvent>) => {
+      const d = drag.current;
+      if (!d) return;
+      e.stopPropagation();
+      (e.target as unknown as Element).releasePointerCapture?.(e.pointerId);
+      drag.current = null;
+      setControls(controls, true);
+      setGhost(null);
+      document.body.style.cursor = "";
+      if (d.moved && d.to) edit.onMove(d.id, d.to);
+      else if (!d.moved) edit.onPick(edit.selected === d.id ? null : d.id);
+    },
+  } : {};
+
+  const poseOf = (slot: PanelSlot, lift: number) => {
+    const f = frames[slot.plane];
+    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(f.uAxis, f.normal, f.vAxis.clone().negate()));
+    return { pos: slotToWorld(f, slot.u, slot.v, lift), q };
+  };
+  const ghostAt = ghost ? poseOf(ghost, PANEL_LIFT) : null;
+  const pickedSlot = edit?.selected ? slots.find((x) => x.id === edit.selected) : undefined;
+  const pickedAt = pickedSlot && !ghost ? poseOf(pickedSlot, PANEL_LIFT - 0.03) : null;
+
   return (
-    <group {...handlers("pv", pointer)}>
-      <instancedMesh ref={glass} args={[glassGeo, glassMats, maxCount]} castShadow receiveShadow frustumCulled={false} />
+    <group {...(edit ? {} : handlers("pv", pointer))}>
+      <instancedMesh ref={glass} args={[glassGeo, glassMats, maxCount]} castShadow receiveShadow frustumCulled={false} {...editHandlers} />
+      {pickedAt && (
+        <mesh position={pickedAt.pos} quaternion={pickedAt.q} raycast={() => null}>
+          <boxGeometry args={[PANEL.w + 0.16, 0.02, PANEL.h + 0.16]} />
+          <meshBasicMaterial color="#e9a23b" />
+        </mesh>
+      )}
+      {ghostAt && (
+        <mesh position={ghostAt.pos} quaternion={ghostAt.q} raycast={() => null}>
+          <boxGeometry args={[PANEL.w, 0.04, PANEL.h]} />
+          <meshBasicMaterial color="#e9a23b" transparent opacity={0.45} depthWrite={false} />
+        </mesh>
+      )}
       <instancedMesh ref={rim} args={[rimGeo, rimMat, maxCount]} castShadow frustumCulled={false} />
     </group>
   );
