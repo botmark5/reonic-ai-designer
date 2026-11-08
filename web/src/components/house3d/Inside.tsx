@@ -92,7 +92,8 @@ function buildBattery(p: Palette, modules: number) {
   return g;
 }
 
-function fade(m: THREE.Material, to: number, dt: number) {
+function tint(m: THREE.MeshBasicMaterial, colour: string | null, to: number, dt: number) {
+  if (colour) m.color.set(colour);
   m.opacity += (to - m.opacity) * (1 - Math.exp(-12 * Math.min(dt, 0.1)));
 }
 
@@ -102,9 +103,10 @@ function setEnabled(c: React.RefObject<CameraControls | null>, on: boolean) {
 
 /** Zone floors light up while a part is dragged: allowed zones in the part's colour, the others stay plain. */
 function ZoneTint({ zone, active, colour }: { zone: Zone; active: boolean; colour: string }) {
-  const mat = useMemo(() => new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: 0, depthWrite: false }), [colour]);
+  const mat = useMemo(() => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }), []);
   useEffect(() => () => mat.dispose(), [mat]);
-  useFrame((_, dt) => fade(mat, active ? 0.22 : 0, dt));
+  // keep the last colour while fading out, so letting go eases instead of snapping
+  useFrame((_, dt) => tint(mat, active ? colour : null, active ? 0.22 : 0, dt));
   const z = ZONES[zone];
   return (
     <mesh material={mat} position={[(z.x0 + z.x1) / 2, z.floorY + 0.03, (WALL_Z + DEPTH[1]) / 2]} rotation-x={-Math.PI / 2}>

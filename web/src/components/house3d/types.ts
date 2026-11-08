@@ -50,8 +50,9 @@ export interface StageReveal {
 }
 
 /**
- * One panel as the planner placed it. Position is in metres on its roof segment's plane, measured from the
- * segment's lower-left corner (u along the eave, v up the slope). Moving panels never changes the engine's size.
+ * One panel as the planner placed it on the model roof: its centre in metres on the roof plane, u along the eave
+ * from the plane's centre (negative = left), v up the slope from the eave. segment 0 = main roof, 1 = garage roof.
+ * Moving panels never changes the engine's size.
  */
 export interface StagePanel {
   id: string;

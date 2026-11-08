@@ -53,7 +53,8 @@ export interface House3DProps {
   cameraKey?: string;
   /** Planner may move, add and remove panels. Only placement: the engine's kWp never changes. */
   editable?: boolean;
-  onPanelsChange?: (panels: StagePanel[]) => void;
+  /** The planner's layout; null = back to the engine's layout (Reset). */
+  onPanelsChange?: (panels: StagePanel[] | null) => void;
   className?: string;
 }
 
@@ -222,8 +223,13 @@ export function House3D({
     onPanelsChange?.(slots.map((s) => ({ id: s.id, segment: s.plane === "main" ? 0 : 1, u: s.u, v: s.v, portrait: true })));
   };
   const pickedSlot = picked ? spec.layout.slots.find((s) => s.id === picked) ?? null : null;
+  const locked = useMemo(() => new Set(baseSpec.layout.slots.slice(0, baseSpec.existingPanels).map((s) => s.id)), [baseSpec]);
   const panelEdit: PanelEditing | null = canEdit
-    ? { selected: pickedSlot?.id ?? null, grid, onPick: setPicked, onMove: (id, to) => { commit(movePanel(spec.layout.slots, id, to)); setPicked(to.id); } }
+    ? {
+        selected: pickedSlot?.id ?? null, grid, locked,
+        onPick: (id) => setPicked(id && locked.has(id) ? null : id),
+        onMove: (id, to) => { if (locked.has(id)) return; commit(movePanel(spec.layout.slots, id, to)); setPicked(to.id); },
+      }
     : null;
   // Delete / Backspace removes the picked panel, Escape lets go (not while typing elsewhere)
   const keys = useRef<(e: KeyboardEvent) => void>(() => {});
@@ -327,7 +333,7 @@ export function House3D({
             data-h3d-ui
             role="toolbar"
             aria-label="Edit panels"
-            className={cn("absolute bottom-3 left-3 flex items-center gap-1 p-1", glassPanel, "rounded-full")}
+            className={cn("absolute bottom-3 left-3 hidden items-center gap-1 p-1 sm:flex", glassPanel, "rounded-full")}
           >
             <span className={cn("px-2.5 font-mono text-[12px] tabular-nums", placedPanels === enginePanels ? "text-ink-body" : "text-warning-text")}>
               Placed {placedPanels} of {enginePanels}
@@ -335,14 +341,14 @@ export function House3D({
             <button type="button" onClick={() => commit(addPanel(spec.layout.slots, grid, pickedSlot))} className={cn(pill, "h-7 text-ink-body [@media(hover:hover)]:hover:bg-surface-2")}>Add</button>
             <button type="button" disabled={!pickedSlot} onClick={() => { if (pickedSlot) { commit(removePanel(spec.layout.slots, pickedSlot.id)); setPicked(null); } }} className={cn(pill, "h-7 text-ink-body disabled:opacity-40 [@media(hover:hover)]:hover:bg-surface-2")}>Remove</button>
             {editedSlots && (
-              <button type="button" onClick={() => { setEdited(null); setPicked(null); onPanelsChange?.([]); }} className={cn(pill, "h-7 text-ink-body [@media(hover:hover)]:hover:bg-surface-2")}>Reset</button>
+              <button type="button" onClick={() => { setEdited(null); setPicked(null); onPanelsChange?.(null); }} className={cn(pill, "h-7 text-ink-body [@media(hover:hover)]:hover:bg-surface-2")}>Reset</button>
             )}
           </div>
         )}
 
         {/* camera presets: the only control over the model */}
         {show3d && controls !== "none" && (
-          <div data-h3d-ui className="absolute right-3 top-3 flex items-center gap-1.5">
+          <div data-h3d-ui className="absolute right-3 top-3 hidden items-center gap-1.5 sm:flex">
             <div role="group" aria-label="Camera view" className={cn("flex gap-1 p-1", glassPanel, "rounded-full")}>
               {PRESETS.map((p) => (
                 <button

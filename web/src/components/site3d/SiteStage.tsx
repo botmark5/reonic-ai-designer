@@ -52,7 +52,10 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
   const d = design.design;
   const kwp = d.pv.include && d.pv.kwp ? d.pv.kwp : 0;
   const [placement, setPlacement] = useState<{ key: string; p: Placement } | null>(null);
-  const [first, setFirst] = useState(false);
+  // first tiles arrived, per address (a new address shows the loading veil and re-arms the fallback timer)
+  const at = `${location.lat.toFixed(6)},${location.lng.toFixed(6)}`;
+  const [firstAt, setFirstAt] = useState<string | null>(null);
+  const first = firstAt === at;
   const [attribution, setAttribution] = useState("");
   const fellBack = useRef(false);
   const fallback = useRef(onFallback);
@@ -86,7 +89,7 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
       if (!fellBack.current) { fellBack.current = true; fallback.current("tiles: slow"); }
     }, FIRST_TILES_MS + 2000); // + the placement request
     return () => window.clearTimeout(t);
-  }, [first]);
+  }, [first, at]);
 
   const chips = [
     panelsOn && kwp ? { k: "pv", label: "Solar", v: fmt(kwp, "kWp"), dot: "bg-comp-pv" } : null,
@@ -95,7 +98,8 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
     d.heatpump.include ? { k: "heatpump", label: "Heat pump", v: fmt(d.heatpump.kw, "kW"), dot: "bg-comp-heatpump" } : null,
   ].filter((c): c is { k: string; label: string; v: string | null; dot: string } => !!c);
 
-  const p = placement?.key === key ? placement.p : null;
+  // a new kWp at the same address keeps the last placement on screen until the new one arrives
+  const p = placement && (placement.key === key || placement.key.startsWith(`${at},`)) ? placement.p : null;
 
   // sun map: fetched the first time it is switched on, for the same point the panels use
   const [sunOwn, setSunOwn] = useState(false);
@@ -134,7 +138,7 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
                 panelsOn={panelsOn}
                 reduced={reduced}
                 pvLabel={labels && kwp ? fmt(kwp, "kWp") : null}
-                onFirstTiles={() => setFirst(true)}
+                onFirstTiles={() => setFirstAt(at)}
                 onError={fail}
                 onAttribution={setAttribution}
               />
@@ -143,7 +147,7 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
         )}
         {!first && (
           <div className="absolute inset-0 grid place-items-center">
-            <span className="animate-pulse text-sm text-ink-muted">Loading the street…</span>
+            <span role="status" className="animate-pulse text-sm text-ink-muted">Loading the street…</span>
           </div>
         )}
         {/* Google's attribution: always visible while the tiles are on screen */}
