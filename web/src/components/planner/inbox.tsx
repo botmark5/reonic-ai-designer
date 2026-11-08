@@ -30,10 +30,11 @@ export function Inbox({
   rows: DesignRow[];
   selectedId: string;
   onSelect: (row: DesignRow) => void;
-  onNew: (name: string) => void;
+  onNew: (name: string, address?: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
   const now = useSyncExternalStore(subscribeClock, clientNow, serverNow);
 
   return (
@@ -53,11 +54,12 @@ export function Inbox({
       </div>
       {adding && (
         <form
-          className="flex gap-1.5"
+          className="flex flex-col gap-1.5"
           onSubmit={(e) => {
             e.preventDefault();
-            onNew(name.trim() || "New home");
+            onNew(name.trim() || "New home", address.trim() || undefined);
             setName("");
+            setAddress("");
             setAdding(false);
           }}
           onKeyDown={(e) => e.key === "Escape" && setAdding(false)}
@@ -73,9 +75,22 @@ export function Inbox({
             placeholder="Customer, town"
             className="h-8 min-w-0 flex-1 rounded-sm border border-border-strong/60 bg-surface-1 px-2.5 text-[13px] outline-none focus-visible:border-focus focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-focus/60"
           />
-          <button type="submit" className="h-8 cursor-pointer rounded-pill bg-primary px-3 text-[13px] font-medium text-primary-ink">
-            Create
-          </button>
+          <label htmlFor="new-home-address" className="sr-only">
+            Address
+          </label>
+          <div className="flex gap-1.5">
+            <input
+              id="new-home-address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="Street, number, city"
+              autoComplete="street-address"
+              className="h-8 min-w-0 flex-1 rounded-sm border border-border-strong/60 bg-surface-1 px-2.5 text-[13px] outline-none focus-visible:border-focus focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-focus/60"
+            />
+            <button type="submit" className="h-8 cursor-pointer rounded-pill bg-primary px-3 text-[13px] font-medium text-primary-ink">
+              Create
+            </button>
+          </div>
         </form>
       )}
       {rows.length === 0 ? (
