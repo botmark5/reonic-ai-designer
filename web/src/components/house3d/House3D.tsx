@@ -261,6 +261,7 @@ export function House3D({
                 flyIn={flyIn && !reveal}
                 shown={shownParts}
                 building={!!reveal}
+                hpOption={!!design.options?.heatpump?.available && !!reveal}
                 labels={labels}
                 cameraKey={cameraKey}
                 inView={inView}

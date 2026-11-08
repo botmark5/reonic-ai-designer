@@ -43,8 +43,10 @@ export interface StageReveal {
   battery?: boolean;
   /** The car drives in (only if the design has a wallbox). */
   car?: boolean;
-  /** Heat pump appears as a ghost first, then solid (only if the design has one). */
+  /** Heat pump appears as a ghost first, then solid. If the design only offers it as an option, it stays a ghost. */
   heatpump?: boolean;
+  /** Windows glow warm (the household's consumption is known). Look only. */
+  warm?: boolean;
 }
 
 /**

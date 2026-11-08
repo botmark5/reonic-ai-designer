@@ -79,3 +79,15 @@ same props. Props not yet supported by a renderer are accepted and ignored. Full
 - `timeOfDay` / `onTimeOfDayChange`: controlled time; Play is hidden when controlled without a change handler.
 - `labels`: always-on projector labels (Solar kWp, Battery kWh, Wallbox kW, Heat pump kW).
 - `controls`: "full" (time bar + readout UNDER the model), "minimal" (camera presets), "none".
+
+### Real outside (site3d, behind a flag)
+- On with `?tiles=1` or `NEXT_PUBLIC_HOUSE_TILES=1`; needs `location` and `NEXT_PUBLIC_GOOGLE_MAPS_TILES_KEY`
+  (referrer-locked: production, localhost:3123, localhost:3125). `?tiles=0` forces it off, `?static=1` forces the still.
+- Google photorealistic 3D tiles re-centred on the address (+x east, −z north, like the model). Panels come from
+  `/api/solar/panels` (d-voice): each roof segment sits at Google's plane height + one geoid offset calibrated by
+  rays onto the photogrammetry (low quartile of 9 rays per segment, median over segments, rejected if implausible).
+- Falls back to the procedural house (silently, once per address) on: no key, no location, placement not ok,
+  tile error before the first tile, no tiles within ~6 s, a crash. "Model view" switches by hand.
+- Google attribution is always visible bottom-left. `reveal.panels` drops the panels row by row; `labels` shows chips.
+- f-hero extras: `reveal.warm` (windows glow), heat pump shown as a permanent ghost when only offered
+  (`design.options.heatpump.available`) and `reveal.heatpump` is on.

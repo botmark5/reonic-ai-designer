@@ -30,7 +30,9 @@ import { revealed, revealFlows } from "../stage";
 
 describe("revealed", () => {
   it("shows everything without a reveal", () => {
-    expect(Object.values(revealed(undefined)).every(Boolean)).toBe(true);
+    const { warm, ...rest } = revealed(undefined);
+    expect(warm).toBe(false);
+    expect(Object.values(rest).every(Boolean)).toBe(true);
   });
   it("hides everything at the start of a build-up", () => {
     expect(Object.values(revealed({})).some(Boolean)).toBe(false);
@@ -82,5 +84,19 @@ describe("reveal defaults for inverter, battery and existing PV", () => {
     const r = { shell: true, roof: true, panels: true, inverter: false };
     expect(revealedFromKey(revealKey(r))).toEqual(revealed(r));
     expect(revealedFromKey(revealKey({ shell: true, roof: true, panels: true })).inverter).toBe(true);
+  });
+});
+
+import { staticWanted } from "../stage";
+describe("warm and static", () => {
+  it("warm only in a build-up, after the shell", () => {
+    expect(revealed(undefined).warm).toBe(false);
+    expect(revealed({ warm: true }).warm).toBe(false);
+    expect(revealed({ shell: true, warm: true }).warm).toBe(true);
+    expect(revealedFromKey(revealKey({ shell: true, warm: true })).warm).toBe(true);
+  });
+  it("?static=1 forces the still", () => {
+    expect(staticWanted("?static=1")).toBe(true);
+    expect(staticWanted("?static=0")).toBe(false);
   });
 });
