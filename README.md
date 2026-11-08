@@ -48,14 +48,14 @@ Every number below, with its source and how to say it, is in [`docs/pitch-facts.
 
 | | engine | best rule of thumb |
 |---|---|---|
-| Whole-project solar error, all homes (an unwanted or missing system counts) | **2.94 kWp** | 3.77 kWp (22 % lower) |
-| Solar error, new systems (253 homes) | 2.50 kWp | 2.62 kWp (on par, inside cross-validation noise) |
+| Whole-project solar error, all homes (an unwanted or missing system counts) | **2.93 kWp** | 3.77 kWp (22 % lower) |
+| Solar error, new systems (253 homes) | 2.42 kWp | 2.62 kWp (level, at the edge of cross-validation noise) |
 | Solar yes/no right, all homes | **88 %** | 82 % |
 | Add-on sales (62 homes): proposes no new solar where none was sold, without being told there is solar on the roof | **77 %** | 6 % |
-| Battery size where both chose one | 2.45 kWh | 2.71 kWh |
-| Battery within one catalogue size, new systems | 54 % | 46 % |
-| Expert PV inside the engine's P10–P90 range, new full systems (target 80 %) | 79–81 % | – |
-| Expert PV within 1.5 kWp of one of the engine's 3 options, new systems | 69 % | – |
+| Battery size where both chose one | 2.42 kWh | 2.71 kWh |
+| Battery within one catalogue size, new systems | 53 % | 46 % |
+| Expert PV inside the engine's P10–P90 range, new full systems (target 80 %) | 82 % | – |
+| Expert PV within 1.5 kWp of one of the engine's 3 options, new systems | 67 % | – |
 | Installer transfer and per-installer tests where the engine beats the best rule | 4 of 4 | – |
 
 One full design takes 0.27–0.64 s from the laptop to the live engine. In the measured demo flow it is 29 s of machine time from
@@ -63,7 +63,7 @@ One full design takes 0.27–0.64 s from the laptop to the live engine. In the m
 
 ## Known limits
 - **Exact PV size:** within ±1.5 kWp the engine is right for 40 % of homes against 43 % for the band median. The gains are the
-  yes/no decisions, the add-on sales and the ranges. Every learner we tried landed between 2.47 and 2.57 kWp of error: without
+  yes/no decisions, the add-on sales and the ranges. Every learner we tried landed between 2.42 and 2.57 kWp of error: without
   roof data, PV size is barely more predictable from these inputs.
 - **Below the rule:** battery yes/no over all homes (88 vs 90 %) and wallbox yes/no (72 vs 73 %). A new system almost always
   gets a battery, and without EV information the wallbox is close to a coin flip.
