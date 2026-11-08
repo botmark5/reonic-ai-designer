@@ -63,6 +63,7 @@ function dispose(obj: THREE.Object3D) {
 }
 
 const NO_SLOTS: PanelSlot[] = [];
+const LABEL_SIDE = { pv: "above", battery: "right", wallbox: "left", heatpump: "left" } as const;
 const facing = (m: Mount) => new THREE.Vector3(Math.sin(m.yaw), 0, Math.cos(m.yaw));
 const UP = new THREE.Vector3(0, 1, 0);
 const SUN_TARGET = new THREE.Vector3(); // per-frame scratch
@@ -221,6 +222,13 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
   const intro = flyIn && !reduced; // first appearance animates only with the fly-in
   // contact shadows re-render only for a few seconds after something on the ground changed
   const groundKey = `${slots.length}|${modules}|${c.wallbox.visible && shown.car}|${c.heatpump.visible && shown.heatpump}|${shown.shell}|${spec.roof.pitchDeg}|${palette.surface0}`;
+  // always-on labels sit on the part itself and to its side (the tooltip keeps the spot above)
+  const labelAt = useMemo(() => ({
+    pv: nodes.panels.clone().addScaledVector(frames.main.normal, 0.3),
+    battery: labels.battery.clone().add(new THREE.Vector3(0, -1.0, 0)),
+    wallbox: labels.wallbox.clone(),
+    heatpump: labels.heatpump.clone(),
+  }), [nodes, labels, frames]);
   const labelKeys = (["pv", "battery", "wallbox", "heatpump"] as const).filter((k) =>
     showLabels && settled && c[k].visible && k !== active && (k === "pv" ? shown.pv : k === "battery" ? shown.battery : k === "wallbox" ? shown.car : shown.heatpump));
 
@@ -239,7 +247,7 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
         <Car object={equipment.car} path={anchors.carPath} visible={c.wallbox.visible && shown.car} reduced={reduced} intro={intro} pointer={pointer} />
         <EnergyFlow flows={flows} nodes={nodes} sunDir={sunLocal} rayTargets={rays} gradientStops={palette.flow} reduced={reduced} />
         <ContactShadows key={groundKey} frames={reduced ? 2 : 200} position={[1.2, 0.012, 2]} scale={38} resolution={512} blur={2.6} far={7} opacity={0.38} color="#1b1d20" />
-        {labelKeys.map((k) => <Label key={k} spec={c[k]} position={labels[k]} />)}
+        {labelKeys.map((k) => <Label key={k} spec={c[k]} position={labelAt[k]} side={LABEL_SIDE[k]} />)}
         {activeSpec?.visible && <Tooltip spec={activeSpec} position={labels[activeSpec.key]} />}
       </group>
       <Daylight moment={moment} palette={palette} reduced={reduced} />
