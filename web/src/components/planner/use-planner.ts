@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { diffDesigns, sizeOf, type DesignDiff } from "@/lib/diff";
 import { roofNotAsked, type RoofInputs } from "@/lib/roof";
+import { createSaveQueue } from "./save-queue";
 import type { DesignRow } from "@/lib/supabase";
 import type {
   ComponentKey,
@@ -83,10 +84,11 @@ export function usePlanner(initial: DesignRow) {
   const validateRef = useRef<AbortController | null>(null);
   const changeId = useRef(0);
 
+  const saves = useRef(createSaveQueue());
   const save = useCallback((patch: Partial<DesignRow>) => {
     const id = stateRef.current.row.id;
-    fetch(`/api/designs/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }).catch(
-      () => {},
+    saves.current.push(() =>
+      fetch(`/api/designs/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }),
     );
   }, []);
 
@@ -227,6 +229,8 @@ export function usePlanner(initial: DesignRow) {
     const st = stateRef.current;
     if (!st.response) return null;
     try {
+      // the link is made from the stored row: wait until the latest change (e.g. a refine) has been saved
+      await saves.current.idle();
       // allowed variants are computed by the server from the engine's alternatives
       const r = await post<{ token: string; path: string }>("/api/shares", { design_id: st.row.id });
       setS((p) => ({ ...p, row: { ...p.row, status: "sent" } }));
