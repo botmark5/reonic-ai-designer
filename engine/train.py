@@ -8,7 +8,8 @@ Steps
     1. labels (engine/labels or interim) + home inputs (data/raw) -> one row per project
     2. engine/evaluate.run_evaluation: held-out 20 % (by project) + installer transfer, vs. baselines
        -> engine/artifacts/eval_results.json   (served by GET /eval)
-    3. fit DesignModel on ALL projects -> engine/artifacts/design_model.joblib (served by the API)
+    3. fit DesignModel on ALL offer options of all projects -> engine/artifacts/design_model.joblib (served by the API)
+       (Reonic, 8 Nov: no option is marked as signed and each one is a valid design, so every option is a training row)
        The metrics in step 2 come from a model that never saw the test projects.
 """
 from __future__ import annotations
@@ -20,8 +21,8 @@ import warnings
 
 import pandas as pd
 
-from engine.evaluate import (ARTIFACTS, BASELINES, build_eval_table, inputs_from_labels, load_inputs, planner_answer,
-                             run_evaluation, summary_table)
+from engine.evaluate import (ARTIFACTS, BASELINES, build_eval_table, build_train_table, inputs_from_labels, load_inputs,
+                             planner_answer, run_evaluation, summary_table)
 from engine.interim_labels import build_catalogue, get_labels
 from engine.eval_bands import compute_by_band
 from engine.model import MODEL_PATH, DesignModel
@@ -29,7 +30,8 @@ from engine.model import MODEL_PATH, DesignModel
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
 
 HEADLINE = ["pv_kwp_mae", "pv_kwp_mae_when_both_pv", "pv_kwp_mae_all_projects", "pv_kwp_within_1.5_pct", "pv_variant_hit_tolerant_pct", "battery_kwh_mae",
-            "battery_kwh_mae_when_both_battery", "battery_within_one_step_pct", "battery_variant_hit_tolerant_pct", "has_pv_accuracy",
+            "battery_kwh_mae_when_both_battery", "battery_within_one_step_pct", "battery_variant_hit_tolerant_pct",
+            "pv_kwp_mae_nearest_option", "pv_kwp_within_1.5_nearest_option_pct", "battery_within_one_step_nearest_option_pct", "has_pv_accuracy",
             "has_battery_accuracy", "has_wallbox_accuracy", "has_heatpump_accuracy", "n_projects"]
 
 
@@ -84,11 +86,12 @@ def main(argv=None):
         tr = pd.DataFrame(results["transfer"][name]).loc[HEADLINE, cols]
         print(tr.round(2).to_string())
 
-    model = DesignModel().fit(build_eval_table(labels, inputs))
+    model = DesignModel().fit(build_train_table(labels, inputs))
     model.inputs_source_ = inputs_source
     model.labels_source_ = source
     model.save(MODEL_PATH)
-    print(f"\n[saved] {MODEL_PATH} (trained on {model.n_train_} projects), eval_results.json  ({time.time() - t0:.0f}s)")
+    print(f"\n[saved] {MODEL_PATH} (trained on {model.n_train_rows_} offer options of {model.n_train_} projects), "
+          f"eval_results.json  ({time.time() - t0:.0f}s)")
 
 
 if __name__ == "__main__":

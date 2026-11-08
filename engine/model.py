@@ -135,7 +135,11 @@ class DesignModel:
 
     # ------------------------------------------------------------------ training
     def fit(self, table: pd.DataFrame) -> "DesignModel":
-        """table: one row per project = inputs + the expert (primary) design (see evaluate.build_eval_table)."""
+        """
+        table: inputs + an expert design per row. Shipped training: one row per offer option of each project
+        (evaluate.build_train_table; Reonic, 8 Nov 2026: every option is a valid design and none is marked as signed).
+        One row per project (evaluate.build_eval_table) works too and is what the baselines and older runs used.
+        """
         t = clean_inputs(table)
         t = t[t.annual_kwh.notna()].reset_index(drop=True)          # no demand -> cannot learn from it
         self.installers_ = sorted(t.installer.unique())
@@ -241,8 +245,11 @@ class DesignModel:
         keep = ["project_id", "installer", "annual_kwh", "has_ev", "pv_kwp", "battery_kwh", "has_pv", "has_battery",
                 "has_wallbox", "heatpump_kw"]
         X_orig = X.iloc[len(tt) - len(t):]
-        self.reference_ = t[[c for c in keep if c in t]].assign(total_demand_kwh=X_orig.total_demand_kwh.to_numpy())
-        self.n_train_ = len(t)
+        ref = t[[c for c in keep if c in t]].assign(total_demand_kwh=X_orig.total_demand_kwh.to_numpy())
+        # similar homes are looked up per project: keep one row per project (the first = the primary option)
+        self.reference_ = ref.drop_duplicates("project_id") if "project_id" in ref else ref
+        self.n_train_rows_ = len(t)
+        self.n_train_ = int(t.project_id.nunique()) if "project_id" in t else len(t)
         return self
 
     def _on(self, flag: str) -> bool:

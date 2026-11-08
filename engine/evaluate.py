@@ -10,7 +10,10 @@ Independent of HOW the labels are built (engine/labels.py) and of WHICH model is
 Protocol
     held-out : 80/20 split BY CUSTOMER / PROJECT (never by row), stratified by installer, seed 42
     transfer : train on installer A, test on installer B (and B -> A)
-    truth    : the primary option of each project; the min/max over ALL its options = "variant range"
+    truth    : the primary option of each project; the min/max over ALL its options = "variant range";
+               *_nearest_option metrics score against the closest of the project's options (Reonic, 8 Nov 2026:
+               the export has no signed flag and no proxy for it, every option is a valid planner's design)
+    training : ALL offer options of the training projects (exact duplicates dropped), see build_train_table
 """
 from __future__ import annotations
 
@@ -216,14 +219,20 @@ def load_catalogue(labels: pd.DataFrame, path: Path | str | None = ARTIFACTS / "
 # ---------------------------------------------------------------------------
 # Evaluation table: primary design + inputs + variant ranges
 # ---------------------------------------------------------------------------
+def _option_sizes(s: pd.Series) -> tuple:
+    """Distinct sizes over a project's options (0 = none), rounded to 0.01."""
+    return tuple(sorted(set(float(x) for x in np.round(s.fillna(0).astype(float), 2))))
+
+
 def build_eval_table(labels: pd.DataFrame, inputs: pd.DataFrame) -> pd.DataFrame:
-    """One row per project: inputs, the primary (expert) design and the min/max over all options."""
+    """One row per project: inputs, the primary (expert) design, the min/max and the distinct sizes over all options."""
     labels = normalize_labels(labels)
     validate_labels(labels)
     ranges = labels.groupby("project_id").agg(
         pv_min=("pv_kwp", "min"), pv_max=("pv_kwp", "max"),
         battery_min=("battery_kwh", "min"), battery_max=("battery_kwh", "max"),
-        n_options=("option_number", "nunique"))
+        n_options=("option_number", "nunique"),
+        pv_options=("pv_kwp", _option_sizes), battery_options=("battery_kwh", _option_sizes))
     primary = labels[labels.is_primary.astype(bool)]
     keep = ["project_id", "installer"] + [c for c in REQUIRED_LABEL_COLUMNS if c not in ("project_id", "installer",
                                                                                            "option_number", "is_primary")]
@@ -241,6 +250,36 @@ def build_eval_table(labels: pd.DataFrame, inputs: pd.DataFrame) -> pd.DataFrame
 # ---------------------------------------------------------------------------
 # Splits
 # ---------------------------------------------------------------------------
+TRAIN_DESIGN_COLUMNS = DESIGN_COLUMNS + ["heatpump_kw", "offer_type", "wallbox_kw", "inverter_kw"]
+
+
+def build_train_table(labels: pd.DataFrame, inputs: pd.DataFrame, table: pd.DataFrame | None = None) -> pd.DataFrame:
+    """
+    The TRAINING rows: one row per offer option (exact duplicate options dropped) with its project's inputs.
+
+    Reonic (Niklas, 8 Nov 2026) on the export: there is no signed flag and no reliable proxy for it (option numbers
+    only count up, gaps are deleted options), and every option is a real planner's design for that home. So the model
+    learns from all of them, while the evaluation truth stays one row per project (build_eval_table: primary row,
+    variant range and the nearest-option metrics).
+    `table` = build_eval_table(labels, inputs) or a subset of it (e.g. the training split): only its projects are kept.
+    """
+    table = build_eval_table(labels, inputs) if table is None else table
+    lab = normalize_labels(labels)
+    lab = lab[lab.project_id.isin(set(table.project_id))]
+    if "is_duplicate_option" in lab.columns:                       # engine/labels: same items as a lower-numbered option
+        lab = lab[~lab.is_duplicate_option.fillna(False).astype(bool)]
+    else:                                                          # interim labels: same extracted design
+        lab = lab.drop_duplicates(["project_id"] + [c for c in TRAIN_DESIGN_COLUMNS if c in lab.columns])
+    design = [c for c in TRAIN_DESIGN_COLUMNS if c in table.columns and c in lab.columns]
+    base = table.drop(columns=design).set_index("project_id")
+    rows = lab[["project_id", "option_number"] + design].join(base, on="project_id")
+    for c in BOOL_COMPONENTS:
+        rows[c] = rows[c].astype(bool)
+    if "offer_type" not in lab.columns and "offer_type" in rows.columns:
+        rows["offer_type"] = derive_offer_type(rows)               # per option, not the primary's type
+    return rows[table.columns.tolist() + ["option_number"]].reset_index(drop=True)
+
+
 def grouped_split(table: pd.DataFrame, test_size: float = 0.2, seed: int = SEED):
     """
     Split by CUSTOMER when customer_contact_id is known (41 customers have 2 projects), else by project_id:
@@ -407,6 +446,34 @@ def _rate(mask) -> float | None:
     return float(mask.mean() * 100) if mask.size else None
 
 
+def _nearest_option_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) -> dict:
+    """
+    Errors against the NEAREST offer option of each project (min over its options). The honest size metric once
+    no option is "the" signed one (Reonic, 8 Nov 2026); equals the primary metrics for single-option projects.
+    """
+    pv_pred = pred.pv_kwp.astype(float).fillna(0).to_numpy()
+    b_pred = pred.battery_kwh.astype(float).fillna(0).to_numpy()
+    e_all, e_pv, e_bat, step_ok = [], [], [], []
+    for (_, t), pp, bp in zip(truth.iterrows(), pv_pred, b_pred):
+        pv_opts = np.asarray(t.pv_options, dtype=float)
+        b_opts = np.asarray(t.battery_options, dtype=float)
+        e_all.append(float(np.abs(pp - pv_opts).min()))
+        pv_opts, b_opts = pv_opts[pv_opts > 0], b_opts[b_opts > 0]
+        if len(pv_opts) and pp > 0:
+            e_pv.append(float(np.abs(pp - pv_opts).min()))
+        if len(b_opts) and bp > 0:
+            e_bat.append(float(np.abs(bp - b_opts).min()))
+            sizes = catalogue.get(t.installer) or sorted(set(sum(catalogue.values(), [])))
+            s = step_index([bp], sizes)[0]
+            step_ok.append(min(abs(s - step_index([x], sizes)[0]) for x in b_opts) <= 1)
+    e_pv = np.asarray(e_pv)
+    return {"pv_kwp_mae_all_projects_nearest_option": float(np.mean(e_all)) if e_all else None,
+            "pv_kwp_mae_nearest_option": float(e_pv.mean()) if len(e_pv) else None,
+            "pv_kwp_within_1.5_nearest_option_pct": _rate(e_pv <= 1.5) if len(e_pv) else None,
+            "battery_kwh_mae_nearest_option": float(np.mean(e_bat)) if e_bat else None,
+            "battery_within_one_step_nearest_option_pct": _rate(step_ok) if step_ok else None}
+
+
 def compute_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) -> dict:
     """
     truth: rows of the eval table; pred: predictions with DESIGN_COLUMNS, same index.
@@ -484,6 +551,8 @@ def compute_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) ->
     m["battery_variant_hit_strict_pct"] = _rate(strict)
     m["battery_variant_hit_tolerant_pct"] = _rate(tolerant)
     m["n_multi_option_projects"] = int((truth.n_options > 1).sum())
+    if {"pv_options", "battery_options"} <= set(truth.columns):
+        m.update(_nearest_option_metrics(truth, pred, catalogue))
     if "offer_type" in pred.columns and "offer_type" in truth.columns:
         m["offer_type_accuracy"] = _rate((pred.offer_type == truth.offer_type.map(OFFER_GROUP)).to_numpy())
     return m
@@ -492,8 +561,9 @@ def compute_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: dict) ->
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
-def _evaluate_one(factory, train, test, catalogue, with_segments=False):
-    model = factory().fit(train)
+def _evaluate_one(factory, train, test, catalogue, with_segments=False, train_rows=None):
+    """train_rows: the option rows of the training projects (build_train_table); fits on `train` when None."""
+    model = factory().fit(train if train_rows is None else train_rows)
     pred = model.predict(test) if len(test) else pd.DataFrame(columns=DESIGN_COLUMNS)
     missing = [c for c in DESIGN_COLUMNS if c not in pred.columns]
     if missing:
@@ -521,15 +591,23 @@ def run_evaluation(labels: pd.DataFrame, predictors: dict, inputs: pd.DataFrame 
     table = build_eval_table(labels, inputs)
     train, test = locked_split(table, test_ids_path, test_size, seed)
     assert not set(train.project_id) & set(test.project_id), "project leak between train and test"
+    options = build_train_table(labels, inputs, table)          # every offer option, one row each
+
+    def rows_of(projects):
+        return options[options.project_id.isin(set(projects.project_id))].reset_index(drop=True)
+
+    train_rows = rows_of(train)
     all_preds = {**BASELINES, **predictors}
 
     results = {"protocol": dict(split="grouped by customer_contact_id (else project_id), stratified by installer", test_size=test_size, seed=seed,
-                                n_train=len(train), n_test=len(test), pv_tolerance_kwp=PV_TOLERANCE_KWP,
+                                n_train=len(train), n_test=len(test), n_train_rows=len(train_rows),
+                                training_rows="all offer options of the training projects, exact duplicates dropped",
+                                pv_tolerance_kwp=PV_TOLERANCE_KWP,
                                 battery_tolerance_steps=BATTERY_TOLERANCE_STEPS, catalogue=catalogue),
                "metrics": {}, "by_installer": {}, "segments": {}, "transfer": {}, "baselines": list(BASELINES)}
     rows = []
     for name, factory in all_preds.items():
-        overall, by_inst, segs = _evaluate_one(factory, train, test, catalogue, with_segments=True)
+        overall, by_inst, segs = _evaluate_one(factory, train, test, catalogue, with_segments=True, train_rows=train_rows)
         results["metrics"][name], results["by_installer"][name] = overall, by_inst
         for seg_name, mm in segs.items():
             results["segments"].setdefault(seg_name, {})[name] = mm
@@ -539,7 +617,7 @@ def run_evaluation(labels: pd.DataFrame, predictors: dict, inputs: pd.DataFrame 
         for inst, mm in by_inst.items():
             rows += [dict(eval="held_out", predictor=name, installer=inst, metric=k, value=v) for k, v in mm.items()]
         for tname, tr, te in installer_transfer(table):
-            mm, _ = _evaluate_one(factory, tr, te, catalogue)
+            mm, _ = _evaluate_one(factory, tr, te, catalogue, train_rows=rows_of(tr))
             results["transfer"].setdefault(tname, {})[name] = mm
             rows += [dict(eval=f"transfer {tname}", predictor=name, installer=te.installer.iloc[0] if len(te) else "",
                           metric=k, value=v) for k, v in mm.items()]

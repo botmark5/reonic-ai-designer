@@ -29,6 +29,37 @@ battery-only offer = yes, new system = no, wallbox-only/other = unknown). It is 
    expert labels but moves PV MAE by ≤ 0.02 kWp and battery MAE by ≤ 0.16 kWh; the conformal P10–P90 PV range contains the expert's size in
    79–81 % of new full systems (target 80 %); two trainings give identical predictions (fixed seeds).
 
+## All offer options as training rows (Reonic's answer, 8 Nov)
+
+Darius asked Reonic which option of a multi-option project the customer signed. Niklas (Reonic): no signed flag in the export, no
+reliable proxy (option numbers only count up; a gap is a deleted option), and **every option is a valid planner's design**. The engine
+had been training on one row per project (lowest option number). Experiment on the locked test set (315 projects, 61 of them with
+2+ options; same split and scoring path as the ablation below): the same model trained on every option of the training projects.
+
+| metric (all projects, not answered) | primary row only (before) | all options, exact duplicates dropped (shipped) | all options incl. duplicates |
+|---|---|---|---|
+| training rows | 1,272 | 1,536 | 1,595 |
+| PV kWp MAE, all projects | 2.94 | 2.91 | 2.91 |
+| PV kWp MAE, size only | 2.48 | 2.43 | 2.44 |
+| PV within ±1.5 kWp | 40 % | 41 % | 39 % |
+| PV in expert variants ±1 kWp | 42 % | 43 % | 44 % |
+| battery kWh MAE, size only | 2.45 | 2.44 | 2.35 |
+| battery within 1 step | 54 % | 56 % | 57 % |
+| PV yes/no | 87.6 % | 87.3 % | 87.3 % |
+| battery yes/no | 87.6 % | 88.9 % | 88.3 % |
+| wallbox yes/no | 71.7 % | 71.4 % | 71.7 % |
+| offer type | 83.2 % | 83.5 % | 83.5 % |
+| vs nearest option: PV kWp MAE, size only | 2.45 | 2.39 | 2.40 |
+| vs nearest option: PV within ±1.5 kWp | 45 % | 47 % | 46 % |
+| vs nearest option: PV exact | 9 % | 11 % | 11 % |
+| vs nearest option: battery within 1 step | 58 % | 59 % | 60 % |
+
+On the 253 full designs (answered) the picture is the same: PV size MAE 2.49 → 2.47 kWp, battery MAE 2.64 → 2.60 kWh, battery within
+one step 54 → 55 %. The gain is small (a quarter of the projects have variants and two thirds of those have identical PV), consistent,
+and it is what the data owner says the data means, so it is shipped. The **nearest-option** rows are the honest size metrics now that no
+option is "the" signed one: the same predictions score 45–47 % within ±1.5 kWp instead of 40 %. Both views stay in `eval_results.json`
+(`*_nearest_option`). Exact duplicate options are dropped so a copied option does not count twice.
+
 ## Before/after per improvement (locked test set)
 
 315 held-out projects (engine/artifacts/test_ids.json, grouped by customer), truth = engine/labels.

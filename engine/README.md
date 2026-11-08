@@ -133,8 +133,14 @@ the answer is the same for every project and therefore carries no information ab
   locked test set: price, the "default 4,500 kWh" flag and the offer date each move PV yes/no by 3–5 points; EV, heating and load
   profile by < 1 point; removing the consumption costs 0.9 kWp of PV MAE. The answer to "Is there already PV on the roof?" is worth
   the most (PV yes/no 88 → 97 %).
-- **Which offer option is "the expert design"** (we take the lowest option number): using the highest option instead changes 142 of
-  1,587 labels and moves PV MAE by ≤ 0.02 kWp and battery MAE by ≤ 0.16 kWh on the locked test set.
+- **Which offer option is "the expert design":** none is marked. Reonic confirmed on 8 Nov (Niklas): the export has no signed flag,
+  option numbers only count up (a gap is a deleted option), neither the lowest nor the highest number is reliably the final design,
+  and every option is a real planner's design for that home. Since then **every option of a project is a training row**
+  (`evaluate.build_train_table`, exact duplicates dropped: 1,536 rows from the 1,272 training projects) and the evaluation reports, next
+  to the error against the lowest-numbered option, the error against the **nearest option** (`*_nearest_option` metrics). On the locked
+  test set the all-options training moves PV size MAE 2.48 → 2.43 kWp and battery within one step 54 → 56 %, nothing gets worse by
+  more than 0.3 points (engine/RESULTS.md, "All offer options"). Using the highest instead of the lowest option as the evaluation row
+  changes 142 of 1,587 labels and moves PV MAE by ≤ 0.02 kWp.
 - **Consumption below 1,500 kWh is rejected** (HTTP 422): the data has 21 placeholder entries at 0–1 kWh and nothing can be sized from them.
 - **Time trend:** new projects use a date capped at the 90th percentile of training dates (~Mar 2026), because the last month is an unusual batch of battery-only retrofits.
 - **Economics use placeholder prices.**
