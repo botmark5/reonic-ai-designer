@@ -6,7 +6,7 @@ import { compass } from "@/lib/roof";
 import type { Home } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 
-export type AddressLookup = "idle" | "looking" | "found" | "notfound";
+export type AddressLookup = "idle" | "looking" | "found" | "noroof" | "notfound";
 
 /** The customer's address: "Find house" saves it and looks the roof up (Google Solar → roof inputs, 3D house, Sun map). */
 function AddressField({ address, lookup, roofKwp, onFind }: { address: string; lookup: AddressLookup; roofKwp: number | null; onFind: (a: string) => void }) {
@@ -16,9 +16,11 @@ function AddressField({ address, lookup, roofKwp, onFind }: { address: string; l
     lookup === "looking"
       ? "Looking up the house…"
       : lookup === "found"
-        ? `House found${roofKwp ? `: the roof fits about ${roofKwp} kWp` : ""}.`
-        : lookup === "notfound"
-          ? "No house found at this address. Check street, number and city."
+        ? `✓ House found${roofKwp ? ` · roof fits about ${roofKwp} kWp` : ""}`
+        : lookup === "noroof"
+          ? "✓ Address found · no roof model from Google here"
+          : lookup === "notfound"
+            ? "Address not found. Try street + number + city."
           : "The roof size, the real house and the sun map come from the address.";
   return (
     <form
@@ -34,10 +36,10 @@ function AddressField({ address, lookup, roofKwp, onFind }: { address: string; l
       <div className="flex gap-2">
         <TextInput id={id} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Street, number, city" autoComplete="street-address" />
         <Button type="submit" variant="secondary" disabled={!draft.trim() || lookup === "looking"} className="shrink-0">
-          Find house
+          {lookup === "looking" ? "Finding…" : "Find house"}
         </Button>
       </div>
-      <p role="status" className={`m-0 text-[12px] leading-4 ${lookup === "notfound" ? "text-warning-text" : "text-ink-muted"}`}>
+      <p role="status" className={`m-0 text-[12px] leading-4 ${lookup === "notfound" ? "font-medium text-warning-text" : lookup === "found" || lookup === "noroof" ? "font-medium text-ink" : "text-ink-muted"}`}>
         {status}
       </p>
     </form>

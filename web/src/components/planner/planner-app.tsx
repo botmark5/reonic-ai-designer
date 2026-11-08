@@ -133,17 +133,31 @@ function Workspace({
       .then((res) => (res.ok ? (res.json() as Promise<SolarResult>) : null))
       .then((res) => {
         if (ctrl.signal.aborted) return;
-        if (!res) {
-          if (typed.current) setLookup("notfound");
+        // /api/solar answers 200 with a status: only "ok" is a house with a roof model. A geocode without roof data
+        // still places the house on the map.
+        const geocoded = !!res && Number.isFinite(res.lat) && Number.isFinite(res.lng);
+        if (!res || (res.status !== "ok" && !geocoded)) {
+          if (typed.current) {
+            setLookup("notfound");
+            toast.error("Address not found", { description: "Try street, number and city, e.g. Ungererstraße 80, München." });
+          }
           return;
         }
         setSolar(res);
-        if (typed.current) setLookup("found");
         const roof = roofInputsFromSolar(res);
+        if (typed.current) {
+          setLookup(res.status === "ok" ? "found" : "noroof");
+          if (res.status === "ok")
+            toast.success("House found", { description: roof?.roof_max_kwp ? `The roof fits about ${roof.roof_max_kwp} kWp. The 3D view shows the real street.` : "The 3D view shows the real street." });
+          else toast("Address found, no roof data", { description: "Google has no 3D roof model here; the design keeps your roof inputs." });
+        }
         if (roof) (typed.current ? setHome : applyRoof)(roof);
       })
       .catch(() => {
-        if (!ctrl.signal.aborted && typed.current) setLookup("notfound");
+        if (!ctrl.signal.aborted && typed.current) {
+          setLookup("notfound");
+          toast.error("Could not look the address up", { description: "Check the connection and try again." });
+        }
       });
     return () => ctrl.abort();
   }, [address, lookupRun, applyRoof, setHome]);

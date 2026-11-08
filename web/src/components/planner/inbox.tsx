@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { Plus } from "lucide-react";
+import Link from "next/link";
+import { MessageCircleQuestion, Plus } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { fmtRelative } from "@/lib/format";
 import type { DesignRow } from "@/lib/supabase";
@@ -52,6 +53,12 @@ export function Inbox({
           <Plus className="size-3.5" strokeWidth={1.5} aria-hidden /> New home
         </button>
       </div>
+      <Link
+        href="/intake"
+        className="-mt-0.5 inline-flex h-7 items-center gap-1 self-start rounded-pill px-2 text-[13px] font-medium text-ink-body transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-focus/60"
+      >
+        <MessageCircleQuestion className="size-3.5" strokeWidth={1.5} aria-hidden /> Start with questions
+      </Link>
       {adding && (
         <form
           className="flex flex-col gap-1.5"
