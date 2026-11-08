@@ -1,12 +1,12 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { DesignResponse, Home } from "../../lib/types";
 import { cn } from "../../lib/utils";
 import { House3D } from "./House3D";
 import { InsideStage } from "./InsideStage";
 import type { Zone } from "./insideRules";
-import { revealedFromKey, revealKey, stageRoof, staticWanted, tilesWanted } from "./stage";
+import { modelReason, revealedFromKey, revealKey, stageRoof, staticWanted, tilesWanted } from "./stage";
 import type {
   ComponentKey, House3DMode, RoofInput, StageControls, StageLocation, StagePanel, StageReveal, StageView,
 } from "./types";
@@ -37,6 +37,17 @@ export interface HouseStageProps {
   highlight?: ComponentKey | null;
   /** The viewer clicked a part in the scene (null: clicked empty space / Esc). */
   onSelect?: (key: ComponentKey | null) => void;
+  /** Progress (the /visit "Building your design" steps). The real street's first tiles are on screen. */
+  onTilesReady?: () => void;
+  /**
+   * The procedural model is the outside on screen, with why: "off" (street not enabled), "no key", "no location",
+   * "static", or the street's failure ("tiles: slow", "placement: …", "model view" when the viewer chose it).
+   */
+  onFallbackShown?: (reason: string) => void;
+  /** Panels on the roof (count), each time it changes: the model's, then the real roof's once the street shows. */
+  onPanelsPlaced?: (count: number) => void;
+  /** Equipment (inverter, battery, wallbox, heat pump) is on stage. */
+  onEquipmentPlaced?: () => void;
   /**
    * The part the camera zooms to and features (controlled). Omit and a click on a part focuses it by itself; null:
    * the preset view. Clicking a part, Esc and clicking empty space report through `onSelect`.
@@ -71,6 +82,8 @@ const TILES_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_TILES_KEY;
 const TILES_FLAG = process.env.NEXT_PUBLIC_HOUSE_TILES;
 /** SiteStage's tile fade-in. */
 const FADE_MS = 500;
+/** No street tiles this long after the street was asked for: the model stays (SiteStage's own timer is 6 s). */
+const STREET_WATCHDOG_MS = 6500;
 
 /**
  * The one 3D component pages mount. It picks the renderer (procedural house today; real 3D tiles outside and the
@@ -78,7 +91,7 @@ const FADE_MS = 500;
  * Props that a renderer does not support yet are accepted and ignored, so pages can wire them now.
  */
 export function HouseStage({
-  design, home, mode = "homeowner", roof, location, view, zones, onZonesChange, sunMap, reveal, highlight, onSelect, focus, cameraKey, timeOfDay,
+  design, home, mode = "homeowner", roof, location, view, zones, onZonesChange, sunMap, reveal, highlight, onSelect, focus, onTilesReady, onFallbackShown, onPanelsPlaced, onEquipmentPlaced, cameraKey, timeOfDay,
   onTimeOfDayChange, labels, controls, editable, onPanelsChange, static: forceStatic, flyIn, className,
 }: HouseStageProps) {
   const wanted = useSyncExternalStore(noop, () => tilesWanted(window.location.search, TILES_FLAG), () => false);
@@ -96,6 +109,26 @@ export function HouseStage({
   const [settledAt, setSettledAt] = useState<string | null>(null);
   const ready = tiles && readyAt === at;
   const settled = ready && settledAt === at;
+  // progress events: why the model is the outside, once it is on screen
+  const [modelOn, setModelOn] = useState(false);
+  const [failReason, setFailReason] = useState<{ at: string | null; reason: string } | null>(null);
+  const fallbackReason = modelReason({
+    outside: shownView === "outside", tiles, still, wanted, key: !!TILES_KEY, at,
+    failed: failReason && failReason.at === at ? failReason.reason : null,
+  });
+  const cbs = useRef({ onTilesReady, onFallbackShown });
+  useEffect(() => { cbs.current = { onTilesReady, onFallbackShown }; });
+  useEffect(() => { if (modelOn && fallbackReason) cbs.current.onFallbackShown?.(fallbackReason); }, [modelOn, fallbackReason]);
+  useEffect(() => { if (ready) cbs.current.onTilesReady?.(); }, [ready]);
+
+  // watchdog: the street's first tiles must arrive in time, whatever happens inside it (a chunk that never loads, an
+  // auth error the tiles library only logs): the model stays and the progress events still get their answer
+  useEffect(() => {
+    if (!tiles || readyAt === at) return;
+    const t = window.setTimeout(() => { setFailReason({ at, reason: "tiles: slow" }); setOff(at); }, STREET_WATCHDOG_MS);
+    return () => window.clearTimeout(t);
+  }, [tiles, readyAt, at]);
+
   useEffect(() => {
     if (!ready || settled) return;
     const t = window.setTimeout(() => setSettledAt(at), FADE_MS + 100);
@@ -155,6 +188,9 @@ export function HouseStage({
       highlight={highlight}
       onSelect={onSelect}
       focus={focus}
+      onShown={() => setModelOn(true)}
+      onPanelsPlaced={onPanelsPlaced}
+      onEquipmentPlaced={onEquipmentPlaced}
       cameraKey={cameraKey}
       editable={editable}
       onPanelsChange={onPanelsChange}
@@ -175,6 +211,8 @@ export function HouseStage({
       {!settled && model}
       {tiles && location && (
         <div className={settled ? undefined : cn("absolute inset-0", !ready && "pointer-events-none")} aria-hidden={ready ? undefined : true}>
+          {/* its own boundary: the lazy street code never holds up the page or the model's updates */}
+          <Suspense fallback={null}>
           <SiteStage
             apiKey={TILES_KEY!}
             location={location}
@@ -185,13 +223,16 @@ export function HouseStage({
             buttons={overlays}
             veil={false}
             onReady={() => setReadyAt(at)}
+            onPanelsPlaced={onPanelsPlaced}
             onFallback={(reason) => {
               if (process.env.NODE_ENV !== "production") console.info("[HouseStage] real outside unavailable:", reason);
+              setFailReason({ at, reason });
               setOff(at);
             }}
-            onModelView={() => setOff(at)}
+            onModelView={() => { setFailReason({ at, reason: "model view" }); setOff(at); }}
             className={className}
           />
+          </Suspense>
         </div>
       )}
     </>

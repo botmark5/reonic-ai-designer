@@ -7,6 +7,19 @@ export function stageRoof(roof: RoofInput | undefined, location: StageLocation |
   return { ...roof, latitude: roof?.latitude ?? location.lat, longitude: roof?.longitude ?? location.lng };
 }
 
+/**
+ * Why the procedural model is the outside (the /visit progress step), or null while the real street is on (or the
+ * Inside view shows). `failed` is the street's failure for this address, if any.
+ */
+export function modelReason(o: { outside: boolean; tiles: boolean; still: boolean; wanted: boolean; key: boolean; at: string | null; failed: string | null }): string | null {
+  if (!o.outside || o.tiles) return null;
+  if (o.still) return "static";
+  if (!o.wanted) return "off";
+  if (!o.key) return "no key";
+  if (!o.at) return "no location";
+  return o.failed ?? "street unavailable";
+}
+
 /** `?static=1` forces the still image (a stuttering projector: reload without WebGL). */
 export const staticWanted = (search: string) => new URLSearchParams(search).get("static") === "1";
 

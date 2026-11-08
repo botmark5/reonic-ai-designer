@@ -37,6 +37,12 @@ export interface House3DProps {
   flyIn?: boolean;
   /** Emphasise one part from outside (e.g. the planner card under the pointer). */
   highlight?: CompKey | null;
+  /** The house is on screen (first 3D frame, or the still image). */
+  onShown?: () => void;
+  /** Panels on the roof (count of all panels drawn), each time the count changes while shown. */
+  onPanelsPlaced?: (count: number) => void;
+  /** Equipment (inverter, battery, wallbox, heat pump) is on stage; fires again when the set changes. */
+  onEquipmentPlaced?: () => void;
   /** The viewer picked a part in the scene or the readout (null: picked nothing / clicked empty space / Esc). */
   onSelect?: (key: CompKey | null) => void;
   /**
@@ -110,7 +116,7 @@ const kw = (x: number) => `${(Math.abs(x) < 0.05 ? 0 : x).toFixed(1)} kW`;
  * energy flowing through it. Planner mode shows exact sizes and "Save image"; homeowner mode uses plain words.
  */
 export function House3D({
-  design, home, mode, roof, static: forceStatic = false, flyIn = true, highlight = null, onSelect, focus, timeOfDay,
+  design, home, mode, roof, static: forceStatic = false, flyIn = true, highlight = null, onSelect, focus, onShown, onPanelsPlaced, onEquipmentPlaced, timeOfDay,
   onTimeOfDayChange, reveal, labels = false, controls = "full", cameraKey, editable = false, onPanelsChange, className,
 }: House3DProps) {
   const theme = useThemeName();
@@ -236,6 +242,32 @@ export function House3D({
   }, []);
 
   const show3d = renderMode === "3d";
+
+  // progress events (the /visit "Building your design" steps): on screen, panels placed, equipment placed
+  const events = useRef({ onShown, onPanelsPlaced, onEquipmentPlaced });
+  useEffect(() => { events.current = { onShown, onPanelsPlaced, onEquipmentPlaced }; });
+  const onScreen = show3d ? ready : true;
+  const comps = spec.components;
+  const panelsOnRoof = onScreen && comps.pv.visible && shownParts.pv ? spec.layout.slots.length : 0;
+  const equipmentKey = onScreen
+    ? [
+        comps.inverter.visible && shownParts.inverter && "inverter",
+        comps.battery.visible && shownParts.battery && "battery",
+        comps.wallbox.visible && shownParts.car && "wallbox",
+        comps.heatpump.visible && shownParts.heatpump && "heatpump",
+      ].filter(Boolean).join(",")
+    : "";
+  // each fires once per new value (the still image then the first 3D frame do not repeat it)
+  const sent = useRef({ shown: false, panels: 0, equipment: "" });
+  useEffect(() => {
+    if (onScreen && !sent.current.shown) { sent.current.shown = true; events.current.onShown?.(); }
+  }, [onScreen]);
+  useEffect(() => {
+    if (panelsOnRoof > 0 && panelsOnRoof !== sent.current.panels) { sent.current.panels = panelsOnRoof; events.current.onPanelsPlaced?.(panelsOnRoof); }
+  }, [panelsOnRoof]);
+  useEffect(() => {
+    if (equipmentKey && equipmentKey !== sent.current.equipment) { sent.current.equipment = equipmentKey; events.current.onEquipmentPlaced?.(); }
+  }, [equipmentKey]);
   const canEdit = editable && mode === "planner" && !reveal && show3d && spec.components.pv.visible;
   const commit = (slots: PanelSlot[]) => {
     setEdited({ for: layoutKey, slots });

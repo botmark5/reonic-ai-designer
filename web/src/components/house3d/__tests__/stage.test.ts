@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stageRoof, tilesWanted } from "../stage";
+import { modelReason, stageRoof, tilesWanted } from "../stage";
 
 describe("stageRoof", () => {
   it("passes the roof through without a location", () => {
@@ -98,5 +98,21 @@ describe("warm and static", () => {
   it("?static=1 forces the still", () => {
     expect(staticWanted("?static=1")).toBe(true);
     expect(staticWanted("?static=0")).toBe(false);
+  });
+});
+
+describe("modelReason (the /visit progress step)", () => {
+  const base = { outside: true, tiles: false, still: false, wanted: true, key: true, at: "48,11", failed: null };
+  it("is null while the street is on or the Inside view shows", () => {
+    expect(modelReason({ ...base, tiles: true })).toBeNull();
+    expect(modelReason({ ...base, outside: false })).toBeNull();
+  });
+  it("names why the model is the outside", () => {
+    expect(modelReason({ ...base, still: true })).toBe("static");
+    expect(modelReason({ ...base, wanted: false })).toBe("off");
+    expect(modelReason({ ...base, key: false })).toBe("no key");
+    expect(modelReason({ ...base, at: null })).toBe("no location");
+    expect(modelReason({ ...base, failed: "tiles: slow" })).toBe("tiles: slow");
+    expect(modelReason(base)).toBe("street unavailable");
   });
 });

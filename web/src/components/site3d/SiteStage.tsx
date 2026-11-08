@@ -1,6 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
-import { Component, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import type { DesignResponse } from "../../lib/types";
 import { cn } from "../../lib/utils";
 import { useReducedMotion } from "../house3d/hooks";
@@ -34,6 +34,8 @@ export interface SiteStageProps {
   veil?: boolean;
   /** The first tiles of this address are on screen. */
   onReady?: () => void;
+  /** Panels on the real roof (count), once the street is on screen. */
+  onPanelsPlaced?: (count: number) => void;
   className?: string;
 }
 
@@ -54,7 +56,7 @@ const fmt = (x: number | null | undefined, unit: string) => (x ? `${Number(x.toF
  * The real street: Google's photorealistic 3D tiles around the address with the engine's panels on the real roof.
  * Anything missing or slow calls `onFallback`. Google's attribution is always visible.
  */
-export function SiteStage({ apiKey, location, design, panelsOn = true, labels = false, sunMap, buttons = true, onFallback, onModelView, veil = true, onReady, className }: SiteStageProps) {
+export function SiteStage({ apiKey, location, design, panelsOn = true, labels = false, sunMap, buttons = true, onFallback, onModelView, veil = true, onReady, onPanelsPlaced, className }: SiteStageProps) {
   const reduced = useReducedMotion();
   const d = design.design;
   const kwp = d.pv.include && d.pv.kwp ? d.pv.kwp : 0;
@@ -129,6 +131,10 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
     return () => ctl.abort();
   }, [sunOn, p, sunAt, sun?.at, sunFailed]);
   const sunHere = sun?.at === sunAt ? sun : null;
+  const placedNow = first && p && panelsOn ? p.panel_count : 0;
+  const panelsCb = useRef(onPanelsPlaced);
+  useEffect(() => { panelsCb.current = onPanelsPlaced; });
+  useEffect(() => { if (placedNow > 0) panelsCb.current?.(placedNow); }, [placedNow]);
   return (
     <figure className={cn("relative isolate w-full overflow-hidden rounded-lg border", shown ? "border-border bg-surface-1" : "border-transparent", className)}>
       <div data-h3d-stage className="relative aspect-[4/3] w-full md:aspect-[16/10]">
@@ -139,6 +145,7 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
             className={cn("absolute inset-0 transition-opacity duration-500", first ? "opacity-100" : "opacity-0")}
           >
             <Boundary onError={() => fail("tiles: crashed")}>
+              <Suspense fallback={null}>
               <SiteScene
                 apiKey={apiKey}
                 placement={p}
@@ -151,6 +158,7 @@ export function SiteStage({ apiKey, location, design, panelsOn = true, labels = 
                 onError={fail}
                 onAttribution={setAttribution}
               />
+              </Suspense>
             </Boundary>
           </div>
         )}

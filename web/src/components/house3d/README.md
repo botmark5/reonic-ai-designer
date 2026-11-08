@@ -94,6 +94,10 @@ same props. Props not yet supported by a renderer are accepted and ignored. Full
   tile error before the first tile, no tiles within ~6 s, a crash. "Model view" switches by hand.
 - The procedural house stays on screen while the street loads (no "Loading" veil); the street fades in over it on its
   first tiles and the house unmounts ~0.6 s later. A fallback before that is invisible, so the env flag is safe to set.
+- Progress events (the /visit "Building your design" steps), on HouseStage: `onTilesReady()` (street's first tiles),
+  `onFallbackShown(reason)` (the model is the outside: "off", "no key", "no location", "static", or the street's
+  failure), `onPanelsPlaced(count)` (model's count, then the real roof's), `onEquipmentPlaced()`. Each fires once per
+  new value. A HouseStage watchdog (6.5 s) falls back even if the street code never answers.
 - Google attribution is always visible bottom-left. `reveal.panels` drops the panels row by row; `labels` shows chips.
 - f-hero extras: `reveal.warm` (windows glow), heat pump shown as a permanent ghost when only offered
   (`design.options.heatpump.available`) and `reveal.heatpump` is on.
