@@ -9,6 +9,7 @@ Endpoints
     POST /refine    planner text -> input changes (Claude Haiku or keyword fallback) -> new /design
     POST /explain   streamed plain-language explanation (Claude Sonnet or template fallback)
     GET  /eval      metrics on held-out projects (written by `python -m engine.train`)
+    GET  /heldout        locked test-set ids + curated demo cases (ids and text only)
     GET  /project/{id}   a real project: home, expert design, all variants, and our proposal
     GET  /installers     known installers and what they sell;  GET /health
 Access: if ENGINE_API_KEY is set, send `X-Engine-Key: <key>` with every request (all except /health).
@@ -348,6 +349,45 @@ def eval_results():
     if not path.exists():
         raise HTTPException(404, "No evaluation yet: run `python -m engine.train`.")
     return json.loads(path.read_text())
+
+
+HELDOUT_FILES = (("demo_reality.json", "cases", "two_houses_"), ("demo_projects.json", "projects", ""))
+
+
+@lru_cache(maxsize=1)
+def heldout_lists() -> dict:
+    """Locked test-set ids + curated demo cases (ids and text only), from engine/artifacts; built from the labels
+    with the same fixed rules when a file is missing (locked_split seed 42, engine/demo_set.py pick_roles)."""
+    from engine.evaluate import locked_split
+
+    ids_path = ARTIFACTS / "test_ids.json"
+    ids = json.loads(ids_path.read_text()).get("test_project_ids", []) if ids_path.exists() else []
+    demo, seen = [], set()
+    for name, key, prefix in HELDOUT_FILES:
+        path = ARTIFACTS / name
+        for case in (json.loads(path.read_text()).get(key, []) if path.exists() else []):
+            if case["project_id"] not in seen:
+                seen.add(case["project_id"])
+                demo.append(dict(role=prefix + case["role"], why=case["why"], project_id=case["project_id"]))
+    if not ids or not demo:
+        try:
+            from engine.demo_set import pick_roles
+
+            labels, _ = get_labels()
+            table = build_eval_table(labels, inputs_from_labels(labels))
+            _, test = locked_split(table, ids_path)
+            ids = ids or sorted(test.project_id)
+            if not demo:
+                demo = [dict(role=r, why=w, project_id=pid) for r, pid, w in pick_roles(test.reset_index(drop=True), labels)]
+        except Exception as e:  # no labels on this host: return what exists, never invent
+            log.warning("held-out lists incomplete: %s", e)
+    return dict(test_project_ids=list(ids), demo_projects=demo)
+
+
+@app.get("/heldout", dependencies=[Depends(require_key)])
+def heldout():
+    """The locked held-out project ids and the curated demo cases, for hosts without engine/artifacts (Vercel)."""
+    return heldout_lists()
 
 
 @app.get("/project/{project_id}", dependencies=[Depends(require_key)])
