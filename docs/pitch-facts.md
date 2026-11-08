@@ -32,7 +32,7 @@ Sources:
 ## 2. Headline: PV size
 | fact | engine | best rule | source | say it |
 |---|---|---|---|---|
-| **All 315 homes, whole-project solar error** (an unwanted or missing system counts) **(on screen, what-if card left value)** | **2.93 kWp** | 3.77 (band median) | `/eval` `metrics.*.pv_kwp_mae_all_projects` | **Safe. 22 % lower. This is the headline number for "all homes".** |
+| **All 315 homes, whole-project solar error** (an unwanted or missing system counts) **(on screen, what-if card left value)** | **2.93 kWp** | 3.85 (band median) | `/eval` `metrics.*.pv_kwp_mae_all_projects` | **Safe. 24 % lower (live /eval after the hybrid model; 3.77 / 22 % before). This is the headline number for "all homes".** |
 | **New systems** (253 homes, planner says "new system") **(on screen)** | **2.42 kWp** | 2.62 (band median) | `/eval` `with_existing_pv_answer.segments.full_designs.{dm,baseline_band_median}.pv_kwp_mae_all_projects` (RESULTS.md shows 2.49: rounding of 2.4996) | Caveat: "on par with the best rule, slightly better". The 5 % gap is inside the cross-validation noise of ±0.18 kWp (RESULTS.md, round 2). Fair: the answer is the same for every home here. |
 | New systems with real consumption (205 homes) | **2.38 kWp** | 2.49 (band median) | `/eval` `with_existing_pv_answer.segments.full_designs_known_consumption.*` | Caveat: same as above, within noise. |
 | PV size where both chose PV, all homes | 2.45 kWp | 2.64 | `/eval` `metrics.*.pv_kwp_mae_when_both_pv` | Safe |
@@ -50,7 +50,7 @@ Reonic (Niklas, 8 Nov): the export has no "signed" flag, and every option is a v
 | Battery within one size step, vs closest option | **58 %** | 53 % (band median) | 54 vs 51 | same, `battery_within_one_step_nearest_option_pct` (57.78 vs 53.17) | Caveat: alternative scoring, say it as such. |
 
 Also available (same run): new systems (answered) PV 2.47 vs 2.57 kWp, within ±1.5 46 vs 45 %; whole-project PV error, all homes, 2.89 vs 3.71.
-Don't: mix the two scorings in one sentence, or replace the first-option headline (2.93 vs 3.77, 2.42 vs 2.62) with these. Now on `/eval` in production (#127 shipped 8 Nov 12:40 Munich), so the source is "offline, a-labels".
+Don't: mix the two scorings in one sentence, or replace the first-option headline (2.93 vs 3.85, 2.45 vs 2.64) with these. Now on `/eval` in production (#127 shipped 8 Nov 12:40 Munich), so the source is "offline, a-labels".
 
 ## 3. What-if: the planner answers "Solar already on the roof?" (never as accuracy)
 In this test the answer is taken from the expert offer itself, so these rows show what the question is worth **if** answered correctly. Quote them only with the words "what-if" or "if the planner answers", never as "our accuracy". Why the question exists: the data records existing solar for only 5 % of the homes that got a battery-only add-on (`engine/README.md`).
@@ -96,9 +96,9 @@ Expert range means the smallest to largest PV across the variants the expert off
 | fact | number | source | say it |
 |---|---|---|---|
 | Expert PV falls inside the engine's P10–P90 range, new full systems (253 homes) | **82 %** (target 80 %): 82 % answered **(on screen, "Calibrated")**, 82 % not answered, 80 % with real consumption | `/eval` `with_existing_pv_answer.segments.full_designs.dm.pv_interval_coverage_pct`, `segments.full_designs.dm.pv_interval_coverage_pct`, `segments.full_designs_known_consumption.dm.pv_interval_coverage_pct` | Safe as "82 % on new full systems (target 80 %)". Never quote a coverage for add-on sales: they get no new PV, so there is nothing to cover. |
-| Expert PV within 1.5 kWp of one of the engine's 3 options (proposal + smaller + larger), new full systems **(on screen)** | **67 %** (67.5, since the hybrid model went to production on 8 Nov 12:40; 67.2 before); all homes without the answer 70 % (69.6, unchanged) | `/eval` `with_existing_pv_answer.segments.full_designs.dm.pv_top3_within_1.5_pct`; `metrics.dm.pv_top3_within_1.5_pct` | Safe as "69 % of new systems" (the same slice as the other tiles). Quote 70 % only if asked, and then say "all homes, without the solar answer". There is no rule-of-thumb comparison for top-3. |
-| Trained on installer B only, tested on installer A (PV size where both chose PV) | 2.95 vs 3.00 kWp best rule | `/eval` `transfer["23c108b7->2a8ba8e2"].*.pv_kwp_mae_when_both_pv` | Caveat: small margin, tested on all of A's projects. |
-| Trained on A only, tested on B | 2.82 vs 3.15 kWp | `/eval` `transfer["2a8ba8e2->23c108b7"].*` | Same caveat |
+| Expert PV within 1.5 kWp of one of the engine's 3 options (proposal + smaller + larger), new full systems **(on screen)** | **66 %** (66.0 on screen = answered new systems, since the hybrid model went to production on 8 Nov 12:40; 67.5 without the answer; 68.8 before); all homes without the answer 70 % (69.6, unchanged) | `/eval` `with_existing_pv_answer.segments.full_designs.dm.pv_top3_within_1.5_pct`; `metrics.dm.pv_top3_within_1.5_pct` | Safe as "66 % of new systems" (the same slice as the other tiles). Quote 70 % only if asked, and then say "all homes, without the solar answer". There is no rule-of-thumb comparison for top-3. |
+| Trained on installer B only, tested on installer A (PV size where both chose PV) | 2.95 vs 3.03 kWp best rule | `/eval` `transfer["23c108b7->2a8ba8e2"].*.pv_kwp_mae_when_both_pv` | Caveat: small margin, tested on all of A's projects. |
+| Trained on A only, tested on B | 2.82 vs 3.12 kWp | `/eval` `transfer["2a8ba8e2->23c108b7"].*` | Same caveat |
 | Engine beats the best rule in held-out and transfer tests per installer | 4 of 4 | `aggregates.json` `pv_mae_installer_transfer`; deck chart 2b | Safe |
 | PV size error by yearly consumption (both chose PV, without the answer) | 2.1–2.6 kWp up to 9 MWh; 3.4 kWp above 9 MWh (15 homes) | `aggregates.json` `bands`; deck chart 2a | Safe |
 | Homes left at the 4,500 kWh default ("consumption not entered") | 98 of 315; PV size error 2.54 kWp (without the answer; 2.71 was the answered mode) | `aggregates.json` `bands[unknown]`; deck chart 2a | Safe |

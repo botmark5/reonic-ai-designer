@@ -48,14 +48,14 @@ Every number below, with its source and how to say it, is in [`docs/pitch-facts.
 
 | | engine | best rule of thumb |
 |---|---|---|
-| Whole-project solar error, all homes (an unwanted or missing system counts) | **2.93 kWp** | 3.77 kWp (22 % lower) |
-| Solar error, new systems (253 homes) | 2.42 kWp | 2.62 kWp (level, at the edge of cross-validation noise) |
+| Whole-project solar error, all homes (an unwanted or missing system counts) | **2.93 kWp** | 3.85 kWp (24 % lower) |
+| Solar error, new systems (253 homes, as on /reality) | 2.45 kWp | 2.64 kWp (slightly better; small margin) |
 | Solar yes/no right, all homes | **88 %** | 82 % |
 | Add-on sales (62 homes): proposes no new solar where none was sold, without being told there is solar on the roof | **77 %** | 6 % |
 | Battery size where both chose one | 2.42 kWh | 2.71 kWh |
 | Battery within one catalogue size, new systems | 53 % | 46 % |
 | Expert PV inside the engine's P10–P90 range, new full systems (target 80 %) | 82 % | – |
-| Expert PV within 1.5 kWp of one of the engine's 3 options, new systems | 67 % | – |
+| Expert PV within 1.5 kWp of one of the engine's 3 options, new systems | 66 % | – |
 | Installer transfer and per-installer tests where the engine beats the best rule | 4 of 4 | – |
 
 One full design takes 0.27–0.64 s from the laptop to the live engine. In the measured demo flow it is 29 s of machine time from
