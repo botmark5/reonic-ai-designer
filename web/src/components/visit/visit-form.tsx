@@ -103,11 +103,11 @@ export function VisitForm({ busy = false, error = null, onSubmit }: { busy?: boo
       <header className="flex flex-col gap-1.5 px-1 pt-2">
         <p className="m-0 text-[13px] font-medium text-ink-muted">Site visit</p>
         <h1 className="m-0 text-[28px] leading-[1.1] font-normal tracking-[-0.02em] text-balance">The home, in two minutes</h1>
-        <p className="m-0 text-[15px] leading-[21px] text-ink-body">Only the address is needed. Every other answer makes the first design closer to yours.</p>
+        <p className="m-0 text-[15px] leading-[21px] text-ink-body">Only the address is required.</p>
       </header>
 
       <Group title="The home">
-        <Field label="Address" htmlFor={`${id}-addr`} hint="We find the roof from its satellite image.">
+        <Field label="Address" htmlFor={`${id}-addr`}>
           <div className="relative">
             <MapPin className="pointer-events-none absolute top-1/2 left-3.5 size-[18px] -translate-y-1/2 text-ink-muted" strokeWidth={1.5} aria-hidden />
             <AddressInput
@@ -146,7 +146,7 @@ export function VisitForm({ busy = false, error = null, onSubmit }: { busy?: boo
         <Field label="People in the home">
           <Choice label="People in the home" value={f.household} onChange={(v) => set("household", v)} options={[1, 2, 3, 4, 5].map((n) => ({ value: n, label: n === 5 ? "5+" : String(n) }))} />
         </Field>
-        <Field label="Someone home in the daytime?" hint="Daytime use makes more of the solar power.">
+        <Field label="Someone home in the daytime?">
           <Choice label="Someone home in the daytime" value={f.daytime} onChange={(v) => set("daytime", v)} options={[{ value: "yes", label: "Mostly" }, { value: "no", label: "Rarely" }]} />
         </Field>
       </Group>
@@ -200,7 +200,7 @@ export function VisitForm({ busy = false, error = null, onSubmit }: { busy?: boo
             ]}
           />
         </Field>
-        <Field label="Main roof faces" hint="Leave it on “From the address”: Google measures direction and pitch. Change it only if you know better.">
+        <Field label="Main roof faces">
           <Choice
             label="Main roof direction"
             value={f.roof_direction ?? "auto"}
@@ -231,7 +231,7 @@ export function VisitForm({ busy = false, error = null, onSubmit }: { busy?: boo
             placeholder="e.g. as independent as possible, no battery in the basement"
           />
         </Field>
-        <Field label="Floor plan (optional)" hint="A photo is enough. Rooms show on the Inside view.">
+        <Field label="Floor plan (optional)">
           {plan ? (
             <div className="flex h-12 items-center gap-2 rounded-md border border-border bg-surface-2 pr-1 pl-3.5 text-[15px]">
               <Camera className="size-[18px] shrink-0 text-ink-muted" strokeWidth={1.5} aria-hidden />

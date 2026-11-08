@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mockDesign } from "@/lib/engine-mock";
 import { EMPTY_LOCKS, type DesignResponse, type HeatpumpChoice } from "@/lib/types";
-import { DAY_END, DAY_START, captionAt, plainText, timeOfDayAt, variantView, type TimedSegment } from "./offer-logic";
+import { DAY_END, DAY_START, captionAt, plainText, timeOfDayAt, variantView, type TimedSegment, partLine } from "./offer-logic";
 
 const seg = (start_s: number, end_s: number, time_of_day_h: number | null): TimedSegment => ({ text: "x", moment: null, start_s, end_s, time_of_day_h });
 
@@ -109,5 +109,19 @@ describe("plainText: the explain fallback has no markdown", () => {
   });
   it("leaves plain sentences and numbers alone", () => {
     expect(plainText("You cover about 59% of your electricity yourself.")).toBe("You cover about 59% of your electricity yourself.");
+  });
+});
+
+describe("partLine", () => {
+  it("a part the homeowner can change lists only the installer's values", () => {
+    expect(partLine("battery", 10, [0, 10, 15])).toBe("Battery · 10 kWh. Stores the midday sun for the evening. You can choose none, 10 kWh or 15 kWh below.");
+  });
+  it("a fixed part says the installer set it", () => {
+    expect(partLine("pv", 9.9, [])).toBe("Solar panels · 9.9 kWp. Makes electricity from the sun on your roof. Set by your installer.");
+    expect(partLine("battery", null, [0])).toMatch(/^Battery · not included\. .* Set by your installer\.$/);
+  });
+  it("wallbox and heat pump in words", () => {
+    expect(partLine("wallbox", 11, [false, true])).toMatch(/with or without it below\.$/);
+    expect(partLine("heatpump", null, [false, true])).toMatch(/An option: you can add it below\.$/);
   });
 });

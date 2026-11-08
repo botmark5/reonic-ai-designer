@@ -97,8 +97,7 @@ export function FocusPanel({
         <h3 className={heading}>Where?</h3>
         {c === "pv" && (
           <p className="m-0 text-[13px] leading-5 text-ink-body">
-            Panels fill the sunniest roof face first; the next face is used only once that one is full. Drag, add or remove
-            panels on the house to change the layout; the engine&apos;s size stays.
+            Sunniest roof face first, then the next one.
           </p>
         )}
         <div role="radiogroup" aria-label={c === "pv" ? "Where the inverter goes" : `Where the ${LABEL[c].toLowerCase()} goes`} className="flex flex-wrap gap-1.5">
@@ -121,7 +120,6 @@ export function FocusPanel({
             </button>
           ))}
         </div>
-        <p className="m-0 text-[12px] leading-4 text-ink-muted">Shown on the Inside view of the house.</p>
       </div>
 
       {(on || c === "pv" || c === "battery" || hpOption) && (
@@ -140,7 +138,6 @@ export function FocusPanel({
               <Compare key={row.label} row={row} />
             ))}
           </dl>
-          <p className="m-0 text-[12px] leading-4 text-ink-muted">Engine numbers for this home. Prices: see the installer&apos;s offer.</p>
         </div>
       )}
     </section>
