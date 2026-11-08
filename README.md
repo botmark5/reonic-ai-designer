@@ -25,7 +25,9 @@ fix any component and the rest adapts; a homeowner view explains the offer in pl
 
 ## Results and known limitations
 See `engine/README.md` (results tables, what beats the baselines and what does not, honest caveats) and `engine/RESULTS.md`
-(before/after, error analysis). Short version: the model clearly beats the baselines on the yes/no decisions and on the whole-project
-PV error (2.94 vs 3.77 kWp MAE), beats them only slightly on pure size error (PV 2.48 vs 2.64 kWp, battery 2.45 vs 2.71 kWh),
-and loses on "PV within ±1.5 kWp" and wallbox. PV size is barely predictable without roof data; a new system always gets a battery;
+(before/after, error analysis); every number with its source and how to say it in `docs/pitch-facts.md`. Short version (315 held-out
+homes, live `GET /eval`): the model clearly beats the best baseline on PV yes/no (88 vs 82 %; on add-on sales it proposes no new
+solar for 77 % of homes against 6 %) and on the whole-project PV error (2.94 vs 3.77 kWp MAE), is on par on new systems (2.50 vs
+2.62 kWp, inside cross-validation noise), beats them only slightly on pure size error (PV 2.48 vs 2.64 kWp, battery 2.45 vs 2.71 kWh),
+and loses on "PV within ±1.5 kWp", battery yes/no (88 vs 90 %) and wallbox (72 vs 73 %). PV size is barely predictable without roof data; a new system always gets a battery;
 wallbox without EV information is a coin flip; the heat pump rule rests on 17 projects; economics use placeholder prices.
