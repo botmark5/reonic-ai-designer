@@ -45,10 +45,12 @@ function setOpacity(list: THREE.Material[], v: number) {
  * Settles its object in (rises a little, scales from 0.92, fades) when `visible` turns true, and back out when false.
  * Critically damped spring, interruptible. Hidden once fully out; not hit-testable while hidden.
  */
-export function Appear({ object, mount, visible, reduced, intro = true, delay = 0, ghostFor = 0, hitKey, pointer }: {
+export function Appear({ object, mount, visible, reduced, intro = true, delay = 0, ghostFor = 0, ghostOnly = false, hitKey, pointer }: {
   object: THREE.Object3D; mount: Mount; visible: boolean; reduced: boolean; intro?: boolean; delay?: number;
   /** Seconds it first stands as a translucent ghost before turning solid (the /live heat pump). */
   ghostFor?: number;
+  /** Stays a ghost (an option the design does not include). */
+  ghostOnly?: boolean;
   hitKey: CompKey; pointer: Pointer;
 }) {
   const ref = useRef<THREE.Group>(null);
@@ -68,7 +70,7 @@ export function Appear({ object, mount, visible, reduced, intro = true, delay = 
     if (!g) return;
     if (mats.current?.of !== object) mats.current = { of: object, list: materialsOf(object) };
     if (ghost.current > 0 && wait.current <= 0) ghost.current -= dt;
-    const target = visible ? (ghost.current > 0 && !reduced ? GHOST : 1) : 0;
+    const target = visible ? (ghostOnly || (ghost.current > 0 && !reduced) ? GHOST : 1) : 0;
     const snap = reduced || (first.current && !intro);
     first.current = false;
     if (snap) { s.current.x = target; s.current.v = 0; }
@@ -115,6 +117,25 @@ export function Layer({ object, shown, kind, reduced }: {
       <primitive object={object} />
     </group>
   );
+}
+
+const WARM = new THREE.Color("#ffb766");
+
+/** Windows warm up: a soft emissive glow springs in when `on` turns true. */
+export function WarmWindows({ glass, on, reduced }: { glass: THREE.MeshStandardMaterial; on: boolean; reduced: boolean }) {
+  const s = useRef<SpringState | null>(null);
+  const mat = useRef<THREE.MeshStandardMaterial | null>(null);
+  useEffect(() => { mat.current = glass; }, [glass]);
+  useFrame((_, dt) => {
+    const m = mat.current;
+    if (!m) return;
+    const target = on ? 1 : 0;
+    if (!s.current || reduced) s.current = { x: target, v: 0 };
+    else stepSpring(s.current, target, dt, SETTLE);
+    m.emissive.copy(WARM);
+    m.emissiveIntensity = Math.max(0, s.current.x) * 0.85;
+  });
+  return null;
 }
 
 // ---------- panels ----------

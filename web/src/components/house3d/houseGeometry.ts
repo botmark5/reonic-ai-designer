@@ -56,6 +56,8 @@ export interface BuiltHouse {
   group: THREE.Group;
   /** Layers for the build-up: site (board, paving, trees), shell (walls, windows, doors), roof. */
   parts: { site: THREE.Group; shell: THREE.Group; roof: THREE.Group };
+  /** Window glass (its emissive warms up in the /live build-up). */
+  glass: THREE.MeshStandardMaterial;
   frames: { main: PlaneFrame; garage: PlaneFrame };
   anchors: Anchors;
 }
@@ -342,5 +344,5 @@ export function buildHouse(pitchDeg: number, palette: Palette): BuiltHouse {
     house: new THREE.Vector3(1.2, 2.2, FRONT_Z),
   };
 
-  return { group: g, parts: { site, shell, roof: top }, frames: { main: mainFrame, garage: garageFrame }, anchors };
+  return { group: g, parts: { site, shell, roof: top }, glass: m.glass, frames: { main: mainFrame, garage: garageFrame }, anchors };
 }

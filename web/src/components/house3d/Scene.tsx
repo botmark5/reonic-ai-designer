@@ -7,7 +7,7 @@ import { AmbientOcclusion } from "./AmbientOcclusion";
 import { CameraRig, type PresetRequest } from "./CameraRig";
 import type { DayStep, FlowNodeId, LiveFlow } from "./energyDay";
 import { EnergyFlow } from "./EnergyFlow";
-import { Appear, Battery, Car, Layer, Panels, type Pointer } from "./Equipment";
+import { Appear, Battery, Car, Layer, Panels, WarmWindows, type Pointer } from "./Equipment";
 import { batteryModuleCount, buildEquipment } from "./equipmentGeometry";
 import { buildHouse, slotToWorld, type Mount } from "./houseGeometry";
 import type { Palette } from "./palette";
@@ -34,6 +34,8 @@ export interface SceneProps {
   shown: Shown;
   /** A build-up is running: the heat pump stands as a ghost first. */
   building: boolean;
+  /** The design offers a heat pump without including it: shown as a ghost when revealed. */
+  hpOption: boolean;
   /** Always-on labels (PV kWp, battery kWh...) for a projector. */
   labels: boolean;
   /** Stages with the same key share one orbit. */
@@ -148,7 +150,7 @@ function Exposure({ dark }: { dark: boolean }) {
   return null;
 }
 
-function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn, shown, building, labels: showLabels, cameraKey }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
+function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn, shown, building, hpOption, labels: showLabels, cameraKey }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
   const rotationY = THREE.MathUtils.degToRad(180 - spec.roof.azimuthDeg);
   const house = useMemo(() => buildHouse(spec.roof.pitchDeg, palette), [spec.roof.pitchDeg, palette]);
   const equipment = useMemo(() => buildEquipment(palette), [palette]);
@@ -199,7 +201,7 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
   const hpLoad = useRef(0);
   useEffect(() => { hpLoad.current = moment.heatpump; }, [moment.heatpump]);
   useFrame((_, dt) => {
-    if (fan && !reduced && c.heatpump.visible) spinFan(fan, dt * (1.5 + hpLoad.current * 9));
+    if (fan && !reduced && c.heatpump.visible && shown.heatpump) spinFan(fan, dt * (1.5 + hpLoad.current * 9));
   });
 
   const activeSpec = active ? c[active] : null;
@@ -227,11 +229,12 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
       <group rotation-y={rotationY}>
         <primitive object={house.parts.site} />
         <Layer object={house.parts.shell} shown={shown.shell} kind="rise" reduced={reduced} />
+        <WarmWindows glass={house.glass} on={shown.warm} reduced={reduced} />
         <Layer object={house.parts.roof} shown={shown.roof} kind="settle" reduced={reduced} />
         <Panels slots={slots} frames={frames} palette={palette} reduced={reduced} intro={intro} pointer={pointer} />
         <Appear object={equipment.inverter} mount={anchors.inverter} visible={c.inverter.visible && shown.inverter} reduced={reduced} intro={intro} delay={0.05} hitKey="inverter" pointer={pointer} />
         <Appear object={equipment.wallbox} mount={anchors.wallbox} visible={c.wallbox.visible && shown.car} reduced={reduced} intro={intro} delay={0.05} hitKey="wallbox" pointer={pointer} />
-        <Appear object={equipment.heatpump} mount={anchors.heatpump} visible={c.heatpump.visible && shown.heatpump} reduced={reduced} intro={intro} delay={0.05} ghostFor={building ? 0.9 : 0} hitKey="heatpump" pointer={pointer} />
+        <Appear object={equipment.heatpump} mount={anchors.heatpump} visible={(c.heatpump.visible || hpOption) && shown.heatpump} reduced={reduced} intro={intro} delay={0.05} ghostFor={building ? 0.9 : 0} ghostOnly={!c.heatpump.visible} hitKey="heatpump" pointer={pointer} />
         <Battery mount={anchors.battery} modules={modules} soc={moment.soc} palette={palette} reduced={reduced} intro={intro} pointer={pointer} />
         <Car object={equipment.car} path={anchors.carPath} visible={c.wallbox.visible && shown.car} reduced={reduced} intro={intro} pointer={pointer} />
         <EnergyFlow flows={flows} nodes={nodes} sunDir={sunLocal} rayTargets={rays} gradientStops={palette.flow} reduced={reduced} />
