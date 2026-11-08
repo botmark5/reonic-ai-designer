@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { Camera, MapPin, X } from "lucide-react";
+import { AddressInput } from "@/components/ui/address-input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { canSubmit, EMPTY_VISIT, toVoiceFacts, type VisitForm as Form } from "./visit-logic";
@@ -109,13 +110,12 @@ export function VisitForm({ busy = false, error = null, onSubmit }: { busy?: boo
         <Field label="Address" htmlFor={`${id}-addr`} hint="We find the roof from its satellite image.">
           <div className="relative">
             <MapPin className="pointer-events-none absolute top-1/2 left-3.5 size-[18px] -translate-y-1/2 text-ink-muted" strokeWidth={1.5} aria-hidden />
-            <input
+            <AddressInput
               id={`${id}-addr`}
               className={cn(input, "pl-10")}
               value={f.address}
-              onChange={(e) => set("address", e.target.value)}
+              onChange={(v) => set("address", v)}
               placeholder="Street and number, town"
-              autoComplete="street-address"
               enterKeyHint="next"
               required
             />
