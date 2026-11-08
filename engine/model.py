@@ -671,7 +671,7 @@ class DesignModel:
             _, package = self.snap_pv_to_catalogue(float(r.pv_raw), installer)
             size_txt = package if package and abs(package_kwp(package) - r.pv_kwp) < 1e-6 else \
                 f"~{round(r.pv_kwp / MODULE_KWP)} modules of 450 W"
-            pv_reasons = [f"{r.p_has_pv:.0%} of similar homes got PV; size {r.pv_kwp:g} kWp "
+            pv_reasons = [f"Model confidence {r.p_has_pv:.0%} that this home gets new PV; size {r.pv_kwp:g} kWp "
                           f"({size_txt}), typical range {lo:g}-{hi:g} kWp."]
             pv_reasons += ["Main drivers: " + "; ".join(self._drivers(self.pv_, X, "kWp")) + "."]
             if bool(r.get("roof_capped", False)):
@@ -684,7 +684,7 @@ class DesignModel:
             pv_conf = 1 - float(r.p_has_pv)
             kind = {"battery_retrofit": "a battery add-on to an existing PV system", "wallbox_only": "a wallbox-only order",
                     "other": "an order without PV or battery"}.get(r.offer_type, "an order without new PV")
-            pv_reasons = [f"No new PV: this looks like {kind} (only {r.p_has_pv:.0%} of similar projects got new PV).",
+            pv_reasons = [f"No new PV: this looks like {kind} (model confidence for new PV only {r.p_has_pv:.0%}).",
                           "Main drivers: " + "; ".join(self._drivers(self.has_pv_, X, "PV")) + "."]
         if "pv_kwp" not in locks and pd.isna(X.existing_pv.iloc[0]) and 0.1 < r.p_has_pv < 0.9:
             pv_reasons.append("Is there already PV on the roof? Answering this is the strongest signal for "
@@ -699,29 +699,36 @@ class DesignModel:
         cdf = np.cumsum(proba)
         b_lo = float(classes[min(np.searchsorted(cdf, 0.1), len(classes) - 1)])
         b_hi = float(classes[min(np.searchsorted(cdf, 0.9), len(classes) - 1)])
-        best = int(np.argmax(proba))
+        best = int(np.argmax(proba))                    # the classifier's most likely catalogue size
+        shown = float(r.battery_kwh) if r.has_battery else None     # the size actually proposed (after the kWh/kWp mix)
+        if shown:                                       # the range always contains the proposed size
+            b_lo, b_hi = min(b_lo, shown), max(b_hi, shown)
         alternatives = [dict(kwh=float(classes[i]), share=round(float(proba[i]), 2))
                         for i in np.argsort(proba)[::-1][:3] if proba[i] > 0.02]
+        # (the proposed size is not forced into `alternatives`: those are the classifier's own top sizes; the range covers it)
         if "battery_kwh" in locks:
             b_reasons, b_conf = [f"Fixed by the planner: {r.battery_kwh:g} kWh." if r.battery_kwh else "Fixed by the planner: no battery."], 1.0
         elif r.has_battery and r.offer_type == "battery_retrofit":
             b_conf = float(r.p_offer_type * proba[best])
-            b_reasons = [f"Battery add-on to the existing PV: {classes[best]:g} kWh is the most likely catalogue size "
-                         f"({proba[best]:.0%}), range {b_lo:g}-{b_hi:g} kWh."]
+            b_reasons = [f"Battery add-on to the existing PV: {shown:g} kWh is the most likely catalogue size "
+                         f"(model confidence {proba[best]:.0%}), range {b_lo:g}-{b_hi:g} kWh."]
         elif r.has_battery:
             b_conf = float(min(1.0, r.p_has_battery / max(getattr(self, "battery_threshold_", 0.5) * 2, 1e-9)) * proba[best])
             mixed = getattr(self, "battery_mode_", "classifier") == "mix"
             ratio = getattr(self, "battery_ratio_", {}).get(installer)
-            if mixed and float(r.battery_kwh) != float(classes[best]):
-                best = int(np.argmin(np.abs(classes - float(r.battery_kwh))))     # explain the size actually shown
-            how = (f"between the model's choice and the installer's rule of {ratio:.1f} kWh per kWp of PV"
-                   if mixed and ratio else "the most likely catalogue size")
-            b_reasons = [f"{r.p_has_battery:.0%} of similar designs include a battery; {float(r.battery_kwh):g} kWh is "
-                         f"{how} ({proba[best]:.0%} of similar designs), range {b_lo:g}-{b_hi:g} kWh.",
+            if mixed and ratio and float(r.pv_kwp) > 0 and abs(shown - float(classes[best])) > 1e-9:
+                rule = ratio * float(r.pv_kwp)
+                size_txt = (f"size {shown:g} kWh: the model's most likely size is {classes[best]:g} kWh ({proba[best]:.0%}), "
+                            f"the installer's rule of {ratio:.1f} kWh per kWp of PV gives {rule:.1f} kWh, and {shown:g} kWh "
+                            f"is the catalogue size between the two")
+            else:
+                size_txt = f"size {shown:g} kWh is the most likely catalogue size ({proba[best]:.0%})"
+            b_reasons = [f"Model confidence {r.p_has_battery:.0%} that this design includes a battery; {size_txt}, "
+                         f"range {b_lo:g}-{b_hi:g} kWh.",
                          "Main drivers: " + "; ".join(self._drivers(self.battery_, Xb, f"{classes[best]:g} kWh", class_index=best)) + "."]
         else:
             b_conf = 1 - float(r.p_has_battery)
-            b_reasons = [f"No battery: only {r.p_has_battery:.0%} of similar designs include one.",
+            b_reasons = [f"No battery: model confidence for a battery is only {r.p_has_battery:.0%}.",
                          "Main drivers: " + "; ".join(self._drivers(self.has_battery_, Xb, "a battery")) + "."]
         design["battery"] = dict(include=bool(r.has_battery), kwh=float(r.battery_kwh) if r.has_battery else None,
                                  range=[b_lo, b_hi], confidence=round(b_conf, 2), reasons=b_reasons,
@@ -737,7 +744,7 @@ class DesignModel:
                 wb_reasons = [f"Electric car: a wallbox is included ({getattr(self, 'wallbox_rule_rate_', 0.6):.0%} of "
                               "EV homes got one; this rule beat the model on training data)."]
             else:
-                wb_reasons = [f"{r.p_has_wallbox:.0%} of similar homes got a wallbox. " +
+                wb_reasons = [f"Model confidence {r.p_has_wallbox:.0%} for a wallbox. " +
                               ("Driven by the electric car." if home.get("has_ev")
                                else "No EV recorded; many customers still order one, so ask them.")]
         design["wallbox"] = dict(include=bool(r.has_wallbox), kw=wb_kw if r.has_wallbox else None,
@@ -787,9 +794,13 @@ class DesignModel:
                                   message=f"Typical for similar homes ({vals.quantile(.1):.1f}-{vals.quantile(.9):.1f} {unit})."))
         system = physics.System(pv_kwp=float(design.get("pv_kwp") or 0), battery_kwh=float(design.get("battery_kwh") or 0),
                                 heatpump_kw=float(design.get("heatpump_kw") or 0), wallbox=bool(design.get("wallbox")))
-        for f in physics.sanity_flags(home_to_physics(home), system):
+        for f in physics.sanity_flags(home_to_physics(home), system, hp_catalogue=self.heatpump_sizes(installer)):
             flags.append({**f, "percentile": None})
         return flags
+
+    def heatpump_sizes(self, installer: str) -> tuple:
+        """Heat pump sizes this installer sells (same list for the option and the physics checks)."""
+        return tuple(self.catalogue_.get(installer, {}).get("heatpump_kw") or physics.HP_CATALOGUE_KW)
 
     # ------------------------------------------------------------------ persistence
     def save(self, path: Path | str = MODEL_PATH):
@@ -805,8 +816,10 @@ class DesignModel:
 # ---------------------------------------------------------------------- conversions
 def home_to_row(home: dict, installer: str) -> dict:
     """api.md `home` -> the input columns the features expect. offer_date None = today (capped)."""
-    # a planner-typed 4,500 kWh is a REAL value: the "default" flag only exists in the training data
-    return dict(installer=installer, annual_kwh=home.get("annual_kwh"), demand_is_default=False,
+    # a planner-typed 4,500 kWh is a REAL value unless the caller says it was left at the tool's default
+    # (home.demand_is_default: the web sends it; /project takes it from the data)
+    flag = home.get("demand_is_default")
+    return dict(installer=installer, annual_kwh=home.get("annual_kwh"), demand_is_default=bool(flag) if flag is not None else False,
                 price_eur_kwh=home.get("price_eur_kwh"),
                 load_profile=home.get("load_profile") or "H0", has_ev=bool(home.get("has_ev")),
                 ev_km_year=home.get("ev_km_year"), heating=home.get("heating"),

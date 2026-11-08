@@ -38,3 +38,10 @@ Response: { "changes": { "has_ev": true, "ev_km_year": 15000 }, "design": { ...a
   flagged `ROOF_CAPACITY_EXCEEDED`); azimuth/pitch drive yield, self-consumption and economics (PVGIS factors).
 - Response: `options.heatpump` (design with and without a heat pump), `economics`, `physics.flags`,
   `battery.alternatives`, `facts_for_explanation.offer_type`. Header `X-Engine-Key` on every endpoint except `/health`.
+- `home.demand_is_default` (bool, optional): true only when `annual_kwh` was left at the tool's default 4,500 kWh. The model learned
+  that this default often means "consumption unknown" (battery retrofits); a typed value is real (`false` / omitted). `/project/{id}`
+  sends the flag as recorded in the data.
+- `home.annual_kwh` below 1,500 kWh is rejected with HTTP 422 (placeholder entries; nothing can be sized from them).
+- `battery.range` always contains `battery.kwh`; `battery.alternatives` are the classifier's own top catalogue sizes (shares > 0).
+- Heat pump sizes (`options.heatpump.kw`, `heatpump.kw`) come from the installer's catalogue as sold (2a8ba8e2: 5.5 / 7.5 / 8 / 10.5 / 12.5 kW);
+  the physics size check uses the same list.

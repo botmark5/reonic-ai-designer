@@ -124,7 +124,7 @@ EV_CHARGING_HOURS = {"evening": range(18, 23), "solar": range(10, 15)}
 # Heat pump
 HP_SCOP = 3.5                       # seasonal coefficient of performance: kWh heat per kWh electricity
 HP_FULL_LOAD_HOURS = 2450           # heat demand / heat pump kW; median of the 13 heat-pump projects (2a8ba8e2)
-HP_CATALOGUE_KW = (5, 7, 10, 12)    # sizes installer 2a8ba8e2 sells
+HP_CATALOGUE_KW = (5.5, 7.5, 8.0, 10.5, 12.5)   # sizes installer 2a8ba8e2 actually sold (docs/labels-rules.md R4)
 HP_HOT_WATER_SHARE = 0.15           # part of heat demand that is hot water (flat over the year)
 # Share of space heating per month (heating degree days, Germany)
 HEATING_MONTH_SHARE = np.array([17, 15, 13, 8, 4, 1, 0.5, 0.5, 2.5, 7, 12, 16], dtype=float)
@@ -507,8 +507,9 @@ def _flag(component, level, code, message):
     return dict(component=component, level=level, code=code, message=message)
 
 
-def sanity_flags(home: Home, system: System, sim: SimResult | None = None) -> list[dict]:
-    """Physical plausibility checks. level: info | warn | error. Never raises for odd inputs."""
+def sanity_flags(home: Home, system: System, sim: SimResult | None = None, hp_catalogue=HP_CATALOGUE_KW) -> list[dict]:
+    """Physical plausibility checks. level: info | warn | error. Never raises for odd inputs.
+    hp_catalogue: the installer's heat pump sizes (the same list the design used), for the size check."""
     flags = []
     if home.annual_kwh is None or (isinstance(home.annual_kwh, float) and np.isnan(home.annual_kwh)):
         return [_flag("home", "error", "DEMAND_MISSING", "Yearly electricity demand is missing: cannot size the system.")]
@@ -562,7 +563,7 @@ def sanity_flags(home: Home, system: System, sim: SimResult | None = None) -> li
     if system.heatpump_kw > 0:
         if home.heating == "Heatpump":
             flags.append(_flag("heatpump", "warn", "HEATPUMP_EXISTING", "A new heat pump is planned, but the home already has one."))
-        rule_kw, _ = heatpump_size_kw(home.heating_demand_kwh)
+        rule_kw, _ = heatpump_size_kw(home.heating_demand_kwh, hp_catalogue or HP_CATALOGUE_KW)
         if rule_kw is None:
             flags.append(_flag("heatpump", "info", "HEATPUMP_DEMAND_UNKNOWN",
                                "Heat pump planned but heating demand unknown: size cannot be checked."))

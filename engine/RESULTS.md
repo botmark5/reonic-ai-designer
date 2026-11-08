@@ -2,6 +2,33 @@
 
 Headline (Mark's request): **new full systems**, planner answered 'Solar already on the roof?'. Add-on sales (battery retrofits, PV extensions, wallbox-only) are reported separately in engine/README.md (segment add_ons).
 
+## How to read "answered" (audit, 8 Nov, issue #50)
+
+In the evaluation the answer to 'Solar already on the roof?' is **derived from the expert offer** (`evaluate.planner_answer`:
+battery-only offer = yes, new system = no, wallbox-only/other = unknown). It is therefore an **oracle what-if**, not a measured input:
+- On the **new full systems** segment the answer is "no" for every project, so it carries no information about sizes: the size metrics
+  of that segment (PV 2.50 vs 2.62 kWp, battery 2.61 vs 2.64 kWh, within one step 54 vs 46 %) are fair and may be claimed.
+  Its PV/battery yes/no numbers (100 % / 95 %) equal the baseline and are not an achievement.
+- Over **all 315 projects** or on **add-on sales**, the answered yes/no numbers (PV yes/no 97 %, add-ons "no new PV" 87 %, battery yes/no
+  95–97 %) and the answered all-project MAE (2.19 kWp) **mostly restate the label**. Do not claim them as accuracy. State them, if at all,
+  as "what the question would be worth if the planner answers it correctly" (README table).
+- The honest headline over all projects is the **not answered** column: PV MAE all projects 2.94 vs 3.77 kWp, PV yes/no 88 vs 82 %,
+  PV size 2.48 vs 2.64 kWp, battery size 2.45 vs 2.71 kWh, battery within one step 54 vs 51 %; and the model loses on
+  PV within ±1.5 kWp (40 vs 43 %), battery yes/no (88 vs 90 %) and wallbox (72 vs 73 %).
+
+## Three strongest findings (for the deck)
+
+1. **The decision that matters is new system vs. add-on, not the kWp.** Over all 315 held-out projects the chained model cuts the
+   whole-project PV error from 3.77 to 2.94 kWp (−22 %) and gets PV yes/no right in 88 % vs 82 %, because it recognises battery
+   retrofits from the planner's inputs (default consumption, date, price). Pure size error improves only slightly (2.48 vs 2.64 kWp).
+2. **One input is worth more than the model: yearly consumption.** Blanking inputs one at a time on the locked test set
+   (`experiments`, AUDIT.md): installer + consumption alone already reaches the band-median baseline; removing consumption costs
+   0.9 kWp of PV MAE; price, the "default 4,500 kWh" flag and the offer date move PV yes/no by 3–5 points each; EV, heating and
+   household profile by < 1 point. Asking "Is there already PV on the roof?" would be worth the most (PV yes/no 88 → 97 %, oracle).
+3. **The labels are robust and the ranges are calibrated.** Choosing the highest instead of the lowest offer option changes 142 of 1,587
+   expert labels but moves PV MAE by ≤ 0.02 kWp and battery MAE by ≤ 0.16 kWh; the conformal P10–P90 PV range contains the expert's size in
+   79–81 % of new full systems (target 80 %); two trainings give identical predictions (fixed seeds).
+
 ## Before/after per improvement (locked test set)
 
 315 held-out projects (engine/artifacts/test_ids.json, grouped by customer), truth = engine/labels.
