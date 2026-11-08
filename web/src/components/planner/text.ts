@@ -44,3 +44,11 @@ export function altLabel(proposed: number, alt: { kwp: number; share?: number | 
     title: typeof alt.share === "number" ? `${Math.round(alt.share * 100)} % of similar homes got this size` : undefined,
   };
 }
+
+/** Catalogue sizes the installer sells that the size buttons don't already offer (ascending; zero, negatives and NaN dropped). */
+export function otherSizes(shown: number[], catalogue: number[] | undefined): number[] {
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-3;
+  return [...new Set(catalogue ?? [])]
+    .filter((s) => Number.isFinite(s) && s > 0 && !shown.some((x) => near(x, s)))
+    .sort((a, b) => a - b);
+}

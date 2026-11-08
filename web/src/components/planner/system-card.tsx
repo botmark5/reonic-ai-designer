@@ -4,14 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { BatteryMedium, Fan, Lock, LockOpen, Minus, PlugZap, Plus, SunMedium } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, type Tone } from "@/components/ui/status-badge";
-import { Segmented } from "@/components/ui/field";
+import { Segmented, Select } from "@/components/ui/field";
 import { sizeOf } from "@/lib/diff";
 import { fmtValue, LABEL, UNIT } from "@/lib/format";
 import type { ComponentKey, DesignResponse, Locks, ValidationFlag } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ConfidenceRange } from "./confidence-range";
-import { altLabel, cardReasons } from "./text";
-import { LOCK_KEY } from "./use-planner";
+import { altLabel, cardReasons, otherSizes } from "./text";
+import { INSTALLER, LOCK_KEY } from "./use-planner";
 
 const ICON = { pv: SunMedium, battery: BatteryMedium, wallbox: PlugZap, heatpump: Fan } as const;
 const TEXT_COLOR: Record<ComponentKey, string> = {
@@ -276,6 +276,18 @@ function Editor({
     .filter((x) => x >= 0)
     .sort((a, b) => a - b);
   const [battery, setBattery] = useState(current ?? 0);
+  // Every battery size this installer sells, so the planner can pick one the engine did not shortlist (e.g. 30 kWh).
+  const [catalogue, setCatalogue] = useState<number[]>([]);
+  useEffect(() => {
+    if (c !== "battery") return;
+    const ctrl = new AbortController();
+    fetch(`/api/engine/catalogue?installer=${encodeURIComponent(INSTALLER)}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { battery_kwh?: number[] } | null) => setCatalogue(j?.battery_kwh ?? []))
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [c]);
+  const extraBattery = otherSizes(batterySizes, catalogue);
   const [wallbox, setWallbox] = useState(d.wallbox.include ? "yes" : "no");
   const [hp, setHp] = useState(current ?? 0);
   const hpKw = response.options?.heatpump?.available ? response.options.heatpump.kw : (d.heatpump.kw ?? 10);
@@ -328,6 +340,23 @@ function Editor({
           onChange={setBattery}
           options={batterySizes.map((s) => ({ value: s, label: s === 0 ? "None" : `${fmtValue("battery", s)} kWh` }))}
         />
+      )}
+      {c === "battery" && extraBattery.length > 0 && (
+        <label className="flex items-center gap-2 text-[12px] text-ink-muted">
+          Other size this installer sells
+          <Select
+            className="h-8 w-auto text-[13px]"
+            value={extraBattery.includes(battery) ? String(battery) : ""}
+            onChange={(e) => e.target.value && setBattery(Number(e.target.value))}
+          >
+            <option value="">Choose…</option>
+            {extraBattery.map((s) => (
+              <option key={s} value={s}>
+                {fmtValue("battery", s)} kWh
+              </option>
+            ))}
+          </Select>
+        </label>
       )}
       {c === "wallbox" && (
         <Segmented
