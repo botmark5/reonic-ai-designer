@@ -684,6 +684,8 @@ class DesignModel:
         if home.get("roof_max_kwp"):                   # ... and never goes above the roof capacity
             hi = min(hi, float(home["roof_max_kwp"]))
             lo = min(lo, hi)
+        if "pv_kwp" in locks and r.has_pv:             # a planner's size above the roof cap stays inside its own range (flagged by physics)
+            lo, hi = min(lo, float(r.pv_kwp)), max(hi, float(r.pv_kwp))
         if "pv_kwp" in locks:
             pv_reasons, pv_conf = [f"Fixed by the planner: {r.pv_kwp:g} kWp." if r.pv_kwp else "Fixed by the planner: no PV."], 1.0
         elif r.has_pv:
@@ -746,6 +748,12 @@ class DesignModel:
             b_reasons = [f"Model confidence {r.p_has_battery:.0%} that this design includes a battery; {size_txt}, "
                          f"range {b_lo:g}-{b_hi:g} kWh.",
                          "Main drivers: " + "; ".join(self._drivers(self.battery_, Xb, f"{classes[best]:g} kWh", class_index=best)) + "."]
+        elif r.offer_type != "pv" and not r.has_pv:
+            # no new PV and not a battery add-on: a battery without any PV makes no sense (wallbox-only / other order)
+            b_conf = 1 - float(r.p_has_battery)
+            kind = {"wallbox_only": "a wallbox-only order", "other": "an order without PV or battery"}.get(r.offer_type, "an order without new PV")
+            b_reasons = [f"No battery: this looks like {kind}, and a battery only pays next to PV. "
+                         "Lock a battery size to add one as a retrofit to an existing system."]
         else:
             b_conf = 1 - float(r.p_has_battery)
             b_reasons = [f"No battery: model confidence for a battery is only {r.p_has_battery:.0%}.",
@@ -816,7 +824,7 @@ class DesignModel:
                                 heatpump_kw=float(design.get("heatpump_kw") or 0), wallbox=bool(design.get("wallbox")))
         for f in physics.sanity_flags(home_to_physics(home), system, hp_catalogue=self.heatpump_sizes(installer)):
             flags.append({**f, "percentile": None})
-        return flags
+        return contextualise_pv_flags(flags)
 
     def heatpump_sizes(self, installer: str) -> tuple:
         """Heat pump sizes this installer sells (same list for the option and the physics checks)."""
@@ -831,6 +839,24 @@ class DesignModel:
     @staticmethod
     def load(path: Path | str = MODEL_PATH) -> "DesignModel":
         return joblib.load(path)
+
+
+def contextualise_pv_flags(flags: list[dict]) -> list[dict]:
+    """
+    A physics "PV_OVERSIZED" warning is relative to ALL expert systems; small homes legitimately sit above it (experts gave
+    homes under 2,000 kWh a median 6 kWp = 3.7x their consumption). When the similar-homes check in the same list says the
+    size is typical for THIS consumption (PV_TYPICAL), the warning becomes information. Errors (> p99) are never downgraded.
+    """
+    typical = next((f for f in flags if f.get("code") == "PV_TYPICAL"), None)
+    if typical is None or not any(f.get("code") == "PV_OVERSIZED" for f in flags):
+        return flags
+    out = []
+    for f in flags:
+        if f.get("code") == "PV_OVERSIZED" and f.get("level") == "warn":
+            f = {**f, "level": "info", "message": f["message"].rstrip(".") +
+                 f". Still typical for homes with this consumption at this installer ({typical['message'].rstrip('.')})."}
+        out.append(f)
+    return out
 
 
 # ---------------------------------------------------------------------- conversions

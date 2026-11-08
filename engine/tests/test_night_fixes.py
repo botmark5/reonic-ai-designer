@@ -80,3 +80,28 @@ def test_alternatives_bracket_the_proposal():
             if len(alts) == 2 and alts[0][key] < size < alts[1][key]:
                 seen_bracket = True
     assert seen_bracket
+
+
+# --- /validate: the same context as /design ---------------------------------------------------------------------
+def test_validate_downgrades_pv_warning_when_similar_homes_say_typical():
+    from engine.model import contextualise_pv_flags
+    flags = [dict(component="pv", level="ok", code="PV_TYPICAL", message="Typical for similar homes (5.0-9.0 kWp)."),
+             dict(component="pv", level="warn", code="PV_OVERSIZED", message="PV produces 4.3x the home's consumption.")]
+    out = contextualise_pv_flags(flags)
+    assert [f["level"] for f in out] == ["ok", "info"] and "Still typical" in out[1]["message"]
+    # an error is never downgraded, and without PV_TYPICAL nothing changes
+    err = [dict(component="pv", level="error", code="PV_VERY_OVERSIZED", message="x"), flags[0]]
+    assert contextualise_pv_flags(err)[0]["level"] == "error"
+    assert contextualise_pv_flags([flags[1]])[0]["level"] == "warn"
+
+
+# --- sweep findings (600 /design calls, 8 Nov 04:40) -------------------------------------------------------------
+def test_locked_pv_above_roof_cap_stays_inside_its_range_and_no_pv_lock_explains_the_battery():
+    labels, inputs = make_synthetic(n_per_installer=120, seed=3)
+    model = DesignModel().fit(build_eval_table(labels, inputs))
+    d = model.propose({"annual_kwh": 4500, "roof_max_kwp": 2, "has_existing_pv": False}, "instA", {"pv_kwp": 4.05})["design"]
+    lo, hi = d["pv"]["range"]
+    assert d["pv"]["kwp"] == 4.05 and lo - 1e-9 <= 4.05 <= hi + 1e-9, d["pv"]
+    d = model.propose({"annual_kwh": 4500, "has_existing_pv": False}, "instA", {"pv_kwp": 0})["design"]
+    if not d["battery"]["include"]:
+        assert "0%" not in d["battery"]["reasons"][0] and "No battery" in d["battery"]["reasons"][0], d["battery"]
