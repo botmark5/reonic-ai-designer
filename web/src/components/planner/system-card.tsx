@@ -144,7 +144,9 @@ export function SystemCard({
     <article
       id={`card-${c}`}
       className={cn(
-        "relative flex scroll-mt-24 flex-col gap-3.5 rounded-md border p-5 transition-[border-color,box-shadow,background-color] duration-300",
+        "relative flex scroll-mt-24 flex-col gap-3.5 rounded-md border p-5 transition-[border-color,box-shadow,background-color] duration-300 min-[87.5rem]:gap-2.5 min-[87.5rem]:p-3.5",
+        // one row of four from 1400 px: the size editor needs the whole row
+        editing && "min-[87.5rem]:col-span-4",
         // the changed card keeps the highlight fill until the next change
         changed ? "border-highlight bg-[color-mix(in_srgb,var(--highlight)_16%,var(--surface-1))] shadow-[0_0_0_1px_var(--highlight)]" : "border-border bg-surface-1",
         highlighted && !changed && "border-border-strong shadow-[0_0_0_1px_var(--border-strong)]",
@@ -156,8 +158,8 @@ export function SystemCard({
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && onHover?.(null)}
     >
       <header className="flex items-center gap-2">
-        <Icon className={cn("size-[18px] shrink-0", TEXT_COLOR[c])} strokeWidth={1.5} aria-hidden />
-        <h2 className="flex-1 text-h3">{LABEL[c]}</h2>
+        <Icon className={cn("size-[18px] shrink-0 min-[87.5rem]:hidden", TEXT_COLOR[c])} strokeWidth={1.5} aria-hidden />
+        <h2 className="min-w-0 flex-1 text-h3">{LABEL[c]}</h2>
         {!isOption && (
           <StatusBadge tone={status.tone} title={status.title}>
             {status.label}
@@ -165,7 +167,7 @@ export function SystemCard({
         )}
       </header>
 
-      <p className={cn("m-0 flex flex-wrap items-baseline gap-x-2 font-mono text-metric font-medium tabular", size == null && !isOption && "text-ink-muted")}>
+      <p className={cn("m-0 flex flex-wrap items-baseline gap-x-2 font-mono text-metric font-medium tabular min-[87.5rem]:text-[28px]", size == null && !isOption && "text-ink-muted")}>
         {was !== undefined && (
           <span className="text-[20px] font-normal text-ink-muted" aria-label={`was ${was == null ? "none" : `${fmtValue(c, was)} ${UNIT[c]}`}`}>
             <s className="decoration-1">{was == null ? "None" : fmtValue(c, was)}</s> →
@@ -197,8 +199,9 @@ export function SystemCard({
         </ul>
       )}
 
+      {/* one row of four (from 1400 px): the same engine reasons are in the "Why this design" column */}
       {reasons.length > 0 && (
-        <ul className="m-0 flex list-disc flex-col gap-1 pl-[18px] text-[13px] leading-[19px] text-ink-body marker:text-ink-muted">
+        <ul className={cn("m-0 flex list-disc flex-col gap-1 pl-[18px] text-[13px] leading-[19px] text-ink-body marker:text-ink-muted", !editing && "min-[87.5rem]:hidden")}>
           {[...reasons, ...(showMore ? moreReasons : [])].map((r, i) => (
             <li key={i}>{r}</li>
           ))}
@@ -209,7 +212,7 @@ export function SystemCard({
           type="button"
           onClick={() => setShowMore((v) => !v)}
           aria-expanded={showMore}
-          className="-mt-2 self-start cursor-pointer text-[12px] font-medium text-ink-muted underline decoration-border-strong underline-offset-4 hover:text-ink"
+          className={cn("-mt-2 self-start cursor-pointer text-[12px] font-medium text-ink-muted underline decoration-border-strong underline-offset-4 hover:text-ink", !editing && "min-[87.5rem]:hidden")}
         >
           {showMore ? "Fewer reasons" : `${moreReasons.length} more ${moreReasons.length === 1 ? "reason" : "reasons"}`}
         </button>
@@ -226,11 +229,11 @@ export function SystemCard({
           }}
         />
       ) : (
-        <footer className="mt-auto flex flex-wrap gap-2 pt-1">
+        <footer className="mt-auto flex flex-wrap gap-2 pt-1 min-[87.5rem]:gap-1.5 min-[87.5rem]:pt-0 min-[87.5rem]:[&_button]:px-2.5">
           {isOption ? (
             <Button variant="secondary" size="sm" onClick={() => onLock(hpOption!.kw, "added the heat pump option")}>
               <Plus data-icon="inline-start" strokeWidth={1.5} />
-              Include {fmtValue(c, hpOption!.kw)} kW heat pump
+              Include {fmtValue(c, hpOption!.kw)} kW<span className="min-[87.5rem]:sr-only"> heat pump</span>
             </Button>
           ) : (
             <>

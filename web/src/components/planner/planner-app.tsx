@@ -250,9 +250,10 @@ function Workspace({
               onSelect={onStageSelect}
               labels={wide}
               // the readout and time bar would push the refine box and cards below the fold at 1440 × 900; the same
-              // numbers are in the evidence column
+              // numbers are in the evidence column. From 1400 px the four cards sit in one row under a slightly wider stage,
+              // so house, refine box and all four sizes fit one 1440 × 900 screen
               controls="minimal"
-              className="md:[&_[data-h3d-stage]]:aspect-video"
+              className="md:[&_[data-h3d-stage]]:aspect-video min-[87.5rem]:[&_[data-h3d-stage]]:aspect-[43/20]"
             />
           </section>
         ) : (
@@ -279,7 +280,7 @@ function Workspace({
         </div>
 
         {r ? (
-          <fieldset disabled={s.refining} className={`m-0 grid min-w-0 grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2 ${s.busy || s.refining ? "opacity-70 transition-opacity" : ""}`}>
+          <fieldset disabled={s.refining} className={`m-0 grid min-w-0 grid-cols-1 gap-4 border-0 p-0 sm:grid-cols-2 min-[87.5rem]:grid-flow-dense min-[87.5rem]:grid-cols-4 min-[87.5rem]:gap-3 ${s.busy || s.refining ? "opacity-70 transition-opacity" : ""}`}>
             {COMPONENTS.map((c) => (
               <SystemCard
                 key={c}
