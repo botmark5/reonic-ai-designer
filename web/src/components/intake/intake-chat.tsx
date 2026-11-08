@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, CornerDownLeft, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
@@ -53,6 +53,19 @@ function useStagedReveal(target: LiveReveal): LiveReveal {
   return instant ? target : shown;
 }
 
+const EMPTY_HOME = factsToHome({});
+
+/** The previous value while the new one is deep-equal (JSON), so memo'd consumers skip equal updates. */
+function useStable<T>(value: T): T {
+  const key = JSON.stringify(value);
+  return useMemo(() => value, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/** The 3D house, memoised: it re-renders only when one of its inputs really changes. */
+const Stage = memo(function Stage(props: React.ComponentProps<typeof HouseStage>) {
+  return <HouseStage {...props} />;
+});
+
 function firstTurn(): Turn[] {
   const q = QUESTIONS[0];
   return [{ q: q.id, role: "agent", text: q.ask({}) }];
@@ -90,7 +103,9 @@ export function IntakeChat() {
   const reply = wantPreview ? (preview?.reply ?? null) : null;
   const loading = wantPreview && preview?.key !== answersKey;
 
-  const design: DesignResponse | null = reply?.design ?? null;
+  // Every answer brings a fresh reply (new objects, often equal values). Keep equal values identical so the 3D
+  // house only rebuilds what really changed (the Google roof is the same for every answer after the address).
+  const design = useStable<DesignResponse | null>(reply?.design ?? null);
   const facts: Facts = useMemo(
     () => ({ ...(reply?.facts ?? {}), annual_kwh_estimate: canDraft(answers) ? (reply?.home.annual_kwh ?? null) : null }) as Facts,
     [reply, answers],
@@ -102,8 +117,8 @@ export function IntakeChat() {
     () => ({ shell: true, roof: true, warm: reveal.warm, existingPv: true, panels: reveal.panels, battery: reveal.battery, car: reveal.car, heatpump: reveal.heatpump }),
     [reveal],
   );
-  const home = reply?.home ?? factsToHome({});
-  const solar = reply?.solar ?? null;
+  const home = useStable(reply?.home ?? EMPTY_HOME);
+  const solar = useStable(reply?.solar ?? null);
   const roof3d = useMemo(() => {
     if (!solar || solar.status !== "ok" || !Array.isArray(solar.segments)) return undefined;
     try {
@@ -191,11 +206,16 @@ export function IntakeChat() {
     if (!finished || !fresh || !reply || savingKey.current === answersKey || saveFailed === answersKey) return;
     const key = answersKey;
     savingKey.current = key;
-    fetch("/api/designs", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ customer_name: reply.facts.customer_name ?? "New home", address: reply.facts.address, source: "voice", home: reply.home }),
-    })
+    // source "form": the planner labels it "from a site visit", not "from a call". Databases without the
+    // 20261108_designs_source_form migration reject it; then save as "voice" (same fallback idea as /visit).
+    const save = (source: "form" | "voice") =>
+      fetch("/api/designs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ customer_name: reply.facts.customer_name ?? "New home", address: reply.facts.address, source, home: reply.home }),
+      });
+    save("form")
+      .then((r) => (r.ok ? r : save("voice")))
       .then(async (r) => {
         if (!r.ok) throw new Error();
         const row = (await r.json()) as DesignRow;
@@ -212,7 +232,7 @@ export function IntakeChat() {
   const log = useRef<HTMLOListElement>(null);
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight, behavior: reducedMotion() ? "auto" : "smooth" });
-  }, [turns.length, finished]);
+  }, [turns.length, finished, saved]);
   const input = useRef<HTMLInputElement>(null);
   // Text-only questions (name) get the field focused; chip questions free the keyboard for the number keys
   // (the field keeps focus after Enter otherwise, and the shortcuts ignore keys typed into a field).
@@ -223,6 +243,16 @@ export function IntakeChat() {
   }, [current]);
 
   const savedId = saved?.key === answersKey ? saved.id : null;
+  // The chat paints first; the house follows in a deferred render (rebuilding it can take seconds on slow GPUs).
+  const stageNow = useMemo(
+    () => ({
+      design: staged, home, mode: "planner" as const, roof: roof3d, location, reveal: stageReveal, controls: "minimal" as const, flyIn: false,
+      className: "lg:[&_[data-h3d-stage]]:aspect-auto lg:[&_[data-h3d-stage]]:h-[max(320px,calc(100dvh-307px))]",
+    }),
+    [staged, home, roof3d, location, stageReveal],
+  );
+  const stage = useDeferredValue(stageNow);
+
 
   return (
     <main
@@ -230,28 +260,26 @@ export function IntakeChat() {
       className="mx-auto grid w-full max-w-[1600px] flex-1 grid-cols-[minmax(0,1fr)] gap-4 px-4 py-4 md:px-6 md:py-6 lg:h-[calc(100dvh-57px)] lg:min-h-0 lg:flex-none lg:grid-cols-[minmax(360px,0.82fr)_minmax(0,1.5fr)] lg:grid-rows-[minmax(0,1fr)] lg:gap-6"
     >
       {/* ── Left: the questions ─────────────────────────────────────────────────────── */}
-      <section aria-label="Questions" className="flex min-h-0 flex-col gap-3">
-        <header className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <div className="flex items-center gap-2">
-              <StatusBadge tone="ai">Design assistant</StatusBadge>
-              <span className="text-body-sm text-ink-muted">Same questions as the voice agent</span>
+      <section aria-label="Questions" className="contents lg:order-1 lg:flex lg:min-h-0 lg:flex-col lg:gap-3">
+        <header className="order-1 flex flex-col gap-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <StatusBadge tone="ai">Design assistant</StatusBadge>
+            <div className="flex shrink-0 gap-1.5">
+              <Button variant="secondary" size="sm" onClick={back} disabled={!steps.length} aria-label="Back one question">
+                <ArrowLeft data-icon="inline-start" strokeWidth={1.5} /> Back
+              </Button>
+              <Button variant="secondary" size="sm" onClick={restart} disabled={!steps.length} aria-label="Start over">
+                <RotateCcw data-icon="inline-start" strokeWidth={1.5} /> Start over
+              </Button>
             </div>
-            <h1 className="m-0 line-clamp-2 text-[clamp(26px,2.4vw,36px)] leading-[1.1] font-normal tracking-[-0.02em]">
-              {reply?.facts.customer_name ?? "Start with questions"}
-            </h1>
           </div>
-          <div className="mt-1 flex shrink-0 gap-2">
-            <Button variant="secondary" size="sm" onClick={back} disabled={!steps.length} aria-label="Back one question">
-              <ArrowLeft data-icon="inline-start" strokeWidth={1.5} /> Back
-            </Button>
-            <Button variant="secondary" size="sm" onClick={restart} disabled={!steps.length} aria-label="Start over">
-              <RotateCcw data-icon="inline-start" strokeWidth={1.5} /> Start over
-            </Button>
-          </div>
+          <h1 className="m-0 line-clamp-2 text-[clamp(26px,2.4vw,36px)] leading-[1.1] font-normal tracking-[-0.02em]">
+            {reply?.facts.customer_name ?? "Start with questions"}
+          </h1>
+          <p className="m-0 text-body-sm text-ink-muted">The voice agent&apos;s questions, typed. The engine sizes every part.</p>
         </header>
 
-        <div className="flex items-center gap-3" aria-label={`Question ${Math.min(done + 1, total)} of ${total}`}>
+        <div className="order-2 flex items-center gap-3" aria-label={`Question ${Math.min(done + 1, total)} of ${total}`}>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2">
             <div className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out" style={{ width: `${(done / Math.max(total, 1)) * 100}%` }} />
           </div>
@@ -260,8 +288,8 @@ export function IntakeChat() {
           </span>
         </div>
 
-        <div className="flex min-h-[320px] flex-1 flex-col rounded-lg border border-border bg-surface-1 lg:min-h-0">
-          <ol ref={log} className="m-0 flex min-h-0 flex-1 list-none flex-col gap-3 overflow-y-auto overscroll-contain p-4 md:p-5" aria-live="polite">
+        <div className="order-4 flex flex-col rounded-lg border border-border bg-surface-1 lg:min-h-0 lg:flex-1">
+          <ol ref={log} className="m-0 flex max-h-[42dvh] min-h-[160px] list-none flex-col gap-3 overflow-y-auto overscroll-contain p-4 md:p-5 lg:max-h-none lg:min-h-0 lg:flex-1" aria-live="polite">
             {turns.map((t, i) => (
               <li
                 key={i}
@@ -277,7 +305,7 @@ export function IntakeChat() {
             {finished && (
               <li className="self-start max-w-[92%] rounded-lg px-4 py-2.5 text-[15px] leading-[23px] text-ink-body animate-in fade-in duration-300 motion-reduce:animate-none">
                 {design
-                  ? "That's everything. The draft is on the right; every size comes from the engine. A planner reviews it before it goes out."
+                  ? "That's everything. Here is the draft; every size comes from the engine. A planner reviews it before it goes out."
                   : loading
                     ? "That's everything. Drafting the design…"
                     : reply?.ready
@@ -289,6 +317,12 @@ export function IntakeChat() {
                       <li key={a}>{a}</li>
                     ))}
                   </ul>
+                )}
+                {savedId && (
+                  // on a phone the draft card is below the chat: the next step sits where the eye already is
+                  <Button className="mt-3 lg:hidden" render={<Link href={`/?d=${savedId}`} />} nativeButton={false}>
+                    <Check data-icon="inline-start" strokeWidth={2} /> Open in planner
+                  </Button>
                 )}
               </li>
             )}
@@ -303,9 +337,9 @@ export function IntakeChat() {
                       key={c.label}
                       type="button"
                       onClick={() => answer(current, c.set, c.label)}
-                      className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-pill border border-border bg-surface-1 px-3.5 text-[14px] font-medium text-ink transition-[background-color,border-color,transform] duration-150 ease-out hover:border-border-strong hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus active:scale-[0.97] motion-reduce:active:scale-100"
+                      className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-pill border border-border bg-surface-1 px-4 text-[15px] font-medium text-ink transition-[background-color,border-color,transform] md:h-9 md:px-3.5 md:text-[14px] duration-150 ease-out hover:border-border-strong hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus active:scale-[0.97] motion-reduce:active:scale-100"
                     >
-                      {i < 9 && <kbd aria-hidden className="hidden font-mono text-[11px] text-ink-muted md:inline">{i + 1}</kbd>}
+                      {i < 9 && !/^\d/.test(c.label) && <kbd aria-hidden className="hidden font-mono text-[11px] text-ink-muted md:inline">{i + 1}</kbd>}
                       {c.label}
                     </button>
                   ))}
@@ -335,9 +369,9 @@ export function IntakeChat() {
                       autoComplete="off"
                       placeholder={current.choices.length ? `Other: ${current.other.placeholder}` : current.other.placeholder}
                       aria-invalid={otherError || undefined}
-                      className="h-9 min-w-0 flex-1 rounded-pill border border-border bg-surface-1 px-4 text-[15px] text-ink outline-none placeholder:text-ink-muted focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-focus/40 aria-invalid:border-destructive"
+                      className="h-11 min-w-0 flex-1 rounded-pill border border-border bg-surface-1 px-4 text-[16px] md:h-9 md:text-[15px] text-ink outline-none placeholder:text-ink-muted focus-visible:border-border-strong focus-visible:ring-2 focus-visible:ring-focus/40 aria-invalid:border-destructive"
                     />
-                    <Button type="submit" size="icon" disabled={!other.trim()} aria-label="Send answer">
+                    <Button type="submit" size="icon" disabled={!other.trim()} aria-label="Send answer" className="size-11 md:size-9">
                       <CornerDownLeft strokeWidth={1.75} />
                     </Button>
                   </form>
@@ -345,7 +379,7 @@ export function IntakeChat() {
                 <button
                   type="button"
                   onClick={() => answer(current, {}, current.skip)}
-                  className="h-9 cursor-pointer rounded-pill px-3 text-[14px] text-ink-muted underline-offset-4 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+                  className="h-11 cursor-pointer rounded-pill px-3 text-[14px] text-ink-muted underline-offset-4 md:h-9 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus"
                 >
                   <kbd aria-hidden className="mr-1.5 hidden font-mono text-[11px] md:inline">0</kbd>
                   {current.skip}
@@ -358,22 +392,14 @@ export function IntakeChat() {
       </section>
 
       {/* ── Right: the house builds as you answer, the draft under it ─────────────────── */}
-      <section aria-label="The house" className="flex min-h-0 flex-col gap-3">
-        <HouseStage
-          design={staged}
-          home={home}
-          mode="planner"
-          roof={roof3d}
-          location={location}
-          reveal={stageReveal}
-          controls="minimal"
-          flyIn={false}
-          className="lg:[&_[data-h3d-stage]]:aspect-auto lg:[&_[data-h3d-stage]]:h-[max(320px,calc(100dvh-307px))]"
-        />
+      <section aria-label="The house" className="contents lg:order-2 lg:flex lg:min-h-0 lg:flex-col lg:gap-3">
+        <div className="order-3">
+          <Stage {...stage} />
+        </div>
         <div
           aria-labelledby="intake-draft-t"
           className={cn(
-            "flex shrink-0 flex-col justify-between gap-3 rounded-lg border bg-surface-1 px-4 py-3.5 md:px-5 lg:h-[188px]",
+            "order-5 flex shrink-0 flex-col justify-between gap-3 rounded-lg border bg-surface-1 px-4 py-3.5 md:px-5 lg:h-[188px]",
             design
               ? "border-[1.5px] border-transparent [background:linear-gradient(var(--surface-1),var(--surface-1))_padding-box,linear-gradient(90deg,var(--ai-amber),var(--ai-orange),var(--ai-salmon))_border-box]"
               : "border-border",
