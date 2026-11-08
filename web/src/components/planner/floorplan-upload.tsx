@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileUp, X } from "lucide-react";
 import { toast } from "sonner";
 import type { FloorPlan } from "@/lib/floorplan";
@@ -12,8 +12,15 @@ const ACCEPT = "image/png,image/jpeg,image/webp,application/pdf";
 export function FloorPlanUpload({ plan, onPlan }: { plan: FloorPlan | null; onPlan: (p: FloorPlan | null) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [reading, setReading] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    if (!reading) return;
+    const t = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [reading]);
 
   async function upload(file: File) {
+    setSeconds(0);
     setReading(true);
     try {
       const body = new FormData();
@@ -69,8 +76,13 @@ export function FloorPlanUpload({ plan, onPlan }: { plan: FloorPlan | null; onPl
           className={`${pill} cursor-pointer border-border bg-surface-1 text-ink-body hover:text-ink disabled:cursor-wait disabled:opacity-70 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-focus/60`}
         >
           <FileUp className="size-4" strokeWidth={1.5} aria-hidden />
-          {reading ? "Reading the plan…" : "Upload floor plan"}
+          {reading ? `Reading your floor plan… ${seconds} s` : "Upload floor plan"}
         </button>
+      )}
+      {reading && (
+        <span role="status" className="text-[12px] text-ink-muted">
+          Claude reads the rooms and sizes: this takes about 30 seconds.
+        </span>
       )}
     </>
   );

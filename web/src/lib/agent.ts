@@ -11,6 +11,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { DEFAULT_INSTALLER, engine } from "./engine";
 import { diffDesigns, sizeOf } from "./diff";
+import { changesLabel, inputChanges, refineSummary } from "./refine-text";
 import type { ComponentKey, DesignResponse, Home, Locks } from "./types";
 
 export const AGENT_MODEL = "claude-sonnet-5-5";
@@ -60,6 +61,9 @@ How to work:
   said or the engine offered are rejected.
 - Always call run_design after changing inputs or locks, then answer.
 - If the request is unclear or nothing applies, say so in one sentence instead of guessing.
+- A second electric car: the home has one EV field, so add the second car's yearly km to ev_km_year.
+- If you changed inputs but no size moved, name the inputs you updated and say the sizes stay the same. Never say
+  "nothing changed" after updating an input.
 
 Answer in at most two sentences and 45 words, for a busy planner: what changed and why, with units (kWp, kWh, kW).
 Mention a warning only if run_design returned one. Only state sizes that run_design returned. Plain text, no markdown.`;
@@ -207,8 +211,7 @@ function summarize(r: DesignResponse) {
 
 function label(name: string, input: Record<string, unknown>): string {
   if (name === "update_inputs") {
-    const ch = (input.changes ?? {}) as Record<string, unknown>;
-    return `Inputs: ${Object.entries(ch).map(([k, v]) => `${k.replace(/_/g, " ")} → ${v}`).join(", ") || "none"}`;
+    return changesLabel((input.changes ?? {}) as Record<string, unknown>);
   }
   if (name === "lock_component") return `Lock ${input.component} at ${input.value}`;
   if (name === "unlock_component") return `Unlock ${input.component}`;
@@ -220,7 +223,8 @@ function label(name: string, input: Record<string, unknown>): string {
 /** Engine /refine as the no-Claude path. */
 async function viaEngineRefine(input: AgentInput, emit: (e: AgentEvent) => void) {
   const r = await engine.refine({ text: input.text, home: input.home, locks: input.locks, installer: input.installer ?? DEFAULT_INSTALLER });
-  emit({ type: "done", summary: r.summary, home: r.home, locks: r.locks, response: r.design, by: "engine-refine" });
+  const summary = refineSummary({ text: r.summary, inputs: inputChanges(input.home, r.home), designLines: [] });
+  emit({ type: "done", summary, home: r.home, locks: r.locks, response: r.design, by: "engine-refine" });
 }
 
 export async function runAgent(input: AgentInput, emit: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
@@ -256,7 +260,9 @@ export async function runAgent(input: AgentInput, emit: (e: AgentEvent) => void,
         if (v !== null && typeof v !== t) return { content: `${k} must be a ${t}.`, is_error: true };
         if (typeof v === "number" && (v < 0 || !Number.isFinite(v))) return { content: `${k} must be ≥ 0.`, is_error: true };
         // Numbers must come from the planner's words (the model never invents consumption, distances or sizes).
-        if (typeof v === "number" && !planner.some((p) => Math.abs(p.value - v) < 0.051) && !(k === "ev_km_year" && v === 15000) && !(v === 0 && negates))
+        // A second car adds its stated distance to the current one (current km + a number the planner wrote).
+        const addsCar = k === "ev_km_year" && typeof v === "number" && planner.some((p) => Math.abs((home.ev_km_year ?? 0) + p.value - v) < 0.051);
+        if (typeof v === "number" && !planner.some((p) => Math.abs(p.value - v) < 0.051) && !(k === "ev_km_year" && v === 15000) && !addsCar && !(v === 0 && negates))
           return { content: `Rejected: ${k} = ${v} is not a number the planner wrote. Only change numbers the planner gave.`, is_error: true };
         (applied as Record<string, unknown>)[k] = v;
       }
@@ -368,6 +374,6 @@ export async function runAgent(input: AgentInput, emit: (e: AgentEvent) => void,
   // Inputs changed after the last run (or the model never ran the engine): the returned design must match them.
   if (dirty) response = await engine.design({ installer, home, locks });
   const diff = diffDesigns(before, response.design);
-  const summary = finalText.trim() || (diff.lines.length ? diff.lines.join(", ") : "No change.");
+  const summary = refineSummary({ text: finalText, inputs: inputChanges(input.home, home), designLines: diff.lines });
   emit({ type: "done", summary, home, locks, response, by: "claude" });
 }
