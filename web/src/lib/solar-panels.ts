@@ -83,13 +83,41 @@ export function toLocal(p: LatLng, origin: LatLng): Local {
   return { x_m: r2(x), y_m: r2(y) };
 }
 
-/** Pure: the first N = round(kWp / 0.45) panels in Google's order (best first), capped at what fits. */
+type GPanel = NonNullable<NonNullable<Insights["solarPotential"]>["solarPanels"]>[number];
+
+/**
+ * N panels the way an installer fills a roof: the best face first, contiguously, then the next face. A face's score is
+ * the energy of the panels it would take (its best min(N, size) panels), so one big good face beats scattered pairs on
+ * small dormers. Within a face, Google's best-first order is kept.
+ */
+export function fillContiguously(all: GPanel[], n: number): GPanel[] {
+  if (n <= 0) return [];
+  const faces = new Map<number, GPanel[]>();
+  for (const p of all) {
+    const k = p.segmentIndex ?? 0;
+    const list = faces.get(k);
+    if (list) list.push(p);
+    else faces.set(k, [p]);
+  }
+  const score = (list: GPanel[]) => list.slice(0, n).reduce((sum, p) => sum + (p.yearlyEnergyDcKwh ?? 0), 0);
+  const ranked = [...faces.values()].sort((a, b) => score(b) - score(a)); // stable: ties keep Google's order
+  const out: GPanel[] = [];
+  for (const list of ranked) {
+    for (const p of list) {
+      if (out.length >= n) return out;
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+/** Pure: N = round(kWp / 0.45) panels, filled face by face (best face first), capped at what fits. */
 export function placePanels(b: Insights, kwp: number): Placement {
   const sp = b.solarPotential ?? {};
   const center = ll(b.center);
   const all = sp.solarPanels ?? [];
   const requested = Math.max(0, Math.round(kwp / PANEL_KWP));
-  const panels: PlacedPanel[] = all.slice(0, requested).map((p) => {
+  const panels: PlacedPanel[] = fillContiguously(all, requested).map((p) => {
     const at = ll(p.center);
     return {
       ...at,
