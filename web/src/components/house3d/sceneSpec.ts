@@ -3,9 +3,9 @@
  */
 import type { DesignResponse, Home } from "../../lib/types";
 import { layoutPanels, panelCount, PANEL, type Layout, type RoofPlane } from "./layout";
-import type { House3DMode, RoofInput } from "./types";
+import type { ComponentKey, House3DMode, RoofInput } from "./types";
 
-export type CompKey = "pv" | "battery" | "inverter" | "wallbox" | "heatpump";
+export type CompKey = ComponentKey;
 export const COMP_KEYS: readonly CompKey[] = ["pv", "battery", "inverter", "wallbox", "heatpump"];
 
 export interface CompSpec {
