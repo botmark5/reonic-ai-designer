@@ -63,5 +63,9 @@ export interface StagePanel {
 }
 
 export type StageView = "outside" | "inside";
-/** "full": live numbers, time bar, camera presets. "minimal": camera presets only. "none": the model alone. */
-export type StageControls = "full" | "minimal" | "none";
+/**
+ * "full": time bar + readout under the model, camera presets (and planner tools) over it.
+ * "time": time bar + readout under the model, NOTHING over it (homeowner /offer).
+ * "minimal": camera presets only. "none": the model alone.
+ */
+export type StageControls = "full" | "time" | "minimal" | "none";

@@ -328,7 +328,7 @@ export function House3D({
         )}
 
         {/* planner panel editing: placement only, the engine's size stays */}
-        {panelEdit && controls !== "none" && (
+        {panelEdit && controls !== "none" && controls !== "time" && (
           <div
             data-h3d-ui
             role="toolbar"
@@ -347,7 +347,7 @@ export function House3D({
         )}
 
         {/* camera presets: the only control over the model */}
-        {show3d && controls !== "none" && (
+        {show3d && controls !== "none" && controls !== "time" && (
           <div data-h3d-ui className="absolute right-3 top-3 hidden items-center gap-1.5 sm:flex">
             <div role="group" aria-label="Camera view" className={cn("flex gap-1 p-1", glassPanel, "rounded-full")}>
               {PRESETS.map((p) => (
@@ -372,7 +372,7 @@ export function House3D({
       </div>
 
       {/* time and live numbers sit under the model, never over it */}
-      {controls === "full" && (
+      {(controls === "full" || controls === "time") && (
         <div data-h3d-ui className="flex flex-col gap-2 border-t border-border px-3 pb-2.5 pt-3 sm:px-4">
           {show3d && (
             <TimeBar

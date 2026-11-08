@@ -80,7 +80,8 @@ export function HouseStage({
   const [ownView, setOwnView] = useState<StageView>("outside");
   const shownView = view ?? ownView;
   const tiles = wanted && !!TILES_KEY && !!at && shownView === "outside" && !still && off !== at;
-  const switcher = view === undefined && controls !== "none" && !still && !reveal;
+  const overlays = controls !== "none" && controls !== "time";
+  const switcher = view === undefined && overlays && !still && !reveal;
 
   return (
     <div className="relative">
@@ -126,7 +127,7 @@ export function HouseStage({
         panelsOn={revealedFromKey(revealKey(reveal)).panels}
         labels={labels}
         sunMap={sunMap}
-        buttons={controls !== "none"}
+        buttons={overlays}
         onFallback={(reason) => {
           if (process.env.NODE_ENV !== "production") console.info("[HouseStage] real outside unavailable:", reason);
           setOff(at);
