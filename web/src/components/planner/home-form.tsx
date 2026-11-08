@@ -1,7 +1,8 @@
 "use client";
 
 import { useId, useState } from "react";
-import { Field, Segmented, Select, TextInput } from "@/components/ui/field";
+import { controlClass, Field, Segmented, Select, TextInput } from "@/components/ui/field";
+import { AddressInput } from "@/components/ui/address-input";
 import { compass } from "@/lib/roof";
 import type { Home } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,14 @@ function AddressField({ address, lookup, roofKwp, onFind }: { address: string; l
         Address
       </label>
       <div className="flex gap-2">
-        <TextInput id={id} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Street, number, city" autoComplete="street-address" />
+        <AddressInput
+          id={id}
+          value={draft}
+          onChange={setDraft}
+          onPick={(a) => onFind(a)}
+          placeholder="Street, number, city"
+          className={controlClass}
+        />
         <Button type="submit" variant="secondary" disabled={!draft.trim() || lookup === "looking"} className="shrink-0">
           {lookup === "looking" ? "Finding…" : "Find house"}
         </Button>

@@ -3,6 +3,7 @@
 import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { MessageCircleQuestion, Plus } from "lucide-react";
+import { AddressInput } from "@/components/ui/address-input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { fmtRelative } from "@/lib/format";
 import type { DesignRow } from "@/lib/supabase";
@@ -86,12 +87,11 @@ export function Inbox({
             Address
           </label>
           <div className="flex gap-1.5">
-            <input
+            <AddressInput
               id="new-home-address"
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={setAddress}
               placeholder="Street, number, city"
-              autoComplete="street-address"
               className="h-8 min-w-0 flex-1 rounded-sm border border-border-strong/60 bg-surface-1 px-2.5 text-[13px] outline-none focus-visible:border-focus focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-focus/60"
             />
             <button type="submit" className="h-8 cursor-pointer rounded-pill bg-primary px-3 text-[13px] font-medium text-primary-ink">

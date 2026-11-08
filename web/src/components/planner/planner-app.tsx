@@ -14,6 +14,7 @@ import type { DesignRow } from "@/lib/supabase";
 import { OFFER_TYPE_LABEL, type ComponentKey, type DesignResponse, type OfferType } from "@/lib/types";
 import type { InsideKey, Zone } from "@/components/house3d/insideRules";
 import type { FloorPlan } from "@/lib/floorplan";
+import { clearPendingFloorPlan, readPendingFloorPlan } from "@/lib/floorplan-handoff";
 import { FloorPlanUpload } from "./floorplan-upload";
 import type { AllowedVariant } from "@/lib/allowed";
 import { HomeForm, type AddressLookup } from "./home-form";
@@ -185,7 +186,12 @@ function Workspace({
   );
   const [sunMap, setSunMap] = useState(false);
   // Floor plan per design (layout for the Inside view only), kept while the planner is open.
-  const [plans, setPlans] = useState<Record<string, FloorPlan>>({});
+  // A floor plan read on /visit for this draft comes via session storage (client navigation from /visit).
+  const [plans, setPlans] = useState<Record<string, FloorPlan>>(() => {
+    const p = typeof window === "undefined" ? null : readPendingFloorPlan(row.id);
+    return p ? { [row.id]: p } : {};
+  });
+  useEffect(() => clearPendingFloorPlan(row.id), [row.id]); // read once; a reload must render the same on server and client
   const floorPlan = plans[row.id] ?? null;
   const setFloorPlan = useCallback(
     (p: FloorPlan | null) =>
