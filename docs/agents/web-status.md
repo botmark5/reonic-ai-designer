@@ -33,11 +33,15 @@ Updated Sun 04:05.
 - Next: none planned; mount details in `web/src/components/house3d/README.md`.
 - Blocking: nothing.
 
-## d-voice (voice agent backend + Google Solar, web/src/app/api/{voice,solar}, web/src/lib/{voice,solar}.ts)
-- Changed: household answers in words are now parsed (EN + DE: "family of four", "zu zweit", "couple with two kids",
-  "5+"), in create-design and post-call. `daytime_presence` sets the engine's own one-person presets
-  (`HomeOfficeOnePerson` / `FullTimeOnePerson`); larger households keep `H0`. Earlier: EV without km → 15,000 km/year,
-  `demand_is_default: false` for a stated use or bill, existing-solar question asked early.
-- Engine: no new fields; only existing `load_profile` preset names are sent.
-- Next: signed post-call test once the webhook secret is available locally; one paid explain + TTS check after Mark's OK.
-- Blocking (needs-human, Mark): GOOGLE_MAPS_API_KEY (Solar answers `no_key`), OK for a paid TTS test.
+## d-voice (voice agent backend + Google Solar, web/src/app/api/{voice,solar}, web/src/lib/{voice,solar*}.ts)
+- Changed (night 7→8 Nov): `/api/solar/panels` (panel placement: Google panels best-first, N = round(kWp/0.45), segments
+  with geometry, local metres) and `/api/solar/layers` (annual-flux sun map as PNG, UTM rotation + corners, CDN-cached).
+  `/api/voice/update-facts` server tool (same tool secret): each answer lands in `calls.facts` during the call (stated,
+  normalised Home, Google roof after the address); create-design merges those answers. `/api/voice/explain` returns
+  timed `segments` (morning 8 h / noon 12.5 h / evening 19 h) for "Listen to your offer"; ElevenLabs with-timestamps;
+  demo clip committed (`web/public/voice/`, `voice-cache.json`). Household words → number, daytime presence → one-person
+  presets, EV "planned" = yes, EV km default 15,000, `demand_is_default: false` for stated use/bill.
+- Engine: no new fields; only existing Home fields and `load_profile` preset names are sent.
+- Next: HQ attaches `update_facts` (config in docs/voice-agent.md). Vercel function region lhr1 recommended (Supabase is
+  in London; iad1 adds ~0.3–0.8 s per voice call).
+- Blocking (needs-human, Mark): Vercel region choice; deploy limit (prod frozen at #88; #91 makes the offer mp3 public).
