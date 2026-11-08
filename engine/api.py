@@ -38,7 +38,7 @@ from pydantic import BaseModel, Field, field_validator
 from engine import llm, physics
 from engine.evaluate import ARTIFACTS, build_eval_table, derive_offer_type, inputs_from_labels, load_inputs, planner_answer
 from engine.interim_labels import get_labels
-from engine.model import MODEL_PATH, DesignModel, home_to_physics
+from engine.model import MODEL_PATH, DesignModel, contextualise_pv_flags, home_to_physics
 
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
 log = logging.getLogger("engine.api")
@@ -223,9 +223,8 @@ def _evaluate_design(home: dict, d: dict, installer: str | None = None):
 
 def _contextualise_flags(model: DesignModel, home: dict, installer: str, d: dict, flags: list[dict]) -> list[dict]:
     """
-    A physics "PV_OVERSIZED" warning is relative to ALL expert systems; small homes legitimately sit above it (experts gave
-    homes under 2,000 kWh a median 6 kWp = 3.7x their consumption). When the 40 most similar past homes of this installer
-    show the size is typical for THIS consumption, the warning becomes information, so the engine never calls its own
+    /design: a physics "PV_OVERSIZED" warning becomes information when the 40 most similar past homes of this installer
+    show the size is typical for THIS consumption (model.contextualise_pv_flags), so the engine never calls its own
     expert-style proposal implausible (issue #66). Errors (> p99) are never downgraded.
     """
     if not any(f["code"] == "PV_OVERSIZED" for f in flags):
@@ -235,16 +234,8 @@ def _contextualise_flags(model: DesignModel, home: dict, installer: str, d: dict
                                                      wallbox=d["wallbox"]["include"], heatpump_kw=d["heatpump"]["kw"]))
     except Exception:            # validation is a bonus: never break /design because of it
         return flags
-    pv_check = next((c for c in checks if c.get("component") == "pv" and c.get("code") == "PV_TYPICAL"), None)
-    if pv_check is None:
-        return flags
-    out = []
-    for f in flags:
-        if f["code"] == "PV_OVERSIZED":
-            f = {**f, "level": "info", "message": f["message"].rstrip(".") +
-                 f". Still typical for homes with this consumption at this installer ({pv_check['message'].rstrip('.')})."}
-        out.append(f)
-    return out
+    typical = [c for c in checks if c.get("code") == "PV_TYPICAL"]
+    return contextualise_pv_flags(flags + typical)[:len(flags)] if typical else flags
 
 
 def _variant_summary(d: dict, sim, eco) -> dict:
