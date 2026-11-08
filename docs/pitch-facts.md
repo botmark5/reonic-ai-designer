@@ -1,7 +1,7 @@
 # Pitch facts
 
 Every number the pitch, deck or README may use, with where it comes from and how to say it.
-Checked on 2026-11-08 at 00:20 against the live engine's `GET /eval` (P10–P90 coverage at 00:55); re-checked at 02:20 after PR #60 (metrics unchanged) and re-classified after the audit (`engine/RESULTS.md`, "How to read answered").
+Checked on 2026-11-08 at 00:20 against the live engine's `GET /eval` (P10–P90 coverage at 00:55); re-checked at 02:20 after PR #60 (metrics unchanged) and re-classified after the audit (`engine/RESULTS.md`, "How to read answered"). Re-checked on production at 02:50 after PR #61: every `/eval` number below is unchanged and matches what `/reality` shows.
 
 **How to read this**
 - **Safe** means say it as written. **Caveat** means say it only together with the caveat in the same row. **Don't** means leave it out.
@@ -103,13 +103,13 @@ Expert range means the smallest to largest PV across the variants the expert off
 | fact | number | source | say it |
 |---|---|---|---|
 | The problem, in Reonic's words | planners "spend hours on every single design"; "the first credible offer often wins" | the challenge brief, p.3 and p.5 | Safe, quoted as the brief's statement, not as our measurement. |
-| One full design from the engine | 0.27–0.49 s (10 calls, laptop to the live engine) | measured 2026-11-08 00:20 | Safe: "a reviewed draft in under half a second instead of a design from scratch". |
+| One full design from the engine | 0.27–0.64 s (two runs of 10 calls, laptop to the live engine; most of it is network: `/health` alone took 0.15–0.48 s on the same connections) | measured 2026-11-08 00:20 and 02:50 | Safe: "a reviewed draft in about half a second instead of a design from scratch". |
 | Voice call to draft design on production | 207 ms engine time | d-voice smoke test, 2026-11-08 00:13 | Safe |
 | Every size is traceable | reasons from the model's own feature attributions, a calibrated range, 5 similar past projects, installer catalogue sizes | `engine/model.py` propose; `/design` response | Safe: "the planner can justify every number to the homeowner" (brief: "fears a black box"). |
 | Planner overrides are validated | a locked component is compared with the 40 most similar past homes and physics; "Larger than 99 % of similar homes" shown on the card | `/validate`; planner card | Safe: this is the brief's second use case, "design validation". |
 | Consistency | same inputs → same design, deterministic (fixed seeds; two trainings give identical predictions) | `engine/tests/test_audit_regressions.py` | Safe: "junior planners design like the installer's own history". |
 | Three use cases, one engine | planner draft, planner validation, homeowner offer (+ voice intake) | the product | Safe |
-| Engine tests / web tests | 392 pytest (main 7a9cb1d); 158 vitest | `pytest`; `npm test` | Safe |
+| Engine tests / web tests | 393 pytest (376 run without the data, 17 need it); 176 vitest in 20 files (main 904eba8) | `pytest`; `npm test` | Safe |
 | Who decides sizes | the engine only. Claude turns planner text into input changes and writes explanations. | `CLAUDE.md`, `engine/README.md` | Safe |
 
 ## Don't say

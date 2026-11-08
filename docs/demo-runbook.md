@@ -1,7 +1,7 @@
 # Demo runbook (5 minutes, production)
 
 `<APP_URL>` is the production web app. The URL itself lives in Vercel and `.status/`, never in git.
-Every engine number below was checked on the live engine on 2026-11-08 at 00:20 (installer A's catalogue, the voice default).
+Every engine number below was checked on the live engine on 2026-11-08 at 00:20 and again at 02:50 after PRs #60 and #61 (installer A's catalogue, the voice default).
 Numbers for the pitch: `docs/pitch-facts.md`.
 
 ## T−30 min: pre-flight
@@ -33,7 +33,7 @@ Numbers for the pitch: `docs/pitch-facts.md`.
 "**No electric car.**" · "Gas boiler, about 15 years old. Concrete tile roof, facing south." · confirm the summary.
 
 The persona must say **no EV**, otherwise the EV step changes nothing.
-Expected draft: 9.9 kWp + 10 kWh, no wallbox, 10.5 kW heat pump option (sizes checked 00:20; the heat pump size changed with engine #60 to the installer's real 10.5 kW). Re-check the draft once in pre-flight with the scripted call.
+Expected draft: 9.9 kWp + 10 kWh, no wallbox, 10.5 kW heat pump option (checked on production at 02:50; the heat pump size changed with engine #60 to the installer's real 10.5 kW). Re-check the draft once in pre-flight with the scripted call.
 
 ### Example cases on /reality, by role
 | button | ours (live engine) | expert | use on stage? |
@@ -42,7 +42,7 @@ Expected draft: 9.9 kWp + 10 kWh, no wallbox, 10.5 kW heat pump option (sizes ch
 | EV owner | 10.8 kWp, 9.7 kWh, wallbox | 10.8 kWp, 9 kWh, wallbox | **Yes: the best match.** |
 | Experts disagree | 9.0 kWp, 9.2 kWh | two variants: 6.75 and 12.15 kWp, 10 kWh | **Yes**: inside the expert's range. |
 | Heat pump case | no new PV, no battery, a wallbox, **12.5 kW heat pump offered as an option** (checked on production 02:30 after engine #60: the home's consumption was left at the default, so the engine treats it as an add-on order) | 12.5 kW heat pump only, no PV | Only if asked: the heat pump size is exactly the expert's 12.5 kW and the engine, like the expert, proposes no PV; it adds a wallbox the expert did not sell. |
-| Battery retrofit | check on production before the demo: since engine #60 `/project` passes the recorded "consumption left at default" flag, so this case may now come out as a battery retrofit without the answer | 5 kWh battery-only add-on | Only if it shows a retrofit on production. Otherwise the amber **Unanswered mode** note appears; say: "This is the unanswered case. Answering 'solar already on the roof' turns it into a battery retrofit." |
+| Battery retrofit | 9.9 kWp + 10 kWh, a new system (checked on production at 02:50, after engine #60: still not a retrofit without the answer) | 5 kWh battery-only add-on | **No.** The page shows the amber **Unanswered mode** note on it. If someone clicks it, point at the note and say: "This is the unanswered case. Answering 'solar already on the roof' turns it into a battery retrofit." |
 
 Live-engine checks you can repeat on the planner. Base home: 4,500 kWh, "Solar already on the roof?" = No.
 | change | design |
