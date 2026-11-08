@@ -1,4 +1,4 @@
-# Requirements check against the Reonic brief (updated 8 Nov 2026, 09:45 Munich time)
+# Requirements check against the Reonic brief (updated 8 Nov 2026, 10:00 Munich time)
 
 Every requirement of `docs/reonic-brief.pdf`, where it is met, and the evidence. Status: **done** = on main and on
 production; **human** = needs Mark; **not done**. Earlier version: 04:40 (all PRs since then are merged).
@@ -41,8 +41,8 @@ production; **human** = needs Mark; **not done**. Earlier version: 04:40 (all PR
 | Data used only for the hackathon, never shared | done | `data/raw/` and `engine/artifacts/` gitignored, never committed; raw project ids removed from hover tooltips (#119) |
 
 ## Open items (owner: Mark unless noted)
-1. **Production engine is one merge behind main**: PR #118 (validate context, locked PV range with a roof cap, no-PV battery text, #93 heat pump wording) merged at 09:30 Munich. `D:\thinc\railway_build` is synced; run `railway up` there (about 3 minutes), then check a 4,500 kWh gas home's heat pump option text.
+1. ~~Production engine behind main~~: redeployed at 09:55 Munich with #118 and verified live (heat pump option text, locked PV range with a roof cap, no-PV battery text, /validate context). Production = main.
 2. Invite the judges to the repository; ask the organisers for the submission channel.
 3. Export the deck to PDF after the 11:00 freeze; rehearse twice with `docs/demo-runbook.md`.
 4. Record the backup video on production (runbook shot list).
-5. PR #92 (Vercel ignore rule) is the only open PR; no open issues.
+5. PR #92 (Vercel ignore rule) and this docs PR are the only open PRs; no open issues.
