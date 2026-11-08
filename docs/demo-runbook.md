@@ -55,15 +55,15 @@ The price and profile matter: the same 4,500 kWh sent without them gives 9.0 / 1
 
 ## Hero moments: status and fallback per step
 Updated as each pick merges. Until a row says **merged**, the click path above is what production shows.
-The 3D house falls back by itself: with no Google 3D tiles (no key, slow or empty), the procedural house shows; when WebGL is missing or fails, the still image `web/public/models/house-fallback.png` shows. There is no URL switch yet to force the still image when WebGL is merely slow (asked c-3d), so on a stuttering projector switch to the backup video for that step.
+The 3D house falls back by itself: with no Google 3D tiles (no key, slow or empty), the procedural house shows; when WebGL is missing or fails, the still image `web/public/models/house-fallback.png` shows. Two URL switches (since #78) work on any page with the house: add **`?static=1`** to show the still image without WebGL (use it when the projector stutters), or **`?tiles=0`** to force the procedural house when the real street misbehaves.
 
-| screen | hero moment | status (03:10) | if it misbehaves |
+| screen | hero moment | status (05:00) | if it misbehaves |
 |---|---|---|---|
-| `/live` | The house assembles while the call runs; "EV in spring" makes the car drive in. | building (f-hero, `web/hero-live`); the voice side is **merged** (#73: `update_facts` writes each answer to the call live, once HQ attaches the tool to the agent) | Tiles slow or missing: the procedural house assembles instead, automatically. WebGL slow: the fact checklist and draft still fill in; talk over the checklist. |
+| `/live` | The house assembles while the call runs; "EV in spring" makes the car drive in. | PR #89 open (f-hero); the voice side is **merged** (#73: `update_facts` writes each answer to the call live, once HQ attaches the tool to the agent) | Tiles slow or missing: the procedural house assembles instead, automatically. WebGL slow: the fact checklist and draft still fill in; talk over the checklist. |
 | planner | The house stage on top, card ↔ house highlight, old → new on changed cards. | **merged** (#68) | Tiles: hidden today, the procedural house shows (no Google key on production). WebGL fails: the still image shows and the cards work as before. |
-| planner | The real house from Google 3D tiles with panels on the real roof, the **Outside / Inside** and **Sun map** toggles. | panels API merged (#64, #65), sun-map API merged (#69); toggles show only with a Google key on production (`?tiles=1` until verified) | No key, or tiles slow: no toggles, the procedural house shows. Do not mention the real roof then. |
+| planner | The real house from Google 3D tiles with panels on the real roof, the **Outside / Inside** and **Sun map** toggles. | **merged** (#78 real street behind `?tiles=1`, #83 sun map on the real roof); shows only with the Google key on production, which is frozen at #88 until the Vercel upgrade | No key, or tiles slow: no toggles, the procedural house shows; `?tiles=0` forces it. Do not mention the real roof then. |
 | `/reality` | Two houses side by side: ours and the expert's. | **merged** (#72), checked locally 04:40 | Tiles slow or missing: procedural houses. WebGL slow: the numbers and the example cases still work; point at those. |
-| `/offer` | **Listen** walks the house through one day. | building (f-hero, `web/hero-offer`) | No audio: the text shows the same words. WebGL slow: the still image shows, the explanation still plays. |
+| `/offer` | **Listen** walks the house through one day. | voice side **merged** (#86: Listen drives the house's day in timed segments; #88 a cached demo clip); /offer A (f-hero) still building | No audio: the text shows the same words. WebGL slow: the still image shows, the explanation still plays. |
 
 ## Fallbacks
 | problem | what you see | do | say |
