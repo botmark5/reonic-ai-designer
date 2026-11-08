@@ -39,6 +39,8 @@ pages. Pass a new `design` object after a refine and only what changed animates.
   gives a location), H0-like household load scaled to `annual_kwh`, PV-surplus car charging (1.4–3.7 kW), small
   heat-pump load, forecast-based battery charging, then the grid. Labelled "Sunny day in May, modelled" in the UI.
 - **Camera**: fly-in (≈ 1.6 s; any drag, pinch or key skips it), presets Street / Roof / Garage (re-click resets).
+- **Energy flow**: thin, quiet dashed lines and short sun rays. `flows` controls them; omitted, they start off in the
+  planner (on for the homeowner and during a /live build-up) and an "Energy flow" toggle next to the presets switches them.
 - **Click to focus**: click a part (panels, inverter, battery, wallbox or the car, heat pump) and the camera glides to it
   from the current angle with its info card in frame; click it again, click empty space, press Esc or pick a preset to
   glide back. `focus` (HouseStage / House3D) controls it from outside; `onSelect` reports clicks. While panel editing

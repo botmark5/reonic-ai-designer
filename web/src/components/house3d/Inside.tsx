@@ -240,7 +240,8 @@ function Item({ k, object, placement, size, reduced, settled, onGrab, onDrop, co
         <Html position={free
           // a floor plan: every label above the walls, staggered by slot, so neighbours never overlap
           ? [0, PLAN_WALL_H + 0.5 + 0.6 * (spot?.slot ?? 0) - MOUNT_Y[k], 0.15]
-          : high ? [0, WALL_H - 0.25 - MOUNT_Y[k], 0.15] : [0, -MOUNT_Y[k] + 0.02, 0.85]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+          // the section: above the back wall, alternating two heights, clear of the zone names on the floor
+          : [0, WALL_H + 0.3 + (high ? 0.6 : 0) - MOUNT_Y[k], 0.15]} center zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
           <div className={`hidden w-max flex-col items-center rounded-md sm:flex border border-border bg-surface-1/95 px-2 py-1 text-ink shadow-[0_6px_18px_rgba(16,17,20,0.12)] transition-transform duration-150 ${dragging ? "scale-105" : ""}`}>
             <span className="flex items-center gap-1.5 text-[13px] font-semibold leading-4">
               <span aria-hidden className={`size-2 rounded-full ${DOT[k]}`} />

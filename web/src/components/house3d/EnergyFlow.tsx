@@ -52,10 +52,11 @@ function FlowLine({ points, colors, kw, reduced, thin = false }: {
     else stepSpring(s.current, on, dt, SETTLE);
     const o = Math.min(1, Math.max(0, s.current.x));
     l.visible = o > 0.01;
-    l.material.opacity = 0.95 * o;
-    const width = thin ? 1.4 : 1.8 + Math.min(2.6, kw * 0.5);
+    // subtle: a quiet hint of the flow, not a highway over the model (Mark: the lines looked buggy)
+    l.material.opacity = (thin ? 0.38 : 0.62) * o;
+    const width = thin ? 1 : 1.3 + Math.min(1.4, kw * 0.25);
     l.material.linewidth = width;
-    if (!reduced) l.material.dashOffset -= dt * (0.5 + Math.min(1.6, kw * 0.32));
+    if (!reduced) l.material.dashOffset -= dt * (0.25 + Math.min(0.7, kw * 0.12));
   });
   return (
     <Line
@@ -75,7 +76,8 @@ function FlowLine({ points, colors, kw, reduced, thin = false }: {
   );
 }
 
-const RAY_POINTS = [new THREE.Vector3(0, 6, 0), new THREE.Vector3(0, 3, 0), new THREE.Vector3(0, 0, 0)];
+// short rays: they hint at the sun without crossing the labels above the roof
+const RAY_POINTS = [new THREE.Vector3(0, 4, 0), new THREE.Vector3(0, 2, 0), new THREE.Vector3(0, 0.15, 0)];
 const Y = new THREE.Vector3(0, 1, 0);
 
 function SunRay({ target, sunDir, colors, kw, reduced }: {

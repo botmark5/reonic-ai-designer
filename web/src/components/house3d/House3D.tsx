@@ -37,6 +37,11 @@ export interface House3DProps {
   flyIn?: boolean;
   /** Emphasise one part from outside (e.g. the planner card under the pointer). */
   highlight?: CompKey | null;
+  /**
+   * Energy flow lines and sun rays. Omit: off in the planner, on for the homeowner, and a toggle ("Energy flow")
+   * next to the camera presets lets the viewer switch them.
+   */
+  flows?: boolean;
   /** The house is on screen (first 3D frame, or the still image). */
   onShown?: () => void;
   /** Panels on the roof (count of all panels drawn), each time the count changes while shown. */
@@ -116,7 +121,7 @@ const kw = (x: number) => `${(Math.abs(x) < 0.05 ? 0 : x).toFixed(1)} kW`;
  * energy flowing through it. Planner mode shows exact sizes and "Save image"; homeowner mode uses plain words.
  */
 export function House3D({
-  design, home, mode, roof, static: forceStatic = false, flyIn = true, highlight = null, onSelect, focus, onShown, onPanelsPlaced, onEquipmentPlaced, timeOfDay,
+  design, home, mode, roof, static: forceStatic = false, flyIn = true, highlight = null, onSelect, focus, flows: flowsProp, onShown, onPanelsPlaced, onEquipmentPlaced, timeOfDay,
   onTimeOfDayChange, reveal, labels = false, controls = "full", cameraKey, editable = false, onPanelsChange, className,
 }: House3DProps) {
   const theme = useThemeName();
@@ -158,6 +163,9 @@ export function House3D({
   const flows = useMemo(() => revealFlows(activeFlows(moment), shownParts), [moment, shownParts]);
 
   const [preset, setPreset] = useState<PresetRequest>({ preset: "street", n: 0 });
+  const [ownFlows, setOwnFlows] = useState<boolean | null>(null);
+  // a /live build-up keeps its flows (they are part of the story); otherwise the planner starts quiet
+  const flowsOn = flowsProp ?? ownFlows ?? (mode !== "planner" || !!reveal);
   const [hovered, setHovered] = useState<CompKey | null>(null);
   const [selected, setSelected] = useState<CompKey | null>(null);
   const [ready, setReady] = useState(false);
@@ -371,6 +379,7 @@ export function House3D({
                 cameraKey={cameraKey}
                 panelEdit={panelEdit}
                 focus={focused}
+                flowsOn={flowsOn}
                 inView={inView}
                 onMiss={() => { if (selectedRef.current) select(null); }}
                 onReady={onReady}
@@ -416,6 +425,17 @@ export function House3D({
                 </button>
               ))}
             </div>
+            {flowsProp === undefined && (
+              <button
+                type="button"
+                aria-pressed={flowsOn}
+                onClick={() => setOwnFlows(!flowsOn)}
+                className={cn(pill, glassPanel, "rounded-full", flowsOn ? "text-ink" : "text-ink-muted", "[@media(hover:hover)]:hover:bg-surface-2")}
+              >
+                <span aria-hidden className={cn("mr-1.5 inline-block size-2 rounded-full transition-colors", flowsOn ? "bg-ai-amber" : "bg-border")} />
+                Energy flow
+              </button>
+            )}
             {mode === "planner" && (
               <button type="button" onClick={saveImage} className={cn(pill, glassPanel, "hidden rounded-full text-ink sm:inline-flex [@media(hover:hover)]:hover:bg-surface-2")}>
                 Save image

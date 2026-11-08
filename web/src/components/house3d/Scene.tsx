@@ -46,6 +46,8 @@ export interface SceneProps {
   panelEdit?: PanelEditing | null;
   /** The part the camera zooms to (click to focus); null: the preset view. */
   focus?: CompKey | null;
+  /** Draw the energy flow lines and sun rays (default true). */
+  flowsOn?: boolean;
   /** false while the canvas is scrolled out of view: the render loop pauses. */
   inView: boolean;
   onMiss: () => void;
@@ -158,7 +160,7 @@ function Exposure({ dark }: { dark: boolean }) {
   return null;
 }
 
-function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn, shown, building, hpOption, hpOptionKw, labels: showLabels, cameraKey, panelEdit, focus = null }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
+function World({ spec, palette, reduced, preset, active, pointer, moment, flows, batteryKwh, flyIn, shown, building, hpOption, hpOptionKw, labels: showLabels, cameraKey, panelEdit, focus = null, flowsOn = true }: Omit<SceneProps, "onMiss" | "onReady" | "dark" | "inView">) {
   const rotationY = THREE.MathUtils.degToRad(180 - spec.roof.azimuthDeg);
   const house = useMemo(() => buildHouse(spec.roof.pitchDeg, palette), [spec.roof.pitchDeg, palette]);
   const equipment = useMemo(() => buildEquipment(palette), [palette]);
@@ -269,7 +271,7 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
         <Battery mount={anchors.battery} modules={modules} soc={moment.soc} palette={palette} reduced={reduced} intro={intro} pointer={pointer} />
         <Car object={equipment.car} path={anchors.carPath} visible={c.wallbox.visible && shown.car} reduced={reduced} intro={intro} pointer={pointer} />
         {/* the flows step aside while a panel is picked or dragged (they would draw over it) */}
-        <group visible={!panelEdit?.selected}>
+        <group visible={flowsOn && !panelEdit?.selected}>
           <EnergyFlow flows={flows} nodes={nodes} sunDir={sunLocal} rayTargets={rays} gradientStops={palette.flow} reduced={reduced} />
         </group>
         <ContactShadows key={groundKey} frames={reduced ? 2 : 200} position={[1.2, 0.012, 2]} scale={38} resolution={512} blur={2.6} far={7} opacity={0.38} color="#1b1d20" />
