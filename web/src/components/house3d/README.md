@@ -62,3 +62,9 @@ Deck stills and the day recording (live engine designs, no mock): `node scripts/
 
 Regenerate the still images: render the component (light, then dark) with reduced motion and with equipment and flow
 lines temporarily hidden, screenshot the model area at 1600×1000 and replace the two PNGs in `web/public/models/`.
+
+## HouseStage (mount this one)
+`<HouseStage>` is the single 3D component pages mount. Today it renders the procedural house; real 3D tiles
+outside (behind `?tiles=1` / `NEXT_PUBLIC_HOUSE_TILES=1`, needs `location`) and the inside diorama land behind the
+same props. Props not yet supported by a renderer are accepted and ignored. Full prop list: `HouseStage.tsx`.
+`/reality` never passes `location` (Reonic projects have no address; we never geocode Reonic data).
