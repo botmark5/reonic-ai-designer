@@ -235,7 +235,7 @@ function World({ spec, palette, reduced, preset, active, pointer, moment, flows,
     heatpump: labels.heatpump.clone(),
   }), [nodes, labels, frames]);
   const labelKeys = (["pv", "battery", "wallbox", "heatpump"] as const).filter((k) =>
-    showLabels && settled && c[k].visible && k !== active && (k === "pv" ? shown.pv : k === "battery" ? shown.battery : k === "wallbox" ? shown.car : shown.heatpump));
+    showLabels && settled && c[k].visible && k !== active && (k === "pv" ? shown.pv && !panelEdit?.selected : k === "battery" ? shown.battery : k === "wallbox" ? shown.car : shown.heatpump));
 
   return (
     <>
