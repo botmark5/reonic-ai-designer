@@ -158,7 +158,12 @@ function panelTexture(): THREE.CanvasTexture {
   return t;
 }
 
-interface PanelState { slot: PanelSlot; drop: SpringState; target: 0 | 1; wait: number; row: number }
+interface PanelState {
+  slot: PanelSlot; drop: SpringState; target: 0 | 1; wait: number; row: number;
+  /** Where the panel is drawn (glides to `slot` after a move, a repack or a drop). */
+  at: { plane: PlaneId; u: number; v: number };
+  lift: number;
+}
 
 const ROW_STAGGER = 0.11;
 const COL_STAGGER = 0.016;
@@ -179,7 +184,7 @@ function syncSlots(map: Map<string, PanelState>, slots: PanelSlot[], reduced: bo
     const wait = reduced ? 0 : row * ROW_STAGGER + col * COL_STAGGER;
     const st = map.get(s.id);
     if (st) { st.target = 1; st.wait = wait; st.slot = s; }
-    else map.set(s.id, { slot: s, drop: { x: reduced ? 0 : 1, v: 0 }, target: 1, wait, row });
+    else map.set(s.id, { slot: s, drop: { x: reduced ? 0 : 1, v: 0 }, target: 1, wait, row, at: { plane: s.plane, u: s.u, v: s.v }, lift: 0 });
   }
   for (const s of slots) { const st = map.get(s.id); if (st) st.slot = s; }
   const leaving = [...map.values()].filter((st) => !ids.has(st.slot.id) && st.target === 1);
@@ -204,6 +209,7 @@ export interface PanelEditing {
 
 const PICK_LIFT = 0.06; // the picked panel rises a little off the roof, inside its outline
 const DRAG_LIFT = 0.22; // the dragged panel floats above the roof, under the pointer
+const GLIDE = 16; // 1/s: a dropped or repacked panel glides to its slot in about 0.2 s
 const PLAIN = new THREE.Color("#ffffff");
 const SELECT = "#f2a516";
 const OUTLINE = 0.055; // outline width, metres
@@ -284,12 +290,26 @@ export function Panels({ slots, frames, palette, reduced, intro = true, pointer,
       else { stepSpring(st.drop, target, dt, st.target === 1 ? LAND : SETTLE); moving = true; }
       if (st.target === 0 && st.drop.x >= 0.995) { states.current.delete(id); continue; }
       if (i >= maxCount) continue;
+      // where it is drawn: under the pointer while held, else gliding to its slot (after a drop, move or repack)
       const hold = held && held.id === id ? held.free! : null;
-      const f = frames[hold ? hold.plane : st.slot.plane];
+      const goal = hold ?? st.slot;
+      const liftGoal = hold ? DRAG_LIFT : id === picked ? PICK_LIFT : 0;
+      if (hold || reduced || st.at.plane !== goal.plane) st.at = { plane: goal.plane, u: goal.u, v: goal.v };
+      else {
+        const k = 1 - Math.exp(-dt * GLIDE);
+        st.at.u += (goal.u - st.at.u) * k;
+        st.at.v += (goal.v - st.at.v) * k;
+        if (Math.abs(goal.u - st.at.u) + Math.abs(goal.v - st.at.v) < 1e-3) { st.at.u = goal.u; st.at.v = goal.v; } else moving = true;
+      }
+      if (reduced) st.lift = liftGoal;
+      else {
+        st.lift += (liftGoal - st.lift) * (1 - Math.exp(-dt * GLIDE));
+        if (Math.abs(liftGoal - st.lift) < 1e-3) st.lift = liftGoal; else moving = true;
+      }
+      const f = frames[st.at.plane];
       const up = st.drop.x; // may dip slightly below 0 on landing: the bounce
       const v = Math.min(1, Math.max(0, 1 - up));
-      if (hold) pos.copy(slotToWorld(f, hold.u, hold.v, PANEL_LIFT + DRAG_LIFT));
-      else pos.copy(slotToWorld(f, st.slot.u, st.slot.v, PANEL_LIFT + up * DROP + (id === picked ? PICK_LIFT : 0)));
+      pos.copy(slotToWorld(f, st.at.u, st.at.v, PANEL_LIFT + up * DROP + st.lift));
       back.copy(f.vAxis).negate();
       q.setFromRotationMatrix(basis.makeBasis(f.uAxis, f.normal, back));
       scale.setScalar(v < 0.02 ? 0 : 0.94 + 0.06 * v);
