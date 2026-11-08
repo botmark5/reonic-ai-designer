@@ -38,6 +38,8 @@ export interface HouseStageProps {
   highlight?: ComponentKey | null;
   /** The viewer clicked a part in the scene (null: clicked empty space / Esc). */
   onSelect?: (key: ComponentKey | null) => void;
+  /** Energy flow lines and sun rays: omit for the default (off in the planner, on elsewhere, with a toggle). */
+  flows?: boolean;
   /** An uploaded floor plan (b-web): the Inside view draws its rooms and the parts snap into them. */
   floorPlan?: FloorPlan | null;
   /** Progress (the /visit "Building your design" steps). The real street's first tiles are on screen. */
@@ -94,7 +96,7 @@ const STREET_WATCHDOG_MS = 6500;
  * Props that a renderer does not support yet are accepted and ignored, so pages can wire them now.
  */
 export function HouseStage({
-  design, home, mode = "homeowner", roof, location, view, zones, onZonesChange, sunMap, reveal, highlight, onSelect, focus, floorPlan, onTilesReady, onFallbackShown, onPanelsPlaced, onEquipmentPlaced, cameraKey, timeOfDay,
+  design, home, mode = "homeowner", roof, location, view, zones, onZonesChange, sunMap, reveal, highlight, onSelect, focus, flows, floorPlan, onTilesReady, onFallbackShown, onPanelsPlaced, onEquipmentPlaced, cameraKey, timeOfDay,
   onTimeOfDayChange, labels, controls, editable, onPanelsChange, static: forceStatic, flyIn, className,
 }: HouseStageProps) {
   const wanted = useSyncExternalStore(noop, () => tilesWanted(window.location.search, TILES_FLAG), () => false);
@@ -192,6 +194,7 @@ export function HouseStage({
       highlight={highlight}
       onSelect={onSelect}
       focus={focus}
+      flows={flows}
       onShown={() => setModelOn(true)}
       onPanelsPlaced={onPanelsPlaced}
       onEquipmentPlaced={onEquipmentPlaced}
