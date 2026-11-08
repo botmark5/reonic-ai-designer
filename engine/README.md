@@ -135,12 +135,15 @@ the answer is the same for every project and therefore carries no information ab
   the most (PV yes/no 88 → 97 %).
 - **Which offer option is "the expert design":** none is marked. Reonic confirmed on 8 Nov (Niklas): the export has no signed flag,
   option numbers only count up (a gap is a deleted option), neither the lowest nor the highest number is reliably the final design,
-  and every option is a real planner's design for that home. Since then **every option of a project is a training row**
-  (`evaluate.build_train_table`, exact duplicates dropped: 1,536 rows from the 1,272 training projects) and the evaluation reports, next
-  to the error against the lowest-numbered option, the error against the **nearest option** (`*_nearest_option` metrics). On the locked
-  test set the all-options training moves PV size MAE 2.48 → 2.43 kWp and battery within one step 54 → 56 %, nothing gets worse by
-  more than 0.3 points (engine/RESULTS.md, "All offer options"). Using the highest instead of the lowest option as the evaluation row
-  changes 142 of 1,587 labels and moves PV MAE by ≤ 0.02 kWp.
+  and every option is a real planner's design for that home. Since then **every option of a project is a training row for the sizes**
+  (`evaluate.build_train_table`, exact duplicates dropped: 1,536 rows from the 1,272 training projects) while the yes/no decisions
+  (new PV, offer type, battery, wallbox) still learn from the project's first full design (`DesignModel(primary_decisions=True)`:
+  a project with a retrofit and a new-system option must not teach both answers for one home). The evaluation reports, next to the
+  error against the lowest-numbered option, the error against the **nearest option** (`*_nearest_option` metrics). On the locked test
+  set: PV size MAE 2.48 → 2.45 kWp, battery within one step 54 → 56 %, P10–P90 coverage 80 → 82 %, every yes/no number unchanged
+  (add-ons "no new PV" stays 77 %); top-3 within ±1.5 kWp 70 → 67 % is the one number that drops (engine/RESULTS.md, "All offer
+  options"). Using the highest instead of the lowest option as the evaluation row changes 142 of 1,587 labels and moves PV MAE by
+  ≤ 0.02 kWp.
 - **Consumption below 1,500 kWh is rejected** (HTTP 422): the data has 21 placeholder entries at 0–1 kWh and nothing can be sized from them.
 - **Time trend:** new projects use a date capped at the 90th percentile of training dates (~Mar 2026), because the last month is an unusual batch of battery-only retrofits.
 - **Economics use placeholder prices.**

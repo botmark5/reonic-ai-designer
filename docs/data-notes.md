@@ -34,8 +34,9 @@ Verified on the data 2026-11-07 (profiling + `engine/labels.py`). Extraction rul
 
 ## Labelling decisions (approved by Mark 2026-11-07; details and examples in docs/labels-rules.md)
 - Primary label (the evaluation row) = lowest option_number among the project's full new-system designs (lowest overall if none).
-  It is a representative row, not the signed option (none is marked, see above). **Training uses every option** since 8 Nov
-  (`evaluate.build_train_table`, exact duplicates dropped; 1,536 rows from 1,272 training projects). All variants kept:
+  It is a representative row, not the signed option (none is marked, see above). **Training uses every option for the sizes** since
+  8 Nov (`evaluate.build_train_table`, exact duplicates dropped; 1,536 rows from 1,272 training projects); the yes/no decisions
+  (new PV / add-on, battery, wallbox) still learn from the first full design only (`is_primary`), see engine/RESULTS.md. All variants kept:
   per-project min/max PV and battery = the acceptable range for evaluation and the homeowner's choices; `pv_options` /
   `battery_options` = the distinct sizes, scored by the `*_nearest_option` metrics (error against the closest option).
 - `offer_type`: new_system 1,624 · battery_retrofit 232 · wallbox_only 75 · no_components 25 · heatpump_only 21 · pv_extension 17

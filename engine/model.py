@@ -113,7 +113,7 @@ class DesignModel:
     name = "design_model"
 
     def __init__(self, offer_type: bool = True, packages: bool = True, learned_cutoffs: bool = True,
-                 calibrated: bool = True, blend: bool = False, battery_mix: bool = True):
+                 calibrated: bool = True, blend: bool = False, battery_mix: bool = True, primary_decisions: bool = True):
         """
         Switches exist to measure each improvement (before/after on the locked test set, engine/ablation.py):
           offer_type      : #1 new-vs-retrofit step + "Is there already PV?" answered/unanswered training
@@ -124,8 +124,14 @@ class DesignModel:
                             OFF by default: CV gain ~2 % (within fold noise), neutral on the locked test set and
                             fewer exact package matches (9 -> 7 %), so the simpler model is kept.
           battery_mix     : battery size = mean of the classifier and the installer's kWh-per-kWp rule when CV says so
+          primary_decisions: with one training row per offer option (evaluate.build_train_table), the yes/no decisions
+                            (new PV, offer type, battery, wallbox and their cut-offs) learn from the project's FIRST full
+                            design only (is_primary); sizes, ranges, packages and alternatives learn from every option.
+                            Reonic, 8 Nov: every option is a valid design, but a project with a retrofit AND a new-system
+                            option would otherwise teach "new PV" and "no new PV" for the same home.
         The shipped model uses all of them.
         """
+        self.use_primary_decisions = primary_decisions
         self.use_offer_type = offer_type
         self.use_packages = packages
         self.use_learned_cutoffs = learned_cutoffs
@@ -155,6 +161,12 @@ class DesignModel:
         # every project twice: answered ("Is there already PV?") and unanswered (as recorded in the data)
         answered = t.assign(existing_pv=planner_answer(t))
         tt = pd.concat([answered, t], ignore_index=True) if self._on("use_offer_type") else t.copy()
+        # rows for the yes/no decisions: the project's first full design (all rows when the table has one per project)
+        prim_t = (t.is_primary.astype(bool).to_numpy() if "is_primary" in t and self._on("use_primary_decisions")
+                  else np.ones(len(t), dtype=bool))
+        prim = np.concatenate([prim_t, prim_t]) if self._on("use_offer_type") else prim_t
+        X_p = lambda X: X[prim].reset_index(drop=True)                     # noqa: E731
+        tt_p = tt[prim].reset_index(drop=True)
 
         # training uses the heat pump the expert actually installed ("with X kW heat pump, experts chose Y kWp")
         X = build_features(tt, tt.heatpump_kw, self.installers_, self.offer_month_cap_)
@@ -162,12 +174,12 @@ class DesignModel:
         self.wallbox_features_ = [c for c in X.columns if c.startswith("inst_")] + ["has_ev", "ev_km", "existing_wallbox"]
 
         # 1. PV yes/no
-        self.has_pv_ = LGBMClassifier(**_lgb()).fit(X, tt.has_pv.astype(int))
-        self.pv_threshold_ = self._learn_pv_threshold(X, tt) if self._on("use_learned_cutoffs") else 0.5
+        self.has_pv_ = LGBMClassifier(**_lgb()).fit(X[prim], tt.has_pv[prim].astype(int))
+        self.pv_threshold_ = self._learn_pv_threshold(X_p(X), tt_p) if self._on("use_learned_cutoffs") else 0.5
         pv = tt.has_pv.astype(bool).to_numpy()
 
         # 1b. no new PV -> which kind of offer? (battery retrofit / wallbox only / other)
-        nonpv = ~pv
+        nonpv = ~pv & prim
         groups = tt.offer_group[nonpv]
         if not self._on("use_offer_type"):
             self.nonpv_type_, self.nonpv_const_ = None, None
@@ -198,7 +210,7 @@ class DesignModel:
         # 3. battery sees the EXPERT's PV during training (teacher forcing), our PV / the planner's lock at prediction
         Xb = X.assign(pv_kwp_planned=tt.pv_kwp.fillna(0).to_numpy())
         # battery yes/no is a decision for NEW PV systems; for a retrofit the battery is the offer itself
-        bat_rows = pv if self._on("use_offer_type") else np.ones(len(tt), dtype=bool)   # old: one model for all homes
+        bat_rows = (pv & prim) if self._on("use_offer_type") else prim          # old: one model for all homes
         self.has_battery_ = LGBMClassifier(**_lgb()).fit(Xb[bat_rows], tt.has_battery[bat_rows].astype(int))
         bat = tt.has_battery.astype(bool).to_numpy()
         y = [nearest(k, self.catalogue_[i]["battery_kwh"] or [k]) for k, i in zip(tt.battery_kwh[bat], tt.installer[bat])]
@@ -229,17 +241,17 @@ class DesignModel:
         # 4. wallbox yes/no (all offers; "wallbox only" / "other" offers then fix it by their type).
         # Training it only on PV/retrofit offers was tested and was worse (70.6 vs 71.2 % held-out).
         self.wallbox_ = LGBMClassifier(**_lgb(num_leaves=7, min_child_samples=30)).fit(
-            X[self.wallbox_features_], tt.has_wallbox.astype(int))
+            X[prim][self.wallbox_features_], tt.has_wallbox[prim].astype(int))
 
         # the installer's standard PV packages (exact kWp sold >= PACKAGE_MIN_SOLD times in new systems)
         newsys = t[t.has_pv & (t.offer_group == "pv")]
         self.packages_ = {i: sorted(float(k) for k, n in g.pv_kwp.round(2).value_counts().items() if n >= PACKAGE_MIN_SOLD)
                           for i, g in newsys.groupby("installer")}
-        self.battery_threshold_ = self._learn_battery_threshold(t) if self._on("use_learned_cutoffs") else 0.5
-        self.wallbox_mode_, self.wallbox_rule_rate_ = self._choose_wallbox_mode(X, tt)
+        self.battery_threshold_ = self._learn_battery_threshold(t[prim_t].reset_index(drop=True)) if self._on("use_learned_cutoffs") else 0.5
+        self.wallbox_mode_, self.wallbox_rule_rate_ = self._choose_wallbox_mode(X_p(X), tt_p)
         self.ev_uplift_kwp_ = self._learn_ev_uplift(X, tt, pv_params, increasing)
         on = self._on("use_calibration")
-        self.retrofit_weight_ = self._learn_retrofit_weight(X, tt) if on and self.nonpv_type_ is not None else 1.0
+        self.retrofit_weight_ = self._learn_retrofit_weight(X_p(X), tt_p) if on and self.nonpv_type_ is not None else 1.0
         self.pv_margin_ = self._learn_pv_margin(X, tt, pv_params) if on else 0.0
 
         keep = ["project_id", "installer", "annual_kwh", "has_ev", "pv_kwp", "battery_kwh", "has_pv", "has_battery",

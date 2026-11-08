@@ -10,7 +10,8 @@ Every variant is trained on the same training projects and scored on the same lo
     C  + #3  PV snapped to the installer's standard packages
     D  + #5  conformal P10-P90 + learned retrofit weight
     E  + battery size: mean of classifier and installer kWh/kWp rule
-    F  + every offer option of a training project is a training row  (= the shipped model)
+    F  + every offer option of a training project is a training row; yes/no decisions on the first full design only
+         (= the shipped model). "All options everywhere" is shown too: it loses 5 points on add-ons' "no new PV".
     (PV linear blend: tested, not shipped)
     #4 interim labels + raw inputs  vs  engine/labels + cleaned inputs  (both scored on engine/labels)
 Columns: all projects without the existing-PV answer; full new-system designs WITH the answer (the planner knows it
@@ -38,6 +39,8 @@ METRICS = [("PV kWp MAE, all projects", "pv_kwp_mae_all_projects", "{:.2f}"),
            ("battery within 1 step", "battery_within_one_step_pct", "{:.0f} %"),
            ("PV kWp MAE vs nearest option", "pv_kwp_mae_nearest_option", "{:.2f}"),
            ("PV within ±1.5 kWp of nearest option", "pv_kwp_within_1.5_nearest_option_pct", "{:.0f} %"),
+           ("top-3 within ±1.5 kWp", "pv_top3_within_1.5_pct", "{:.0f} %"),
+           ("top-3 within ±1.5 kWp of nearest option", "pv_top3_within_1.5_nearest_option_pct", "{:.0f} %"),
            ("battery within 1 step of nearest option", "battery_within_one_step_nearest_option_pct", "{:.0f} %"),
            ("PV yes/no", "has_pv_accuracy", "{:.0f} %"),
            ("battery yes/no", "has_battery_accuracy", "{:.0f} %"),
@@ -89,9 +92,11 @@ def main():
     for name, kw in variants.items():
         rows[name] = views(DesignModel(**kw).fit(train), test, test, cat)
         print("done:", name)
-    # F: same model, trained on every offer option of the training projects (Reonic, 8 Nov: all options are valid designs)
+    # F: every offer option of a training project is a training row (Reonic, 8 Nov: all options are valid designs).
+    # Shipped = hybrid: yes/no decisions learn from the first full design, sizes from all options.
     train_rows = build_train_table(labels, inputs, train)
-    rows["F  + all offer options as training rows (shipped)"] = views(DesignModel().fit(train_rows), test, test, cat)
+    rows["(all options everywhere, not shipped)"] = views(DesignModel(primary_decisions=False).fit(train_rows), test, test, cat)
+    rows["F  + all offer options: decide on first, size on all (shipped)"] = views(DesignModel().fit(train_rows), test, test, cat)
     print(f"done: F ({len(train_rows)} option rows of {len(train)} projects)")
 
     # #4: same model, trained on interim labels + raw inputs, scored against engine/labels

@@ -306,3 +306,41 @@ def test_interval_coverage_metric(tiny):
     m = E.compute_metrics(truth, p, cat)
     assert m["pv_interval_coverage_pct"] == 100.0          # p1 10 in [9,11], p2 8 in [7,9]; p4 has no predicted size
     assert "pv_interval_coverage_pct" not in E.compute_metrics(truth, pred, cat)
+
+
+# ---------------------------------------------------------------- Reonic, 8 Nov: every offer option is a valid design
+def test_train_table_has_one_row_per_option(synthetic):
+    labels, inputs = synthetic
+    t = E.build_eval_table(labels, inputs)
+    rows = E.build_train_table(labels, inputs, t)
+    assert len(rows) == len(labels)                                   # the synthetic data has no duplicate options
+    assert set(rows.columns) >= set(t.columns) | {"option_number", "is_primary"}
+    assert rows.groupby("project_id").is_primary.sum().eq(1).all()    # the decisions still have one row per project
+    multi = labels.groupby("project_id").size().loc[lambda s: s > 1].index
+    assert (rows[rows.project_id.isin(multi)].groupby("project_id").pv_kwp.nunique() > 1).any()   # variant keeps its own size
+    sub = E.build_train_table(labels, inputs, t.head(10))
+    assert set(sub.project_id) == set(t.head(10).project_id)          # a split keeps only its own projects
+
+
+def test_nearest_option_metrics(synthetic):
+    labels, inputs = synthetic
+    t = E.build_eval_table(labels, inputs)
+    pred = t[E.DESIGN_COLUMNS].copy()
+    second = labels[labels.option_number == 2].set_index("project_id").pv_kwp
+    m = t.project_id.isin(second.index) & t.has_pv
+    pred.loc[m, "pv_kwp"] = t.loc[m, "project_id"].map(second).to_numpy()   # predict the variant, not the first option
+    res = E.compute_metrics(t, pred, E.load_catalogue(labels, None))
+    assert res["pv_kwp_mae_nearest_option"] == 0.0                    # the variant is one of the expert's options
+    assert res["pv_kwp_mae_when_both_pv"] > 0                         # but not the first one
+    assert res["battery_within_one_step_nearest_option_pct"] == 100.0
+
+
+def test_model_fits_option_rows(synthetic):
+    from engine.model import DesignModel
+    labels, inputs = synthetic
+    t = E.build_eval_table(labels, inputs)
+    rows = E.build_train_table(labels, inputs, t)
+    model = DesignModel().fit(rows)
+    assert model.n_train_ == t.project_id.nunique() and model.n_train_rows_ == len(rows)
+    assert model.reference_.project_id.is_unique                      # similar homes: one row per project
+    assert set(model.predict(t).columns) >= set(E.DESIGN_COLUMNS)

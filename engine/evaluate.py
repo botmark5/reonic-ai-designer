@@ -272,12 +272,13 @@ def build_train_table(labels: pd.DataFrame, inputs: pd.DataFrame, table: pd.Data
         lab = lab.drop_duplicates(["project_id"] + [c for c in TRAIN_DESIGN_COLUMNS if c in lab.columns])
     design = [c for c in TRAIN_DESIGN_COLUMNS if c in table.columns and c in lab.columns]
     base = table.drop(columns=design).set_index("project_id")
-    rows = lab[["project_id", "option_number"] + design].join(base, on="project_id")
-    for c in BOOL_COMPONENTS:
+    rows = lab[["project_id", "option_number", "is_primary"] + design].join(base, on="project_id")
+    for c in BOOL_COMPONENTS + ["is_primary"]:
         rows[c] = rows[c].astype(bool)
     if "offer_type" not in lab.columns and "offer_type" in rows.columns:
         rows["offer_type"] = derive_offer_type(rows)               # per option, not the primary's type
-    return rows[table.columns.tolist() + ["option_number"]].reset_index(drop=True)
+    # is_primary marks the project's first full design: the model decides new system vs add-on on those rows only
+    return rows[table.columns.tolist() + ["option_number", "is_primary"]].reset_index(drop=True)
 
 
 def grouped_split(table: pd.DataFrame, test_size: float = 0.2, seed: int = SEED):
@@ -467,7 +468,18 @@ def _nearest_option_metrics(truth: pd.DataFrame, pred: pd.DataFrame, catalogue: 
             s = step_index([bp], sizes)[0]
             step_ok.append(min(abs(s - step_index([x], sizes)[0]) for x in b_opts) <= 1)
     e_pv = np.asarray(e_pv)
+    top3 = None
+    if {"pv_alt1", "pv_alt2"} <= set(pred.columns):          # proposal + 2 alternatives vs the nearest option with PV
+        hits = []
+        for (_, t), pp, a1, a2 in zip(truth.iterrows(), pv_pred, pred.pv_alt1.astype(float), pred.pv_alt2.astype(float)):
+            opts = np.asarray(t.pv_options, dtype=float)
+            opts = opts[opts > 0]
+            if len(opts) and pp > 0:
+                cands = np.array([v for v in (pp, a1, a2) if not pd.isna(v)])
+                hits.append(np.abs(cands[:, None] - opts[None, :]).min() <= 1.5)
+        top3 = _rate(hits) if hits else None
     return {"pv_kwp_mae_all_projects_nearest_option": float(np.mean(e_all)) if e_all else None,
+            "pv_top3_within_1.5_nearest_option_pct": top3,
             "pv_kwp_mae_nearest_option": float(e_pv.mean()) if len(e_pv) else None,
             "pv_kwp_within_1.5_nearest_option_pct": _rate(e_pv <= 1.5) if len(e_pv) else None,
             "battery_kwh_mae_nearest_option": float(np.mean(e_bat)) if e_bat else None,
