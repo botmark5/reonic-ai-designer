@@ -1,12 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Plus } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { fmtRelative } from "@/lib/format";
 import type { DesignRow } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { homeTitle } from "./text";
+
+/** A clock that only runs in the browser (null on the server), so relative times never mismatch during hydration
+ *  (server UTC vs the planner's time zone gave React error #418). Ticks every 30 s. */
+const TICK = 30_000;
+const subscribeClock = (cb: () => void) => {
+  const t = setInterval(cb, TICK);
+  return () => clearInterval(t);
+};
+const clientNow = () => Math.floor(Date.now() / TICK) * TICK;
+const serverNow = () => null;
 
 const STATUS: Record<DesignRow["status"], string> = { draft: "Draft", review: "Ready to send", sent: "Sent to homeowner" };
 
@@ -24,11 +34,7 @@ export function Inbox({
 }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
-  }, []);
+  const now = useSyncExternalStore(subscribeClock, clientNow, serverNow);
 
   return (
     <section aria-labelledby="inbox-title" className="flex flex-col gap-1.5">
@@ -94,7 +100,7 @@ export function Inbox({
                 >
                   <span className="flex w-full items-baseline justify-between gap-2">
                     <span className={cn("truncate text-body-sm", active ? "font-semibold" : "font-medium")}>{homeTitle(r)}</span>
-                    <span className="shrink-0 font-mono text-[12px] text-ink-muted tabular">{fmtRelative(r.created_at, now)}</span>
+                    <span className="shrink-0 font-mono text-[12px] text-ink-muted tabular">{now == null ? "" : fmtRelative(r.created_at, now)}</span>
                   </span>
                   {fresh ? (
                     <StatusBadge tone="ai" className="bg-surface-1">

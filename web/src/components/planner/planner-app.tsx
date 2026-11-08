@@ -7,7 +7,6 @@ import { HouseStage, roofFromSolarResult, type ComponentKey as StageKey, type St
 import { Button } from "@/components/ui/button";
 import { ServedBadge } from "@/components/ui/served-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Segmented } from "@/components/ui/field";
 import { COMPONENTS, sizeOf } from "@/lib/diff";
 import { roofInputsFromSolar } from "@/lib/roof";
 import type { SolarResult } from "@/lib/solar";
@@ -138,7 +137,6 @@ function Workspace({
         : undefined,
     [solar, row.address],
   );
-  const [view, setView] = useState<"outside" | "inside">("outside");
   const [sunMap, setSunMap] = useState(false);
 
   // Card ↔ house: hovering a card highlights its part on the house; clicking a part on the house points at its card.
@@ -214,15 +212,6 @@ function Workspace({
           <section aria-label="The system on the house" className="flex flex-col gap-2">
             {location && (
               <div className="flex flex-wrap items-center gap-2">
-                <Segmented
-                  label="View"
-                  value={view}
-                  onChange={setView}
-                  options={[
-                    { value: "outside", label: "Outside" },
-                    { value: "inside", label: "Inside" },
-                  ]}
-                />
                 <button
                   type="button"
                   aria-pressed={sunMap}
@@ -239,7 +228,6 @@ function Workspace({
               mode="planner"
               roof={roof3d}
               location={location}
-              view={view}
               sunMap={sunMap}
               editable={!!location}
               highlight={hovered ?? picked}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Shuffle } from "lucide-react";
 import { HouseStage } from "@/components/house3d";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { StatusBadge, type Tone } from "@/components/ui/status-badge";
 import { COMPONENTS, sizeOf } from "@/lib/diff";
 import { fmtInt, fmtKwp, fmtSize, LABEL } from "@/lib/format";
 import type { DemoProject } from "@/lib/heldout";
-import { ADDON_HEADLINES, expertDesign, headlines, headlineSource, top3, trustedCoverage, verdicts, type Headline, type VerdictKind } from "@/lib/reality";
+import { ADDON_HEADLINES, caseChips, expertDesign, headlines, headlineSource, top3, trustedCoverage, verdicts, type Headline, type VerdictKind } from "@/lib/reality";
 import type { ComponentKey, EvalResponse, ExpertVariant, MetricSet, ProjectResponse } from "@/lib/types";
 import { PREDICTORS } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -17,17 +17,7 @@ import { bandRows, installerOrder, transferRows } from "@/lib/deviation";
 
 const DOT: Record<ComponentKey, string> = { pv: "bg-comp-pv", battery: "bg-comp-battery", wallbox: "bg-comp-wallbox", heatpump: "bg-comp-heatpump" };
 const TONE: Record<VerdictKind, Tone> = { match: "success", range: "success", close: "success", option: "success", off: "warning", missing: "critical", extra: "critical" };
-const ROLE_LABEL: Record<string, string> = {
-  typical_pv_battery: "Typical home",
-  ev_wallbox: "EV owner",
-  heatpump_option: "Heat pump case",
-  battery_retrofit: "Battery retrofit",
-  experts_disagree: "Experts disagree",
-};
 
-// engine #47 (PR #82): /project?answered=true designs with the planner's existing-solar answer, so the battery-retrofit
-// case can be shown again: unanswered it is a new system, answered it is the expert's battery add-on (a what-if).
-const HIDDEN_ROLES = new Set<string>();
 
 function Verdict({ t, short = false }: { t: Headline; short?: boolean }) {
   if (t.level) return <StatusBadge tone="neutral">{short ? "Level" : "Level with rule"}</StatusBadge>;
@@ -75,7 +65,7 @@ function describeHome(p: ProjectResponse) {
 }
 
 export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalResponse; ids: string[]; demos: DemoProject[] }) {
-  const demos = allDemos.filter((d) => !HIDDEN_ROLES.has(d.role));
+  const demos = useMemo(() => caseChips(allDemos), [allDemos]);
   const [projectId, setProjectId] = useState<string | null>(demos[0]?.project_id ?? ids[0] ?? null);
   const [history, setHistory] = useState<string[]>([]);
   const [project, setProject] = useState<ProjectResponse | null>(null);
@@ -212,7 +202,7 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
                   d.project_id === projectId ? "border-ink bg-ink text-surface-0" : "border-border bg-surface-1 text-ink-body hover:border-border-strong hover:text-ink",
                 )}
               >
-                {ROLE_LABEL[d.role] ?? d.role}
+                {d.label}
               </button>
             ))}
           </div>
@@ -472,8 +462,8 @@ export function RealityView({ evalRes, ids, demos: allDemos }: { evalRes: EvalRe
                         <span className="mt-0.5 block text-[12px] text-ink-muted md:hidden">{r.sentence}</span>
                       </td>
                       <td className="py-2 text-right font-mono tabular">{fmtInt(r.n)}</td>
-                      <td className="py-2 text-right font-mono tabular">{r.ours.toFixed(1)} kWp</td>
-                      <td className="hidden py-2 text-right font-mono text-ink-muted tabular sm:table-cell">{r.base == null ? "–" : `${r.base.toFixed(1)} kWp`}</td>
+                      <td className="py-2 text-right font-mono tabular">{r.ours.toFixed(2)} kWp</td>
+                      <td className="hidden py-2 text-right font-mono text-ink-muted tabular sm:table-cell">{r.base == null ? "–" : `${r.base.toFixed(2)} kWp`}</td>
                       <td className="hidden py-2 pl-4 text-ink-body md:table-cell">{r.sentence}</td>
                     </tr>
                   ))}

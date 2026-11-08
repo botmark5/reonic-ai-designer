@@ -2,30 +2,45 @@ import { describe, expect, it } from "vitest";
 import { bandLabel, bandRows, transferRows } from "./deviation";
 
 describe("bandLabel", () => {
-  it("reads engine band keys in plain words", () => {
-    expect(bandLabel("0-2500")).toBe("under 2,500 kWh");
-    expect(bandLabel("4500-5500")).toBe("4,500–5,500 kWh");
+  it("reads engine band keys in plain words (upper bound inclusive)", () => {
+    expect(bandLabel("0-3000")).toBe("up to 3,000 kWh");
+    expect(bandLabel("4500-6000")).toBe("4,500–6,000 kWh");
     expect(bandLabel("9000+")).toBe("over 9,000 kWh");
-    expect(bandLabel("9000-inf")).toBe("over 9,000 kWh");
+    expect(bandLabel("not_entered")).toBe("Consumption not entered");
   });
 });
 
-describe("bandRows", () => {
-  const byBand = {
-    "0-2500": { design_model: { n_projects: 30, pv_n: 25, pv_kwp_mae_when_both_pv: 1.2, pv_kwp_bias_when_both_pv: 0.1 }, baseline_band_median: { pv_kwp_mae_when_both_pv: 1.4 } },
-    "9000+": { design_model: { n_projects: 22, pv_n: 21, pv_kwp_mae_when_both_pv: 4.1, pv_kwp_bias_when_both_pv: -1.6 }, baseline_band_median: { pv_kwp_mae_when_both_pv: 4.5 } },
-    "4500-5500": { design_model: { n_projects: 4, pv_n: 3, pv_kwp_mae_when_both_pv: 9 } },
-  };
-  it("orders bands by consumption, marks the hardest, explains the bias, skips tiny bands", () => {
-    const rows = bandRows(byBand);
-    expect(rows.map((r) => r.key)).toEqual(["0-2500", "9000+"]);
-    expect(rows[1]).toMatchObject({ ours: 4.1, base: 4.5, hardest: true });
-    expect(rows[1].sentence).toBe("We size smaller than the experts here, by 1.6 kWp on average.");
-    expect(rows[0].sentence).toBe("Close to the experts on average.");
-    expect(rows[0].hardest).toBe(false);
+describe("bandRows (a-labels #107 shape)", () => {
+  const M = (n: number, pvN: number, mae: number | null, bias: number | null, pvAcc = 98) => ({
+    n_projects: n, pv_n: pvN, pv_kwp_mae_when_both_pv: mae, pv_kwp_bias_when_both_pv: bias, has_pv_accuracy: pvAcc,
   });
-  it("is empty without by_band", () => {
+  const byBand = {
+    not_entered: { design_model: M(98, 50, 2.54, -0.19, 68), baseline_band_median: { pv_kwp_mae_when_both_pv: 2.97 } },
+    "9000+": { design_model: M(15, 15, 3.4, -0.26, 100), baseline_band_median: { pv_kwp_mae_when_both_pv: 3.49 } },
+    "0-3000": { design_model: M(54, 53, 2.25, -0.91), baseline_band_median: { pv_kwp_mae_when_both_pv: 2.4 } },
+    "6000-9000": { design_model: M(39, 37, 2.61, -1.13), baseline_band_median: { pv_kwp_mae_when_both_pv: 2.82 } },
+    "4500-6000": { design_model: M(36, 35, 2.52, 0.03), baseline_band_median: { pv_kwp_mae_when_both_pv: 2.25 } },
+    "3000-4500": { design_model: M(4, 3, 9, 0) },
+  };
+  it("orders by consumption, puts 'not entered' last, counts all homes, skips tiny bands", () => {
+    const rows = bandRows(byBand);
+    expect(rows.map((r) => r.key)).toEqual(["0-3000", "4500-6000", "6000-9000", "9000+", "not_entered"]);
+    expect(rows.map((r) => r.n)).toEqual([54, 36, 39, 15, 98]);
+  });
+  it("marks the hardest real band, never 'not entered'", () => {
+    const rows = bandRows(byBand);
+    expect(rows.find((r) => r.hardest)?.key).toBe("9000+");
+  });
+  it("explains the bias sign in plain words", () => {
+    const rows = bandRows(byBand);
+    expect(rows[0].sentence).toBe("We size smaller than the experts here, by 0.9 kWp on average.");
+    expect(rows[1].sentence).toBe("Close to the experts on average.");
+    expect(rows[4].sentence).toBe("Left at the 4,500 kWh default, the engine cannot see the real use: solar yes or no is right in 68 % of these homes.");
+  });
+  it("is empty without by_band and keeps a band whose bias is null", () => {
     expect(bandRows(undefined)).toEqual([]);
+    const r = bandRows({ "0-3000": { design_model: M(20, 0, null, null) } });
+    expect(r).toEqual([]); // no home with solar on both sides: no error to show
   });
 });
 
