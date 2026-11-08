@@ -32,7 +32,7 @@ export interface CallRow {
   summary: string | null;
 }
 
-export type DesignSource = "voice" | "planner";
+export type DesignSource = "voice" | "planner" | "form";
 export type DesignStatus = "draft" | "review" | "sent";
 export interface DesignRow {
   id: string;
