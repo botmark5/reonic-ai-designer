@@ -35,7 +35,7 @@ production; **human** = needs Mark; **not done**. Earlier version: 04:40 (all PR
 |---|---|---|
 | Home described → complete system + why → refined ("EV next year") → checked against reality on many projects | done | `docs/demo-runbook.md` click path; engine redeployed 09:15 Munich with #82 (flags, alternatives, what-if), `by_band`, `/heldout` |
 | Working demo end to end | done | Vercel + Railway; `/api/engine/health` reports the engine; passcode gate |
-| Short recording as a fallback | human | backup v1 and v2 recorded on a local build (`.status/backup/`, never committed); re-take on production after the freeze (runbook shot list) |
+| Short recording as a fallback | done | backup v3 (6:53) recorded on a local production build of main against the production engine, following the final script; in `~/Downloads/REVIEW-ME/`, never committed |
 | Code as a GitHub link + README on setup, approach, known limitations | done, human | root `README.md`, `engine/README.md`, `docs/user-guide.md`; repo is private: judges must be invited |
 | Short pitch deck: problem, solution, evaluation, value | draft | `docs/pitch-deck.md` plan + the Claude Slides draft linked there; Mark to export and finalise |
 | Data used only for the hackathon, never shared | done | `data/raw/` and `engine/artifacts/` gitignored, never committed; raw project ids removed from hover tooltips (#119) |
@@ -43,6 +43,6 @@ production; **human** = needs Mark; **not done**. Earlier version: 04:40 (all PR
 ## Open items (owner: Mark unless noted)
 1. ~~Production engine behind main~~: redeployed at 09:55 Munich with #118 and verified live (heat pump option text, locked PV range with a roof cap, no-PV battery text, /validate context). Production = main.
 2. Invite the judges to the repository; ask the organisers for the submission channel.
-3. Export the deck to PDF after the 11:00 freeze; rehearse twice with `docs/demo-runbook.md`.
+3. Export the deck to PDF right before submitting (no freeze); rehearse twice with `docs/demo-runbook.md`.
 4. Record the backup video on production (runbook shot list).
 5. PR #92 (Vercel ignore rule) and this docs PR are the only open PRs; no open issues.
