@@ -20,6 +20,7 @@ import {
   type VoiceStore,
   voiceDeps,
   handleUpdateFacts,
+  supabaseStore,
 } from "./voice";
 
 // ---------------------------------------------------------------------------
@@ -72,9 +73,10 @@ function fakeStore() {
     async getDesign(id) {
       return designs.find((d) => d.id === id)?.design ?? null;
     },
-    async getCallFacts(conversationId) {
+    async getCall(conversationId) {
       await new Promise((r) => setTimeout(r, 1)); // a real round trip: lets concurrent writers interleave
-      return [...calls.values()].find((c) => c.patch.conversation_id === conversationId)?.patch.facts ?? null;
+      const c = [...calls.values()].find((x) => x.patch.conversation_id === conversationId);
+      return c ? { id: c.id, facts: { ...c.patch.facts } } : null;
     },
   };
   return { store, calls, designs };
@@ -304,6 +306,41 @@ const FACTS = {
   heating: "gas",
   roof_direction: "south",
 };
+
+describe("supabaseStore.saveCall", () => {
+  function fakeDb(row: { id: string; facts: Record<string, unknown> } | null) {
+    const ops: string[] = [];
+    let updated: Record<string, unknown> | null = null;
+    const builder = (table: string) => {
+      const b = {
+        select: () => (ops.push(`select ${table}`), b),
+        eq: () => b,
+        maybeSingle: async () => ({ data: row, error: null }),
+        update: (v: Record<string, unknown>) => ((updated = v), ops.push(`update ${table}`), b),
+        insert: () => (ops.push(`insert ${table}`), b),
+        single: async () => ({ data: { id: "new" }, error: null }),
+        then: (res: (v: { error: null }) => void) => res({ error: null }),
+      };
+      return b;
+    };
+    return { db: { from: builder } as unknown as Parameters<typeof supabaseStore>[0], ops, updated: () => updated };
+  }
+
+  it("with the row already read: one update, merged onto those facts, no second lookup", async () => {
+    const f = fakeDb({ id: "c-1", facts: { a: 1 } });
+    const id = await supabaseStore(f.db).saveCall({ conversation_id: "conv", status: "live", facts: { b: 2 }, existing: { id: "c-1", facts: { a: 1, keep: true } } });
+    expect(id).toBe("c-1");
+    expect(f.ops).toEqual(["update calls"]);
+    expect(f.updated()).toMatchObject({ status: "live", facts: { a: 1, keep: true, b: 2, conversation_id: "conv" } });
+  });
+
+  it("without it: looks the row up first", async () => {
+    const f = fakeDb({ id: "c-1", facts: { a: 1 } });
+    await supabaseStore(f.db).saveCall({ conversation_id: "conv", facts: { b: 2 } });
+    expect(f.ops).toEqual(["select calls", "update calls"]);
+    expect(f.updated()).toMatchObject({ facts: { a: 1, b: 2 } });
+  });
+});
 
 describe("handleUpdateFacts", () => {
   const auth = { "x-agent-token": "tool-secret" };

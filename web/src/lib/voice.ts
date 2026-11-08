@@ -296,8 +296,15 @@ export interface CallPatch {
   customer_name?: string;
   address?: string;
   facts?: Record<string, unknown>; // shallow-merged into the stored facts
+  /** The row as just read (skips the lookup round trip; its facts are the merge base). */
+  existing?: StoredCall;
   transcript?: TranscriptTurn[];
   summary?: string | null;
+}
+
+export interface StoredCall {
+  id: string;
+  facts: Record<string, unknown>;
 }
 
 export interface VoiceStore {
@@ -307,8 +314,8 @@ export interface VoiceStore {
   saveDesign(row: { call_id: string | null; home: Home; locks: Locks; design: DesignResponse }): Promise<string | null>;
   callHasDesign(callId: string): Promise<boolean>;
   getDesign(id: string): Promise<DesignResponse | null>;
-  /** The stored facts of the call with this conversation_id, or null. */
-  getCallFacts(conversationId: string): Promise<Record<string, unknown> | null>;
+  /** The stored call (id + facts) with this conversation_id, or null. */
+  getCall(conversationId: string): Promise<StoredCall | null>;
 }
 
 const log = (msg: string) => console.info(`[voice] ${msg}`);
@@ -323,7 +330,7 @@ export const nullStore: VoiceStore = {
   saveDesign: async () => null,
   callHasDesign: async () => false,
   getDesign: async () => null,
-  getCallFacts: async () => null,
+  getCall: async () => null,
 };
 
 /** Postgres/PostgREST "column does not exist" (migration 20261107_calls_conversation_id not applied yet). */
@@ -338,7 +345,9 @@ export function supabaseStore(db: SupabaseClient): VoiceStore {
     const facts = { ...(p.facts ?? {}), ...(p.conversation_id ? { conversation_id: p.conversation_id } : {}) };
     try {
       if (p.conversation_id) {
-        const found = await db.from("calls").select("id, facts").eq("conversation_id", p.conversation_id).maybeSingle();
+        const found = p.existing && !retried
+          ? { data: p.existing }
+          : await db.from("calls").select("id, facts").eq("conversation_id", p.conversation_id).maybeSingle();
         if (found.data) {
           const { error } = await db.from("calls").update({ ...fields, facts: { ...found.data.facts, ...facts } }).eq("id", found.data.id);
           if (error) log(`calls update failed: ${error.message}`);
@@ -364,10 +373,10 @@ export function supabaseStore(db: SupabaseClient): VoiceStore {
 
   return {
     saveCall: (p) => saveCall(p),
-    async getCallFacts(conversationId) {
-      const { data, error } = await db.from("calls").select("facts").eq("conversation_id", conversationId).maybeSingle();
+    async getCall(conversationId) {
+      const { data, error } = await db.from("calls").select("id, facts").eq("conversation_id", conversationId).maybeSingle();
       if (error) log(`calls read failed: ${error.message}`);
-      return (data?.facts as Record<string, unknown> | undefined) ?? null;
+      return data ? { id: data.id as string, facts: (data.facts as Record<string, unknown>) ?? {} } : null;
     },
     async saveDesign(row) {
       const save = async (retried: boolean): Promise<string | null> => {
@@ -567,8 +576,8 @@ export async function handleCreateDesign(req: Request, deps: VoiceDeps, opts = {
   // Answers update_facts stored during the call fill whatever the agent did not repeat now.
   const cid = parseText((body as Record<string, unknown>).conversation_id);
   if (cid) {
-    const prev = await withTimeout(deps.store.getCallFacts(cid), 300, "stored facts");
-    const stated = prev?.stated as Record<string, unknown> | undefined;
+    const prev = await withTimeout(deps.store.getCall(cid), 300, "stored facts");
+    const stated = prev?.facts.stated as Record<string, unknown> | undefined;
     if (stated) body = { ...mergeStated(stated, body as Record<string, unknown>).stated, conversation_id: cid };
   }
   const left = Math.max(250, opts.budgetMs - (deps.now() - t0));
@@ -633,7 +642,8 @@ export async function handleUpdateFacts(req: Request, deps: VoiceDeps): Promise<
   if (!raw || !cid) return Response.json({ ok: false, error: "conversation_id is required" }, { status: 400 });
 
   const result = await serialised(cid, async () => {
-    const prev = (await deps.store.getCallFacts(cid)) ?? {};
+    const call = await deps.store.getCall(cid);
+    const prev = call?.facts ?? {};
     const { stated, changed } = mergeStated(prev.stated as Record<string, unknown> | undefined, raw);
     const { facts, home, assumptions } = normaliseFacts({ ...stated, conversation_id: cid });
     // Keep a roof found earlier for this address unless the caller stated the direction.
@@ -650,6 +660,7 @@ export async function handleUpdateFacts(req: Request, deps: VoiceDeps): Promise<
       customer_name: facts.customer_name ?? undefined,
       address: facts.address ?? undefined,
       facts: { ...home, voice: facts, stated, assumptions, updated_fields: changed, facts_updated_at: new Date(deps.now()).toISOString() },
+      existing: call ?? undefined,
     });
     if (facts.address && !solarForAddress) {
       const address = facts.address;
@@ -657,21 +668,22 @@ export async function handleUpdateFacts(req: Request, deps: VoiceDeps): Promise<
         const found = await withTimeout(deps.solar(address), 5000, "solar (update-facts)");
         if (!found) return;
         await serialised(cid, async () => {
-          const now = (await deps.store.getCallFacts(cid)) ?? {};
+          const row = await deps.store.getCall(cid);
+          const now = row?.facts ?? {};
           if ((now.voice as VoiceFacts | undefined)?.address !== address) return; // address changed meanwhile
           const r = roofFromSolar(found);
           const v = now.voice as VoiceFacts;
           const patch: Record<string, unknown> = { solar: found, solar_for: address };
           if (r && v.roof_direction == null && now.orientation_deg == null) patch.orientation_deg = r.orientation_deg;
           if (r && now.tilt_deg == null) patch.tilt_deg = r.tilt_deg;
-          await deps.store.saveCall({ conversation_id: cid, facts: patch });
+          await deps.store.saveCall({ conversation_id: cid, facts: patch, existing: row ?? undefined });
         });
       });
     }
     return { callId, changed };
   });
   log(`update-facts ${deps.now() - t0} ms, updated ${result.changed.join(", ") || "nothing new"}`);
-  return Response.json({ ok: true, call_id: result.callId, updated: result.changed });
+  return Response.json({ ok: true, call_id: result.callId, updated: result.changed, ms: deps.now() - t0 });
 }
 
 // ---------------------------------------------------------------------------
