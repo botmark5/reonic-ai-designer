@@ -4,6 +4,7 @@
  * a plain text field.
  */
 import "server-only";
+import { rankForHouseNumber, stripCountry } from "./address-rank";
 
 export interface AddressSuggestion {
   text: string;
@@ -51,9 +52,12 @@ export async function autocompleteAddress(input: string, sessionToken?: string, 
       .filter((p): p is Prediction => !!p?.text?.text)
       .slice(0, 6)
       .map((p) => ({ text: p.text!.text!, main: p.structuredFormat?.mainText?.text ?? p.text!.text!, secondary: p.structuredFormat?.secondaryText?.text ?? "" }));
+    // never drop the typed house number (a street-only pick measures another building)
+    // Germany only: the country suffix adds nothing and can move the geocode to another building
+    const ranked = rankForHouseNumber(q, suggestions).map((x) => ({ ...x, text: stripCountry(x.text), secondary: stripCountry(x.secondary) }));
     if (cache.size > 500) cache.clear();
-    cache.set(q.toLowerCase(), suggestions);
-    return { available: true, suggestions };
+    cache.set(q.toLowerCase(), ranked);
+    return { available: true, suggestions: ranked };
   } catch {
     return { available: true, suggestions: [] };
   }
