@@ -40,7 +40,7 @@ export function FocusPanel({
   const Icon = ICON[c];
   const size = sizeOf(r.design, c);
   const on = wants(c, r);
-  const yesLock = wantLock(c, r, true);
+  const yesLock = wantLock(c, r, true, before);
   const hpOption = c === "heatpump" && r.options?.heatpump?.available ? r.options.heatpump.kw : null;
   const where = zoneOf(c, zones);
   const k = insideKeyOf(c);
@@ -81,7 +81,7 @@ export function FocusPanel({
             label={`Include the ${LABEL[c].toLowerCase()}`}
             value={on ? "yes" : "no"}
             onChange={(v) => {
-              const lock = wantLock(c, r, v === "yes");
+              const lock = wantLock(c, r, v === "yes", before);
               if (lock !== null && v !== (on ? "yes" : "no")) onLock(lock, v === "yes" ? `added the ${LABEL[c].toLowerCase()}` : `no ${LABEL[c].toLowerCase()}`);
             }}
             options={[
