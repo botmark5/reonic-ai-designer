@@ -46,14 +46,16 @@ describe("panel editing", () => {
   it("the first panel on an empty plane may go anywhere", () => {
     expect(nearestFree(design, grid, "garage", 0, 0, undefined, true)).not.toBeNull();
   });
-  it("removing from the middle of a row closes the gap, the sliding panels keep their ids", () => {
-    const row0 = design.filter((p) => Math.abs(p.v - design[0].v) < 1e-6);
+  it("removing from the middle of a row fills the hole with exactly ONE other panel", () => {
+    const row0 = design.filter((p) => Math.abs(p.v - design[0].v) < 1e-6).sort((a, b) => a.u - b.u);
     const mid = row0[3];
     const after = removePanel(design, mid.id);
     expect(after).toHaveLength(13);
-    const left = after.filter((p) => Math.abs(p.v - mid.v) < 1e-6).sort((a, b) => a.u - b.u);
-    for (let i = 1; i < left.length; i++) expect(left[i].u - left[i - 1].u).toBeCloseTo(1.154, 3);
-    expect(new Set(after.map((p) => p.id)).size).toBe(13);
+    const changed = after.filter((p) => { const was = design.find((d) => d.id === p.id)!; return was.u !== p.u || was.v !== p.v; });
+    expect(changed).toHaveLength(1);
+    expect(changed[0]).toMatchObject({ id: row0[0].id, u: mid.u, v: mid.v }); // the outer panel of the shorter (left) side
+    const row = after.filter((p) => Math.abs(p.v - mid.v) < 1e-6).sort((a, b) => a.u - b.u);
+    for (let i = 1; i < row.length; i++) expect(row[i].u - row[i - 1].u).toBeCloseTo(1.154, 3);
     for (let i = 0; i < after.length; i++) for (let j = i + 1; j < after.length; j++) expect(overlaps(after[i], after[j])).toBe(false);
   });
   it("removing an end panel moves nothing else; locked panels never slide", () => {
@@ -62,15 +64,21 @@ describe("panel editing", () => {
     const locked = new Set(design.map((p) => p.id));
     expect(removePanel(design, row0[3].id, locked)).toEqual(design.filter((p) => p.id !== row0[3].id));
   });
-  it("moving a panel out of the middle of a row leaves no hole", () => {
+  it("moving ONE panel moves only that panel (Mark: 'moving one moved all of them')", () => {
     const row0 = design.filter((p) => Math.abs(p.v - design[0].v) < 1e-6).sort((a, b) => a.u - b.u);
-    const top = nearestFree(design, grid, "main", 0, 99)!;
-    const after = movePanel(design, row0[4].id, top);
-    expect(after).toHaveLength(14);
-    const row = after.filter((p) => Math.abs(p.v - design[0].v) < 1e-6).sort((a, b) => a.u - b.u);
-    for (let i = 1; i < row.length; i++) expect(row[i].u - row[i - 1].u).toBeCloseTo(1.154, 3);
-    expect(after.find((p) => p.id === row0[4].id)?.u).toBe(top.u);
-    expect(new Set(after.map((p) => p.id)).size).toBe(14);
+    for (const pick of [row0[0], row0[4], row0[9], design[12]]) {
+      const to = nearestFree(design, grid, "main", 0, 99, pick.id, true)!;
+      const after = movePanel(design, pick.id, to);
+      expect(after).toHaveLength(14);
+      const changed = after.filter((p) => { const was = design.find((d) => d.id === p.id)!; return was.u !== p.u || was.v !== p.v || was.plane !== p.plane; });
+      expect(changed.map((p) => p.id)).toEqual([pick.id]);
+      expect(after.find((p) => p.id === pick.id)).toMatchObject({ plane: to.plane, u: to.u, v: to.v });
+    }
+  });
+  it("moving keeps every other panel object as it was (no re-layout of the array)", () => {
+    const to = nearestFree(design, grid, "garage", 0, 0)!;
+    const after = movePanel(design, design[5].id, to);
+    after.forEach((p, i) => { if (i !== 5) expect(p).toBe(design[i]); });
   });
   it("adding onto a spot whose grid id a moved panel carries still gives a unique id", () => {
     const row0 = design.filter((p) => Math.abs(p.v - design[0].v) < 1e-6).sort((a, b) => a.u - b.u);

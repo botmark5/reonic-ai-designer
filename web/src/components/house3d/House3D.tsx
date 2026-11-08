@@ -228,7 +228,7 @@ export function House3D({
     ? {
         selected: pickedSlot?.id ?? null, grid, locked,
         onPick: (id) => setPicked(id && locked.has(id) ? null : id),
-        onMove: (id, to) => { if (locked.has(id)) return; commit(movePanel(spec.layout.slots, id, to, locked)); setPicked(id); },
+        onMove: (id, to) => { if (locked.has(id)) return; commit(movePanel(spec.layout.slots, id, to)); setPicked(id); },
       }
     : null;
   // Delete / Backspace removes the picked panel, Escape lets go (not while typing elsewhere)

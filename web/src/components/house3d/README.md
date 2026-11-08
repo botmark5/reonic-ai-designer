@@ -109,8 +109,8 @@ same props. Props not yet supported by a renderer are accepted and ignored. Full
 ### Panel editing (planner, `editable`)
 - Click (or grab) a panel: one amber outline with round corner handles; the energy flows hide while a panel is
   picked. Drag: the panel follows the pointer 1:1 (grab offset kept), one translucent ghost marks the free spot it
-  snaps to on release. Drops and Add only take spots touching the array (no islands); Remove and moves close the
-  gap in their row (the shorter side slides in; existing panels never move). Toolbar bottom-left: "Placed N of M" (warning colour when N ≠ M), Add (next to the picked one,
+  snaps to on release. Drops and Add only take spots touching the array (no islands). A move moves only that
+  panel; Remove fills the hole with the outermost panel of the shorter side (one panel; existing panels never move). Toolbar bottom-left: "Placed N of M" (warning colour when N ≠ M), Add (next to the picked one,
   spills to the garage), Remove (or Delete / Backspace), Reset. Escape lets go. Camera orbit pauses while dragging.
 - Placement only: M is the engine's panel count and never changes. `onPanelsChange(panels)` reports
   `{id, segment (0 main, 1 garage), u, v, portrait}`; Reset sends []. Off during a reveal. Rules: `panelEdit.ts`.

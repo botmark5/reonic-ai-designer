@@ -56,14 +56,13 @@ export function nearestFree(placed: PanelSlot[], grid: PanelSlot[], plane: Plane
 }
 
 /**
- * Move a panel to a free spot; the row it left closes its gap (the moved panel and `locked` ones stay put).
+ * Move ONE panel to a free spot; nothing else moves (the spot it left stays free: the planner chose it).
  * Ids are stable through moves (the renderer glides a panel to its new spot instead of swapping it).
  */
-export function movePanel(placed: PanelSlot[], id: string, to: PanelSlot, locked?: ReadonlySet<string>): PanelSlot[] {
+export function movePanel(placed: PanelSlot[], id: string, to: PanelSlot): PanelSlot[] {
   const from = placed.find((p) => p.id === id);
   if (!from || placed.some((p) => p.id !== id && overlaps(p, to))) return placed;
-  const moved = placed.map((p) => (p.id === id ? { ...to, id } : p));
-  return closeGap(moved, from, new Set([...(locked ?? []), id]));
+  return placed.map((p) => (p.id === id ? { ...to, id } : p));
 }
 
 /** `id`, or `id` with a suffix when a moved panel already carries it. */
@@ -87,8 +86,8 @@ export function addPanel(placed: PanelSlot[], grid: PanelSlot[], near?: PanelSlo
 }
 
 /**
- * Remove a panel and close the gap in its row: the shorter side of the row slides one panel inward (never panels
- * in `locked`), so a removal leaves no hole. The sliding panels keep their ids.
+ * Remove a panel without leaving a hole: the outermost panel of the shorter side of its row takes the freed spot
+ * (exactly one other panel moves, never one in `locked`). It keeps its id.
  */
 export function removePanel(placed: PanelSlot[], id: string, locked?: ReadonlySet<string>): PanelSlot[] {
   const gone = placed.find((p) => p.id === id);
@@ -96,19 +95,17 @@ export function removePanel(placed: PanelSlot[], id: string, locked?: ReadonlySe
   return gone ? closeGap(rest, gone, locked) : rest;
 }
 
-/** `rest` has a hole where `gone` was: the shorter unlocked side of that row slides one panel inward. */
+/** `rest` has a hole where `gone` was: the outermost panel of the shorter unlocked side of that row fills it. */
 function closeGap(rest: PanelSlot[], gone: PanelSlot, locked?: ReadonlySet<string>): PanelSlot[] {
   if (rest.some((p) => overlaps(p, gone))) return rest; // the spot is taken again
   const row = rest.filter((p) => p.plane === gone.plane && Math.abs(p.v - gone.v) < EPS);
   const left = row.filter((p) => p.u < gone.u);
   const right = row.filter((p) => p.u > gone.u);
-  const W = PANEL.w + PANEL.gap;
   const free = (side: PanelSlot[]) => side.length > 0 && !side.some((p) => locked?.has(p.id));
   // only a real hole: panels on both sides
   if (!left.length || !right.length) return rest;
   const side = [left, right].filter(free).sort((a, b) => a.length - b.length)[0];
   if (!side) return rest;
-  const dir = side === left ? 1 : -1;
-  const shift = new Set(side.map((p) => p.id));
-  return rest.map((p) => (shift.has(p.id) ? { ...p, u: p.u + dir * W } : p));
+  const outer = side.reduce((a, b) => (Math.abs(b.u - gone.u) > Math.abs(a.u - gone.u) ? b : a));
+  return rest.map((p) => (p.id === outer.id ? { ...p, u: gone.u, v: gone.v } : p));
 }
