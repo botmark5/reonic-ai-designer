@@ -1,13 +1,11 @@
 import { Suspense } from "react";
-import { AppNav, Brand, ThemeToggle } from "./app-nav";
+import { AppNav, Brand } from "./app-nav";
 
 function Logo() {
   return (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/brand/reonic-logo.svg" alt="Reonic" width={107} height={22} className="h-[22px] w-auto dark:hidden" />
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/brand/reonic-logo-light.svg" alt="Reonic" width={107} height={22} className="hidden h-[22px] w-auto dark:block" />
+      <img src="/brand/reonic-logo.svg" alt="Reonic" width={107} height={22} className="h-[22px] w-auto" />
     </>
   );
 }
@@ -23,9 +21,6 @@ export function AppHeader() {
         <Suspense fallback={null}>
           <AppNav />
         </Suspense>
-        <div className="ml-auto flex items-center gap-2">
-          <ThemeToggle />
-        </div>
       </div>
     </header>
   );
