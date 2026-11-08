@@ -2,6 +2,11 @@
 Agents: tick tasks here when done (`- [x]`) and commit. Add blockers as "BLOCKED: …" under the task.
 Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 submit.
 
+**Status Sun 07:30 (e-spare, from git and the session statuses):**
+- **Production is frozen at #88 (8b20c12)** because Vercel's Hobby build limit is hit. Everything merged after #88 deploys in one go once Mark upgrades Vercel; #92 (skip builds when web/ is unchanged) is open for Mark.
+- **The engine needs `railway up` (Cala)** for #100 (GET /heldout, the three two-houses cases on /reality) and #107 (/eval by_band). Until then /reality shows the older example cases.
+- Open hero PRs: #89 /live A (the house builds during the call), #103 /offer A. Both merge cleanly with main; 320 web tests pass on the combination.
+
 ## Phase 0 — Setup
 - [x] Mark: private repo + invite Cala; push starter kit
 - [x] Cala: clone, copy data into data/raw, Python env, CSVs load
@@ -18,7 +23,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [x] engine/artifacts/expert_designs.parquet + 20 random projects spot-checked by hand
 
 ## Phase 2 — Engine and evaluation (Cala)
-- [ ] docs/engine-spec.md in plain English
+- [x] docs/engine-spec.md in plain English
 - [x] Baselines (kWp ≈ kWh/1000; median by consumption band)
 - [x] Chained model PV → battery → wallbox, installer-aware, snapped to catalogue
 - [x] Similar-homes lookup → ranges + 5 nearest real projects
@@ -26,9 +31,10 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [x] Physics check + heat pump rules
 - [x] Evaluation: held-out + installer A→B; variant-range hit rate; vs baselines
   - done on INTERIM labels (engine/interim_labels.py); rerun `python -m engine.train` once expert_designs.parquet lands
-- [ ] Error analysis by segment/installer
+- [x] Error analysis by segment/installer (engine/RESULTS.md; /eval `segments`, `by_installer`, `by_band` #107; deck charts)
 - [x] /validate
-- [ ] FastAPI deployed, matches docs/api.md
+- [x] FastAPI deployed on Railway, matches docs/api.md
+  - Sun 07:30: needs `railway up` for #100 and #107 (see status above)
   - engine/api.py runs locally and matches api.md (+ optional additions, see engine/README.md); not deployed yet
   - Sun 00:15 (orchestrator): production uses the fixed Railway URL (#28 closed); live /eval matches RESULTS.md 'shipped' column
     (battery mix #39); EV → wallbox + PV bump and roof cap verified on the live engine. /eval lacks P10–P90 coverage → issue #43
@@ -48,14 +54,17 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [x] Interactive 3D house `<House3D>` (web/src/components/house3d): panels from kWp, battery/inverter/wallbox/heat pump, energy flows, presets, tooltips, still-image fallback
   - mounted in the planner and /offer/[token] (PR #21)
 - [x] Live-call big screen /live (PR #18): server-polled calls, facts checklist, live draft; scripted "Play demo call" sends the draft to the inbox
+- [x] Hero build Sun night (Mark's picks): Planner A (#68, card ↔ house), Reality A (#72, two houses; #98 "One past home"), house v2 props (#70), labels never overlap (#85), real street from Google 3D tiles behind `?tiles=1` (#78), sun map (#83), Inside diorama (#95), panel editing (#99), `?static=1` / `?tiles=0` fallbacks (#78)
+- [x] Voice: `update_facts` writes each answer live (#73, #76, #80, #106), Listen drives the house's day (#86), cached demo clip (#88, #91), plain spoken text (#101)
 - [x] ElevenLabs "Explain my offer" voice + voice agent calling /design (backend: web/voice — create_design tool, post-call webhook, /api/solar, /api/voice/explain; audio off until the voice is confirmed)
-- [ ] Validation screen
+- [x] Validation, shown on the cards instead of a separate screen (#61: a locked component says "Set by planner · Unusual" with the check message; /validate)
 - [ ] Confidence calibration, A→B findings for the deck, fix worst 3 edge cases
+  - calibration done (P10–P90 holds the expert's PV for 79–81 % of new systems, #46); A→B in /eval and on /reality; edge cases: not tracked as a list
 
 ## Phase 5 — Pitch and submission
 - [ ] Business case · deck · metric charts · README · backup video · rehearse ×2 · submit by 13:30
   - [x] metric charts (docs/deck/charts.py) · [x] README (root + engine, PR #60: reproducible from the data-v1 release) · [x] pitch facts re-checked for leakage (answered mode = what-if, see engine/RESULTS.md)
-  - [ ] deck (Mark, from docs/pitch-facts.md) · [ ] backup video (shot list in docs/demo-runbook.md) · [ ] judges invited to the repo + submission channel (ask organisers 08:00) · [ ] rehearse ×2 · [ ] freeze 11:00 · [ ] submit 13:30 Munich
+  - [ ] deck (Mark, from docs/pitch-facts.md) · [ ] backup video (v1 recorded Sun 06:10 on a local build of main + #89 + #103: `.status/backup/backup-v1.mp4`, never committed; v2 after the morning deploy) · [ ] judges invited to the repo + submission channel (ask organisers 08:00) · [ ] rehearse ×2 · [ ] freeze 11:00 · [ ] submit 13:30 Munich
   - metric charts done (docs/deck/charts.py, PR #40/#41) · deck: HQ chat in Claude Slides · pitch-facts, demo runbook, README: e-spare (docs/pitch)
 
 ## Decisions

@@ -19,7 +19,7 @@ In Reonic's words, planners "spend hours on every single design", and "the first
 - **Design engine.** Python service with a chained model: heat pump rule → PV yes/no and size → battery yes/no and size (it sees the planned PV) → wallbox. It is learned from 1,994 offer options across 1,593 signed projects from two installers, parsed from the offers' line items. Every size snaps to a size the installer actually sells. Physics adds yield, self-consumption and autarky. **An LLM never picks a size.** Claude only turns the planner's words into input changes and turns engine facts into explanations.
 - **Voice intake.** An ElevenLabs agent takes the site-visit call. It asks about existing solar first, collects the facts, reads them back, and a draft design lands in the planner's inbox before the caller hangs up.
 - **Planner.** The draft with a 3D house on top and four system cards below. Each card shows its P10–P90 range, the reasons and similar past homes. The planner can lock any component or type a change; the chain re-plans the rest. When a planner overrides a size, the card says how it compares with the 40 most similar past homes ("Larger than 99 % of similar homes").
-- **Reality check.** A page that compares the engine with the real expert design on held-out homes, and shows the evaluation numbers live from the engine, including where it is only on par.
+- **Reality check.** A page that shows one past home as two houses, the engine's design next to what the expert sold, and below them the evaluation numbers on held-out homes, live from the engine, including where it is only on par. The two houses are a picture of how the engine designs, not a test: it learned from that home too.
 - **Homeowner offer.** A share link with the 3D house, the system and a plain-language explanation they can read or listen to.
 
 ## How we meet Reonic's criteria
@@ -61,7 +61,7 @@ The phone call is the front door of the product. An **ElevenLabs conversational 
 - Open `<APP_URL>`. The planner passcode is given to the judges separately.
 - **Live call:** press "Play demo call" for the scripted call, then "End call and send draft", then "Open in planner".
 - **Planner:** try "They are buying an EV next year", lock any component, or set "Solar already on the roof?" to Yes.
-- **Reality check:** `/reality` shows the held-out numbers and example homes next to the real expert design.
+- **Reality check:** `/reality` shows example past homes next to the real expert design, and the held-out numbers below them.
 - **Homeowner:** "Use this design", then "Send to homeowner", then open the link.
 
 ## Known limits

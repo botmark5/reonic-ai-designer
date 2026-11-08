@@ -7,6 +7,7 @@ Checked on 2026-11-08 at 00:20 against the live engine's `GET /eval` (P10–P90 
 - **Safe** means say it as written. **Caveat** means say it only together with the caveat in the same row. **Don't** means leave it out.
 - **"Answered"** means the planner answered "Solar already on the roof?". **In the evaluation that answer is derived from the expert's own offer** (battery-only offer = yes, new system = no), so an answered yes/no or all-homes number mostly restates the label. Such numbers are a **what-if** ("what the question is worth when answered correctly"), never an accuracy, and live in section 3 only. Two answered slices are fair and may be quoted: new full systems (every home gets the same answer, so it carries no information about sizes) and the size metrics derived from them.
 - **(on screen)** marks what `/reality` shows (headline = new full systems; add-on sales and all homes without the answer; the answered numbers only in the what-if card).
+- **"One past home" (the two houses on `/reality`, #98) is not held-out.** It shows the shipped engine, which learned from all past projects including that home: "a picture of how it designs, not a test". Say "held-out" or "never saw" only for the tiles below the houses (2.50 vs 2.62 kWp, 77 % vs 6 %, coverage 79 %, top-3) and for the `ours_held_out` values in the data-v1 `demo_reality.json`.
 - "Same as rule" is the wording /reality uses for a tie. Use it in the pitch too.
 - Lower is better for errors (MAE = mean absolute error per home). Higher is better for percentages.
 
@@ -120,4 +121,5 @@ Expert range means the smallest to largest PV across the variants the expert off
 - **Payback years and savings as facts.** The economics use placeholder prices (`engine/config/economics.toml`).
 - **"Beats the experts"** or **"matches the experts"** for new systems. Say "on par with the best rule of thumb, and it explains itself, takes the planner's changes and handles add-on sales".
 - **P10–P90 coverage for add-on sales**, or any coverage other than new full systems.
-- **Project ids, installer ids, customer names, or any number from a single real project.** Reonic data stays private.
+- **"The engine never saw this home"** about the two houses on `/reality`. It did see it; only the numbers below the houses are held-out.
+- **Project ids, installer ids, customer names, or any number from a single real project.** Reonic data stays private. On stage, reading the example case that `/reality` shows is fine; don't put single-project numbers on slides or in the submission text.
