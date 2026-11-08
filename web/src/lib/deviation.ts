@@ -56,9 +56,21 @@ export interface TransferRow {
   sentence: string;
 }
 
-export function transferRows(transfer: Record<string, Preds> | undefined, model = "design_model", baseline = "baseline_band_median"): TransferRow[] {
+/** Installer ids, most held-out homes first: "Installer A" is the larger one, as in the README and pitch facts. */
+export function installerOrder(byInstaller: Record<string, Record<string, Record<string, number | null | undefined>>> | undefined, model = "design_model"): string[] {
+  const m = byInstaller?.[model] ?? {};
+  return Object.keys(m).sort((a, b) => (num(m[b], "n_projects") ?? 0) - (num(m[a], "n_projects") ?? 0) || a.localeCompare(b));
+}
+
+export function transferRows(
+  transfer: Record<string, Preds> | undefined,
+  model = "design_model",
+  baseline = "baseline_band_median",
+  order: string[] = [],
+): TransferRow[] {
   const entries = Object.entries(transfer ?? {});
-  const ids = Array.from(new Set(entries.flatMap(([k]) => k.split("->").map((x) => x.trim())))).sort();
+  const seen = Array.from(new Set(entries.flatMap(([k]) => k.split("->").map((x) => x.trim())))).sort();
+  const ids = [...order.filter((x) => seen.includes(x)), ...seen.filter((x) => !order.includes(x))];
   const name = (id: string) => `Installer ${String.fromCharCode(65 + ids.indexOf(id))}`;
   return entries
     .map(([key, p]) => {

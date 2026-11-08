@@ -41,3 +41,18 @@ describe("transferRows", () => {
     expect(rows[0].sentence).toBe("Learned only on Installer A, it is weaker than the band median for Installer B: each installer has its own habits.");
   });
 });
+
+describe("installer letters follow the docs", () => {
+  it("A is the installer with the most held-out homes, not the first id alphabetically", async () => {
+    const { installerOrder, transferRows } = await import("./deviation");
+    const order = installerOrder({ design_model: { "23c108b7": { n_projects: 67 }, "2a8ba8e2": { n_projects: 248 } } });
+    expect(order).toEqual(["2a8ba8e2", "23c108b7"]);
+    const rows = transferRows(
+      { "2a8ba8e2->23c108b7": { design_model: { pv_kwp_mae_when_both_pv: 2.79 }, baseline_band_median: { pv_kwp_mae_when_both_pv: 3.15 } } },
+      "design_model",
+      "baseline_band_median",
+      order,
+    );
+    expect(rows[0]).toMatchObject({ from: "Installer A", to: "Installer B", ours: 2.79 });
+  });
+});
