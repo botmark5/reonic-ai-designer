@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BatteryMedium, Check, Fan, Pause, Play, PlugZap, RotateCcw, SunMedium } from "lucide-react";
+import { BatteryMedium, Check, Fan, Lock, Pause, Play, PlugZap, RotateCcw, SunMedium } from "lucide-react";
 import { toast } from "sonner";
 import { HouseStage } from "@/components/house3d";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import type { Offer } from "@/lib/offer";
 import type { DesignResponse, Home } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { listenOnce } from "./listen-once";
-import { captionAt, plainText, timeOfDayAt, variantView, type TimedSegment } from "./offer-logic";
+import { captionAt, partLine, plainText, timeOfDayAt, variantView, type OfferPart, type TimedSegment } from "./offer-logic";
 
 function household(h: Home) {
   const who = h.inhabitants ? (h.inhabitants === 1 ? "one person" : h.inhabitants === 4 ? "a family of four" : `${h.inhabitants} people`) : "your home";
@@ -67,9 +67,17 @@ const clock = (h: number) => {
 const partOfDay = (h: number) => (h < 11 ? "Morning" : h < 15 ? "Midday" : h < 18.5 ? "Afternoon" : "Evening");
 
 /** One decision: what it is on the first line, the choice under it (value on the same line when `inline`). */
-function Choice({ icon, title, sub, inline, children }: { icon: React.ReactNode; title: string; sub: string; inline?: boolean; children: React.ReactNode }) {
+function Choice({ id, focused, icon, title, sub, inline, children }: { id?: string; focused?: boolean; icon: React.ReactNode; title: string; sub: string; inline?: boolean; children: React.ReactNode }) {
   return (
-    <div className={cn("flex gap-3 py-4", inline ? "items-center justify-between gap-4" : "flex-col")}>
+    <div
+      id={id}
+      className={cn(
+        "-mx-4 flex scroll-mt-24 gap-3 px-4 py-4 transition-[background-color,box-shadow] duration-300",
+        inline ? "items-center justify-between gap-4" : "flex-col",
+        // the part the homeowner clicked on the house
+        focused && "bg-ai-tint shadow-[inset_3px_0_0_var(--ai-orange)]",
+      )}
+    >
       <div className="flex min-w-0 items-center gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-full bg-surface-2" aria-hidden>
           {icon}
@@ -81,6 +89,19 @@ function Choice({ icon, title, sub, inline, children }: { icon: React.ReactNode;
       </div>
       <div className="min-w-0 shrink-0">{children}</div>
     </div>
+  );
+}
+
+/** A part the installer set: its size, and that it is not one of the homeowner's choices. */
+function Fixed({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="flex flex-col items-end gap-0.5 text-right">
+      <span className="font-mono text-[22px] font-medium tabular">{children}</span>
+      <span className="inline-flex items-center gap-1 text-[12px] text-ink-muted">
+        <Lock className="size-3" strokeWidth={2} aria-hidden />
+        Set by your installer
+      </span>
+    </span>
   );
 }
 
@@ -128,10 +149,21 @@ export function OfferView({ offer }: { offer: Offer }) {
   const n = view.numbers;
   const panels = n.pv ? Math.round(n.pv / 0.45) : 0;
   const recommendedBattery = sizeOf(base.design, "battery") ?? 0;
+  // sizes for the focus line come from the shown (engine) design; choices only from what the installer allowed
+  const partSize = (p: OfferPart) => sizeOf(view.design.design, p);
+  const partChoices = (p: OfferPart): (number | boolean)[] =>
+    p === "pv" ? pvAllowed : p === "battery" ? batteryAllowed : p === "wallbox" ? (wallboxAllowed as boolean[]) : hpAllowed && hpOffered ? [false, true] : [];
   const changed = pv !== recommendedPv || battery !== recommendedBattery || wallbox !== base.design.wallbox.include || (heatpump && hpOffered);
 
   // The house's clock: the viewer's slider, or the voice while "Listen" plays.
   const [hour, setHour] = useState(12.5);
+  // Click a part on the house: the camera zooms to it, its row lights up, and a plain line says what it is
+  const [part, setPart] = useState<OfferPart | null>(null);
+  const onSelectPart = useCallback((k: string | null) => {
+    const p = k === "inverter" ? "pv" : (k as OfferPart | null);
+    setPart(p);
+    if (p) document.getElementById(`choice-${p}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, []);
   const [caption, setCaption] = useState<string | null>(null);
   const [stopSignal, setStopSignal] = useState(0);
   const onUserHour = useCallback((h: number) => {
@@ -157,18 +189,22 @@ export function OfferView({ offer }: { offer: Offer }) {
             mode="homeowner"
             timeOfDay={hour}
             onTimeOfDayChange={onUserHour}
+            onSelect={onSelectPart}
+            focus={part}
             controls="time"
             className="rounded-none border-x-0 md:rounded-lg md:border-x"
           />
-          <p className={cn("m-0 min-h-[3lh] px-4 text-[17px] leading-[26px] text-balance md:px-1", caption ? "text-ink" : "text-ink-muted")} aria-live="polite">
+          <p className={cn("m-0 min-h-[3lh] px-4 text-[17px] leading-[26px] text-balance md:px-1", caption || part ? "text-ink" : "hidden")} aria-live="polite">
             {caption ? (
               <span key={caption} className="animate-in fade-in duration-300 motion-reduce:animate-none">
                 <span className="mr-2 font-mono text-[13px] text-ai-text tabular">{partOfDay(hour)} · {clock(hour)}</span>
                 {caption}
               </span>
-            ) : (
-              "Drag the time under the house to see your system through a sunny day, or press Listen and the house follows the voice."
-            )}
+            ) : part ? (
+              <span key={part} className="animate-in fade-in duration-300 motion-reduce:animate-none">
+                {partLine(part, partSize(part), partChoices(part))}
+              </span>
+            ) : null}
           </p>
         </section>
 
@@ -198,10 +234,12 @@ export function OfferView({ offer }: { offer: Offer }) {
             className={cn("m-0 flex min-w-0 flex-col divide-y divide-border rounded-lg border border-border bg-surface-1 px-4 py-0", busy && "opacity-70 transition-opacity")}
           >
             <Choice
+              id="choice-pv"
+              focused={part === "pv"}
               icon={<SunMedium className="size-5 text-comp-pv" strokeWidth={1.5} />}
               title="Solar panels"
               inline={pvAllowed.length === 0}
-              sub={n.pv ? `${panels} panels on your roof · sized by your installer` : "No new panels: you already have solar"}
+              sub={n.pv ? `${panels} panels on your roof${pvAllowed.length > 1 ? " · sized by your installer" : ""}` : "No new panels: you already have solar"}
             >
               {pvAllowed.length > 0 && (
                 <Segmented
@@ -214,20 +252,24 @@ export function OfferView({ offer }: { offer: Offer }) {
                   options={pvAllowed.map((v) => ({ value: v, label: `${kwp.format(v)} kWp${v === recommendedPv ? " ★" : ""}` }))}
                 />
               )}
-              {pvAllowed.length === 0 && (
-              <span className="font-mono text-[22px] font-medium tabular">
-                {n.pv ? (
-                  <>
+              {pvAllowed.length === 0 &&
+                (n.pv ? (
+                  <Fixed>
                     <Num value={n.pv} format={(x) => kwp.format(x)} /> <span className="text-[14px] text-ink-muted">kWp</span>
-                  </>
+                  </Fixed>
                 ) : (
-                  "–"
-                )}
-              </span>
-              )}
+                  <span className="font-mono text-[22px] font-medium tabular">–</span>
+                ))}
             </Choice>
+            {batteryAllowed.length <= 1 && recommendedBattery > 0 && (
+              <Choice id="choice-battery" focused={part === "battery"} inline icon={<BatteryMedium className="size-5 text-comp-battery" strokeWidth={1.5} />} title="Battery" sub="Stores midday sun for the evening">
+                <Fixed>
+                  {recommendedBattery} <span className="text-[14px] text-ink-muted">kWh</span>
+                </Fixed>
+              </Choice>
+            )}
             {batteryAllowed.length > 1 && (
-              <Choice icon={<BatteryMedium className="size-5 text-comp-battery" strokeWidth={1.5} />} title="Battery" sub="Stores midday sun for the evening">
+              <Choice id="choice-battery" focused={part === "battery"} icon={<BatteryMedium className="size-5 text-comp-battery" strokeWidth={1.5} />} title="Battery" sub="Stores midday sun for the evening">
                 <Segmented
                   label="Battery size"
                   value={battery}
@@ -241,6 +283,8 @@ export function OfferView({ offer }: { offer: Offer }) {
             )}
             {hpOffered && hpAllowed && hpOption?.available && (
               <Choice
+                id="choice-heatpump"
+                focused={part === "heatpump"}
                 icon={<Fan className="size-5 text-comp-heatpump" strokeWidth={1.5} />}
                 title="Heat pump"
                 sub={heatpump ? `Replaces your ${offer.home.heating?.toLowerCase() ?? "old"} heating · saves about ${fmtEur(n.heatingSavings)} a year on heating` : "An option your installer offers"}
@@ -256,8 +300,21 @@ export function OfferView({ offer }: { offer: Offer }) {
                 />
               </Choice>
             )}
+            {wallboxAllowed.length <= 1 && base.design.wallbox.include && (
+              <Choice id="choice-wallbox" focused={part === "wallbox"} inline icon={<PlugZap className="size-5 text-comp-wallbox" strokeWidth={1.5} />} title="Car charger" sub={offer.home.has_ev ? "Charges your car from your own solar" : "Ready for an electric car later"}>
+                <Fixed>
+                  {base.design.wallbox.kw ? (
+                    <>
+                      {base.design.wallbox.kw} <span className="text-[14px] text-ink-muted">kW</span>
+                    </>
+                  ) : (
+                    "Included"
+                  )}
+                </Fixed>
+              </Choice>
+            )}
             {wallboxAllowed.length > 1 && (
-              <Choice icon={<PlugZap className="size-5 text-comp-wallbox" strokeWidth={1.5} />} title="Car charger" sub={offer.home.has_ev ? "Charges your car from your own solar" : "Ready for an electric car later"}>
+              <Choice id="choice-wallbox" focused={part === "wallbox"} icon={<PlugZap className="size-5 text-comp-wallbox" strokeWidth={1.5} />} title="Car charger" sub={offer.home.has_ev ? "Charges your car from your own solar" : "Ready for an electric car later"}>
                 <Segmented
                   label="Car charger"
                   value={wallbox ? "yes" : "no"}
@@ -508,7 +565,7 @@ function ListenButton({ offer, onHour, onCaption, stopSignal, onStart }: {
         </span>
         <span className="flex flex-col">
           <span className="text-[16px] font-semibold">{label}</span>
-          <span className="text-[13px] text-ink-muted">{state === "idle" || state === "loading" ? "About 45 seconds, in plain words · the house follows along" : "The house follows the voice through one sunny day"}</span>
+          <span className="text-[13px] text-ink-muted">{state === "idle" || state === "loading" ? "About 45 seconds" : "The house follows the voice through one sunny day"}</span>
         </span>
       </button>
       {reply && state !== "idle" && (

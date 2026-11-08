@@ -16,7 +16,7 @@ const DRACO = "https://www.gstatic.com/draco/versioned/decoders/1.5.7/";
 const GEOID_M = 47;
 /** How far the measured geoid offset may stray from the first guess (it is 36–50 m across Germany). */
 const PLAUSIBLE_M = 60;
-const LIFT = 0.35; // panel above the plane: photogrammetry roofs are lumpy, a panel sunk into one reads as broken
+const LIFT = 0.12; // panel above its roof face (each face is first raised onto the mesh, so it need not float)
 const DROP = 2.2;
 const ROW_STAGGER = 0.07;
 const VIEW = new THREE.Vector3(30, 52, 42); // camera offset from the roof: south-east, high enough to clear garden trees
