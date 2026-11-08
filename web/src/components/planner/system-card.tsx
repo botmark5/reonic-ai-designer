@@ -13,8 +13,8 @@ import { ConfidenceRange } from "./confidence-range";
 import { altLabel, cardReasons, otherSizes } from "./text";
 import { INSTALLER, LOCK_KEY } from "./use-planner";
 
-const ICON = { pv: SunMedium, battery: BatteryMedium, wallbox: PlugZap, heatpump: Fan } as const;
-const TEXT_COLOR: Record<ComponentKey, string> = {
+export const ICON = { pv: SunMedium, battery: BatteryMedium, wallbox: PlugZap, heatpump: Fan } as const;
+export const TEXT_COLOR: Record<ComponentKey, string> = {
   pv: "text-comp-pv",
   battery: "text-comp-battery",
   wallbox: "text-comp-wallbox",
@@ -255,7 +255,7 @@ export function SystemCard({
   );
 }
 
-function Editor({
+export function Editor({
   component: c,
   response,
   onApply,
