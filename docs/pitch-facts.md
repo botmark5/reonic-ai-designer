@@ -19,7 +19,7 @@ Sources:
 ## 1. How we measured
 | fact | number | source | say it |
 |---|---|---|---|
-| Held-out test set, never used for training or tuning | 315 homes | `/eval` `protocol.n_test` | Safe |
+| Held-out test set, never trained on | 315 homes | `/eval` `protocol.n_test` | Safe as "never trained on". Model choices were made by cross-validation on the training part, but the locked set was re-scored after each shipped improvement (`engine/RESULTS.md` "Before/after per improvement"), so never say "never looked at" or "never used for tuning". |
 | Split | grouped by customer (41 customers have 2 projects), stratified by installer, seed 42 | `/eval` `protocol` | Safe |
 | Installers in the data | 2: A (248 test homes) and B (67 test homes) | `/eval` `by_installer` | Safe. Say "Installer A / B", never the ids. |
 | Shipped model is trained on | 1,563 projects | live `GET /health` `trained_on_projects` | Safe |
@@ -84,6 +84,7 @@ Expert range means the smallest to largest PV across the variants the expert off
 | fact | number | source | say it |
 |---|---|---|---|
 | Expert PV falls inside the engine's P10–P90 range, new full systems (253 homes) | **79–81 %** (target 80 %): 79 % answered **(on screen, "Calibrated")**, 81 % not answered, 80 % with real consumption | `/eval` `with_existing_pv_answer.segments.full_designs.dm.pv_interval_coverage_pct`, `segments.full_designs.dm.pv_interval_coverage_pct`, `segments.full_designs_known_consumption.dm.pv_interval_coverage_pct` | Safe as "79–81 % on new full systems (target 80 %)". Never quote a coverage for add-on sales: they get no new PV, so there is nothing to cover. |
+| Expert PV within 1.5 kWp of one of the engine's 3 options (proposal + smaller + larger), new full systems **(on screen)** | **67 %** (67.2); all homes without the answer 70 % (69.6) | `/eval` `with_existing_pv_answer.segments.full_designs.dm.pv_top3_within_1.5_pct`; `metrics.dm.pv_top3_within_1.5_pct` | Safe as "67 % of new systems" (the same slice as the other tiles). Quote 70 % only if asked, and then say "all homes, without the solar answer". There is no rule-of-thumb comparison for top-3. |
 | Trained on installer B only, tested on installer A (PV size where both chose PV) | 2.91 vs 3.00 kWp best rule | `/eval` `transfer["23c108b7->2a8ba8e2"].*.pv_kwp_mae_when_both_pv` | Caveat: small margin, tested on all of A's projects. |
 | Trained on A only, tested on B | 2.79 vs 3.15 kWp | `/eval` `transfer["2a8ba8e2->23c108b7"].*` | Same caveat |
 | Engine beats the best rule in held-out and transfer tests per installer | 4 of 4 | `aggregates.json` `pv_mae_installer_transfer`; deck chart 2b | Safe |
@@ -98,6 +99,7 @@ Expert range means the smallest to largest PV across the variants the expert off
 | Experts do not size for maximum return | sizing for the economic optimum gives 2.77 kWp error vs 2.49 for the engine | RESULTS.md, round 2 | Safe |
 | Installers size the battery by PV size, not by consumption | engine rule 2.25 kWh, "1 kWh per kWp" 2.54, "1 kWh per 1,000 kWh" 4.46 (CV) | RESULTS.md, round 2, battery table | Safe |
 | Installers size PV at about 2 kWp per MWh | median 1.9 (A) and 2.2 (B) kWp per MWh; "kWh ÷ 1,000" undersizes by about half | `docs/engine-spec.md` §3 | Safe |
+| Small homes get a full system on purpose, like the experts | experts' median for 1,500–2,500 kWh new systems with consumption entered (primary option): **7.2 kWp**, P10 5.0, P90 10.8 (n = 109); 50 of them are at exactly 2,500 kWh, and without them the median is 6.75 kWp (n = 59). The engine gives a 1,600 kWh home (planner defaults) the installer's standard 7.65 kWp package + 9.2 kWh, inside the experts' P10–P90. | `engine/artifacts/expert_designs.parquet` (data-v1), checked by e-spare and a-labels; engine `/design` on Railway and on main, 2026-11-08 | Safe: "small homes get a full system, about 7–8 kWp + a battery, on purpose, like the experts (median 7.2 kWp)". |
 | Biggest lever is new inputs, not algorithms | roof capacity from Google Solar (used as a cap), the existing-solar question | RESULTS.md, conclusion | Safe |
 
 ## 8. Business impact: what we can say (measured or in the brief), nothing invented
@@ -111,7 +113,7 @@ Expert range means the smallest to largest PV across the variants the expert off
 | Planner overrides are validated | a locked component is compared with the 40 most similar past homes and physics; "Larger than 99 % of similar homes" shown on the card | `/validate`; planner card | Safe: this is the brief's second use case, "design validation". |
 | Consistency | same inputs → same design, deterministic (fixed seeds; two trainings give identical predictions) | `engine/tests/test_audit_regressions.py` | Safe: "junior planners design like the installer's own history". |
 | Three use cases, one engine | planner draft, planner validation, homeowner offer (+ voice intake) | the product | Safe |
-| Engine tests / web tests | 393 pytest (376 run without the data, 17 need it); 176 vitest in 20 files (main 904eba8) | `pytest`; `npm test` | Safe |
+| Engine tests / web tests | 407 pytest (394 run without the data, 13 need it); 292 vitest in 30 files (main 30ec419). With the open hero PRs #89 + #103: 331 vitest. Re-count at the 11:00 freeze. | `pytest`; `npm test` | Safe |
 | Who decides sizes | the engine only. Claude turns planner text into input changes and writes explanations. | `CLAUDE.md`, `engine/README.md` | Safe |
 
 ## Don't say

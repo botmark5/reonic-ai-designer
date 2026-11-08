@@ -20,7 +20,7 @@ fix any component and the rest adapts; a homeowner view explains the offer in pl
    (LightGBM, monotone in demand, snapped to the installer's packages) → battery yes/no + catalogue size (sees the planned PV)
    → wallbox. Locks let the planner fix any step. An LLM never picks a size; Claude only parses planner text and writes explanations.
 3. **Physics and economics** (`engine/physics.py`): hourly synthetic year → yield, self-consumption, autarky, payback, plausibility flags.
-4. **Evaluation** (`engine/evaluate.py`): 315 held-out projects locked in `test_ids.json`, split by customer, never used for tuning;
+4. **Evaluation** (`engine/evaluate.py`): 315 held-out projects locked in `test_ids.json`, split by customer, never trained on (model choices by cross-validation on the training part; the locked set was re-scored after each shipped improvement);
    three baselines; installer A→B transfer; before/after per improvement and an error analysis in `engine/RESULTS.md`.
 
 ## Results and known limitations
