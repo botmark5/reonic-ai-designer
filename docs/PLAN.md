@@ -2,10 +2,9 @@
 Agents: tick tasks here when done (`- [x]`) and commit. Add blockers as "BLOCKED: …" under the task.
 Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 submit.
 
-**Status, night of 7–8 Nov (e-spare, from git and the session statuses):**
-- **Production is frozen at #88 (8b20c12)** because Vercel's Hobby build limit is hit. Everything merged after #88 deploys in one go once Mark upgrades Vercel; #92 (skip builds when web/ is unchanged) is open for Mark.
-- **The engine needs `railway up` (Cala)** for #100 (GET /heldout, the three two-houses cases on /reality) and #107 (/eval by_band). Until then /reality shows the older example cases.
-- Open hero PRs: #89 /live A (the house builds during the call), #103 /offer A. Both merge cleanly with main; 331 web tests pass on the combination (main 30ec419 alone: 292 web, 407 engine).
+**Status, morning of 8 Nov (e-spare, from git, GitHub and the live engine):**
+- **Production deploys from main again** (Vercel: main at #120 deployed). The hero PRs #89 /live and #103 /offer are merged.
+- **The engine is redeployed (Cala)** with #100 (GET /heldout: 315 held-out ids, 7 example cases), #107 (/eval by_band) and the one-smaller-one-larger alternatives. Runbook numbers re-checked against it: unchanged except top-3, now 69 % of new systems (was 67 %).
 
 ## Phase 0 — Setup
 - [x] Mark: private repo + invite Cala; push starter kit
@@ -34,7 +33,7 @@ Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 s
 - [x] Error analysis by segment/installer (engine/RESULTS.md; /eval `segments`, `by_installer`, `by_band` #107; deck charts)
 - [x] /validate
 - [x] FastAPI deployed on Railway, matches docs/api.md
-  - needs `railway up` for #100 and #107 (see status above)
+  - redeployed on 8 Nov with #100 and #107 (see status above)
   - engine/api.py runs locally and matches api.md (+ optional additions, see engine/README.md); not deployed yet
   - Sun 00:15 (orchestrator): production uses the fixed Railway URL (#28 closed); live /eval matches RESULTS.md 'shipped' column
     (battery mix #39); EV → wallbox + PV bump and roof cap verified on the live engine. /eval lacks P10–P90 coverage → issue #43
