@@ -10,7 +10,7 @@ import { fmtValue, LABEL, UNIT } from "@/lib/format";
 import type { ComponentKey, DesignResponse, Locks, ValidationFlag } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ConfidenceRange } from "./confidence-range";
-import { cardReasons } from "./text";
+import { altLabel, cardReasons } from "./text";
 import { LOCK_KEY } from "./use-planner";
 
 const ICON = { pv: SunMedium, battery: BatteryMedium, wallbox: PlugZap, heatpump: Fan } as const;
@@ -309,11 +309,16 @@ function Editor({
       {c === "pv" && (d.pv.alternatives ?? []).length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Other sizes the engine finds plausible">
           <span className="text-[12px] text-ink-muted">Also plausible:</span>
-          {(d.pv.alternatives ?? []).map((a) => (
-            <Button key={a.kwp} type="button" size="sm" variant={Math.abs(pv - a.kwp) < 1e-6 ? "default" : "secondary"} onClick={() => setPv(a.kwp)}>
-              {fmtValue("pv", a.kwp)} kWp · {Math.round(a.share * 100)} %
-            </Button>
-          ))}
+          {[...(d.pv.alternatives ?? [])]
+            .sort((x, y) => x.kwp - y.kwp)
+            .map((a) => {
+              const t = altLabel(current ?? 0, a);
+              return (
+                <Button key={a.kwp} type="button" size="sm" title={t.title} variant={Math.abs(pv - a.kwp) < 1e-6 ? "default" : "secondary"} onClick={() => setPv(a.kwp)}>
+                  {t.label}
+                </Button>
+              );
+            })}
         </div>
       )}
       {c === "battery" && (
