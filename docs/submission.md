@@ -3,7 +3,7 @@
 Every number here is from `docs/pitch-facts.md`, where each one has its source and the words it may be said with.
 Before pasting:
 - Replace `<APP_URL>`; the passcode goes to the judges separately, never into this text.
-- Lines marked **[if merged]** describe hero moments still being built tonight. Keep each line only if it works on production at the 11:00 freeze; otherwise delete it.
+- Lines marked **[if merged]** describe hero moments still being built tonight. All of them are merged (#89 /live, #103 /offer); keep each line if it works on the stage build, otherwise delete it.
 - Line marked **[if TTS on]**: keep only if "Listen to your offer" plays audio on production.
 
 ---
@@ -46,7 +46,7 @@ In Reonic's words, planners "spend hours on every single design", and "the first
 
 ### 4. Execution and demo
 - The demo runs end to end on production: phone call → draft in the inbox → "buying an EV next year" → design adapts → compared with the real expert design and the metrics across 315 held-out homes → homeowner link.
-- 407 engine tests and 292 web tests (main on the night of 7–8 Nov; re-count at the 11:00 freeze).
+- 410 engine tests and 345 web tests (main 5cd83fd, 8 Nov; re-count right before submitting).
 - The engine evaluation is reproducible from the repository, given Reonic's data.
 
 ## Best use of ElevenLabs

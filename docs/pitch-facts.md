@@ -113,7 +113,7 @@ Expert range means the smallest to largest PV across the variants the expert off
 | Planner overrides are validated | a locked component is compared with the 40 most similar past homes and physics; "Larger than 99 % of similar homes" shown on the card | `/validate`; planner card | Safe: this is the brief's second use case, "design validation". |
 | Consistency | same inputs → same design, deterministic (fixed seeds; two trainings give identical predictions) | `engine/tests/test_audit_regressions.py` | Safe: "junior planners design like the installer's own history". |
 | Three use cases, one engine | planner draft, planner validation, homeowner offer (+ voice intake) | the product | Safe |
-| Engine tests / web tests | 407 pytest (394 run without the data, 13 need it); 292 vitest in 30 files (main 30ec419). With the open hero PRs #89 + #103: 331 vitest. Re-count at the 11:00 freeze. | `pytest`; `npm test` | Safe |
+| Engine tests / web tests | 410 pytest (397 run without the data, 13 need it); 345 vitest in 33 files (main 5cd83fd, 8 Nov, all passing; engine unchanged since dadf8f3). Re-count right before submitting. | `pytest`; `npm test` | Safe |
 | Who decides sizes | the engine only. Claude turns planner text into input changes and writes explanations. | `CLAUDE.md`, `engine/README.md` | Safe |
 
 ## Don't say

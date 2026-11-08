@@ -1,6 +1,6 @@
 # Plan & status (mirror of the shared Claude doc "Reonic Hack — Plan & Tracker")
 Agents: tick tasks here when done (`- [x]`) and commit. Add blockers as "BLOCKED: …" under the task.
-Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · Sun 11:00 freeze · Sun 13:30 submit.
+Gates: 19:00 checkpoint · 23:00 MINIMUM DONE · no freeze (Mark, 8 Nov: keep going until the stage) · Sun 13:30 submit.
 
 **Status, morning of 8 Nov (e-spare, from git, GitHub and the live engine):**
 - **Production deploys from main again** (Vercel: main at #120 deployed). The hero PRs #89 /live and #103 /offer are merged.
