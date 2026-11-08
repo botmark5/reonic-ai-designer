@@ -9,13 +9,13 @@ import { Button } from "@/components/ui/button";
 import { ServedBadge } from "@/components/ui/served-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { HouseStage, roofFromSolarResult, type StageLocation, type StageReveal } from "@/components/house3d";
-import { factsToHome, pretty, type Facts } from "@/app/live/facts";
+import { callToLive, factsToHome, pretty, type Facts } from "@/app/live/facts";
 import { revealFromFacts, stagedDesign, stepToward, type LiveReveal } from "@/app/live/stage";
 import { COMPONENTS, sizeOf } from "@/lib/diff";
 import { fmtInt, LABEL, UNIT } from "@/lib/format";
 import type { SolarResult } from "@/lib/solar";
 import type { CallRow, DesignRow, TranscriptTurn } from "@/lib/supabase";
-import type { ComponentKey, DesignResponse } from "@/lib/types";
+import type { ComponentKey, DesignResponse, Home } from "@/lib/types";
 import { EMPTY_LOCKS } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { stripVoiceTags } from "@/lib/display-text";
@@ -36,9 +36,12 @@ function chips(f: Facts): Chip[] {
     },
     {
       key: "use",
-      done: f.annual_kwh != null || f.monthly_bill_eur != null,
+      done: f.annual_kwh != null || f.monthly_bill_eur != null || f.annual_kwh_estimate != null,
       label: "Yearly use",
-      text: f.annual_kwh != null ? <><b className="font-mono tabular">{fmtInt(f.annual_kwh)}</b> kWh / year</> : <><b className="font-mono tabular">€{fmtInt(f.monthly_bill_eur ?? 0)}</b> a month</>,
+      text:
+        f.annual_kwh != null ? <><b className="font-mono tabular">{fmtInt(f.annual_kwh)}</b> kWh / year</>
+        : f.monthly_bill_eur != null ? <><b className="font-mono tabular">€{fmtInt(f.monthly_bill_eur)}</b> a month</>
+        : <>≈ <b className="font-mono tabular">{fmtInt(f.annual_kwh_estimate ?? 0)}</b> kWh <span className="text-warning-text">estimated</span></>,
     },
     { key: "household", done: f.household != null, label: "Household", text: <>{f.household === 1 ? "1 person" : `${f.household} people`}</> },
     {
@@ -232,14 +235,18 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
     return () => clearTimeout(t);
   }, [mode, demoStep, demoDone]);
 
-  const realFacts = useMemo(() => (call?.facts ?? {}) as Facts, [call?.facts]);
-  const facts: Facts = mode === "demo" ? demoFacts : realFacts;
-  const factsKey = JSON.stringify(facts);
+  // real call: chips from the caller's answers, the engine home d-voice derived (same as create_design)
+  const real = useMemo(() => (call ? callToLive(call) : null), [call]);
+  const facts: Facts = mode === "demo" ? demoFacts : (real?.facts ?? {});
+  const engineHome: Home = mode === "demo" ? factsToHome(demoFacts) : (real?.home ?? factsToHome({}));
+  const ready = mode === "demo" ? demoFacts.annual_kwh != null : !!real?.ready;
+  const factsKey = JSON.stringify(engineHome) + JSON.stringify(facts);
+  const spokenAt = mode === "real" ? real?.updatedAt : undefined;
   const callId = mode === "demo" ? `demo-${demoStart}` : (call?.id ?? "idle");
 
   // Draft as soon as consumption is known; re-draft whenever the facts change (demo and real calls alike).
   useEffect(() => {
-    if (mode === "idle" || (facts.annual_kwh == null && facts.monthly_bill_eur == null)) return;
+    if (mode === "idle" || !ready) return;
     designAbort.current?.abort();
     const ctrl = new AbortController();
     designAbort.current = ctrl;
@@ -247,13 +254,15 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
     fetch("/api/engine/design", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ installer: "2a8ba8e2", home: factsToHome(facts), locks: EMPTY_LOCKS }),
+      body: JSON.stringify({ installer: "2a8ba8e2", home: engineHome, locks: EMPTY_LOCKS }),
       signal: ctrl.signal,
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: DesignResponse | null) => {
         if (!d || ctrl.signal.aborted) return;
-        console.info(`[live] facts → draft ${Math.round(performance.now() - t0)} ms`);
+        // latency: engine round trip, and (real calls) from the server storing the answer to the draft on screen
+        const sinceSpoken = spokenAt ? ` · answer stored → draft ${Math.round(Date.now() - new Date(spokenAt).getTime())} ms` : "";
+        console.info(`[live] facts → draft ${Math.round(performance.now() - t0)} ms${sinceSpoken}`);
         setDrafts((old) => ({ callId, draft: d, prev: old.callId === callId ? old.draft : null }));
       })
       .catch(() => {});
@@ -286,37 +295,56 @@ export function LiveCall({ quoteFont }: { quoteFont?: string }) {
     toast.success("Draft is in the planner's inbox", { action: { label: "Open", onClick: () => router.push(`/?d=${row.id}`) } });
   }, [demoFacts, router]);
 
-  // Real address → real roof and the street (Google), only for addresses the caller gave.
+  // Real address → real roof and the street (Google), only for addresses the caller gave. d-voice already looks the
+  // roof up during the call (facts.solar); otherwise ask /api/solar ourselves.
+  const callSolar = mode === "real" ? ((call?.facts as { solar?: SolarResult } | undefined)?.solar ?? null) : null;
   const [solarFor, setSolarFor] = useState<{ address: string; result: SolarResult } | null>(null);
   const address = facts.address?.trim() || null;
-  const solar = solarFor && solarFor.address === address ? solarFor.result : null;
+  const solar = callSolar ?? (solarFor && solarFor.address === address ? solarFor.result : null);
   useEffect(() => {
-    if (!address) return;
+    if (!address || callSolar) return;
     const ctrl = new AbortController();
     fetch(`/api/solar?address=${encodeURIComponent(address)}`, { signal: ctrl.signal })
       .then((r) => (r.ok ? (r.json() as Promise<SolarResult>) : null))
       .then((r) => r && !ctrl.signal.aborted && setSolarFor({ address, result: r }))
       .catch(() => {});
     return () => ctrl.abort();
-  }, [address]);
-  const roof3d = useMemo(() => roofFromSolarResult(solar), [solar]);
+  }, [address, callSolar]);
+  // a roof result without segments must never take the hero screen down: then only its location is used
+  const roof3d = useMemo(() => {
+    if (!solar || solar.status !== "ok" || !Array.isArray((solar as { segments?: unknown }).segments)) return undefined;
+    try {
+      return roofFromSolarResult(solar);
+    } catch {
+      return undefined;
+    }
+  }, [solar]);
   const location = useMemo<StageLocation | undefined>(
-    () => (solar && Number.isFinite(solar.lat) && Number.isFinite(solar.lng) ? { lat: solar.lat as number, lng: solar.lng as number, address: address ?? undefined } : undefined),
-    [solar, address],
+    () =>
+      real?.location ??
+      (solar && Number.isFinite(solar.lat) && Number.isFinite(solar.lng) ? { lat: solar.lat as number, lng: solar.lng as number, address: address ?? undefined } : undefined),
+    [real?.location, solar, address],
   );
 
   const shownDraft = draft ?? savedDraft;
-  const home = useMemo(() => factsToHome(facts), [factsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const home = useMemo(() => engineHome, [factsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const target = useMemo(() => revealFromFacts(facts, shownDraft, mode !== "idle"), [factsKey, shownDraft, mode]); // eslint-disable-line react-hooks/exhaustive-deps
   const reveal = useStagedReveal(target);
   const staged = useMemo(() => stagedDesign(shownDraft, reveal), [shownDraft, reveal]);
-  // c-3d's build-up keys; existing solar is on the roof as soon as the house stands (it comes from the home's facts)
+  // c-3d's build-up keys; existing solar is on the roof as soon as the house stands (it comes from the home's facts);
+  // the inverter follows the first panels (c-3d default)
   const stageReveal = useMemo<StageReveal>(
-    () => ({ shell: reveal.shell, roof: reveal.shell, existingPv: reveal.shell, inverter: reveal.panels || reveal.shell, panels: reveal.panels, battery: reveal.battery, car: reveal.car, heatpump: reveal.heatpump }),
+    () => ({ shell: reveal.shell, roof: reveal.shell, warm: reveal.warm, existingPv: reveal.shell, panels: reveal.panels, battery: reveal.battery, car: reveal.car, heatpump: reveal.heatpump }),
     [reveal],
   );
 
-  const transcript: TranscriptTurn[] = mode === "demo" ? SCRIPT.slice(0, demoStep).map((t) => ({ role: t.role, text: t.text })) : (call?.transcript ?? []);
+  // The full transcript arrives after the call; until then show the caller's answers as the agent heard them.
+  const stated = mode === "real" ? ((call?.facts as { stated?: Record<string, unknown> } | undefined)?.stated ?? null) : null;
+  const heard: TranscriptTurn[] = stated
+    ? Object.values(stated).filter((v): v is string | number => typeof v === "string" || typeof v === "number").map((v) => ({ role: "customer", text: String(v) }))
+    : [];
+  const transcript: TranscriptTurn[] =
+    mode === "demo" ? SCRIPT.slice(0, demoStep).map((t) => ({ role: t.role, text: t.text })) : call?.transcript?.length ? call.transcript : heard;
   const live = mode === "demo" ? !demoDone && !sent : call?.status === "live";
   const clock = useClock(mode === "demo" ? demoStart : (call?.created_at ?? null), !!live);
   const title = facts.customer_name ?? call?.customer_name ?? (mode === "idle" ? "Waiting for a call" : "Incoming call");

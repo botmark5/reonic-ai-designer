@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mockDesign } from "@/lib/engine-mock";
 import { EMPTY_LOCKS, type DesignResponse } from "@/lib/types";
-import { factsToHome, type Facts } from "./facts";
+import { callToLive, factsToHome, type Facts } from "./facts";
 import { EMPTY_DESIGN, REVEAL_ORDER, revealFromFacts, stagedDesign, stepToward, type LiveReveal } from "./stage";
 
 const draftFor = (f: Facts): DesignResponse => mockDesign({ installer: "2a8ba8e2", home: factsToHome(f), locks: EMPTY_LOCKS });
@@ -117,5 +117,52 @@ describe("factsToHome keeps its semantics", () => {
     expect(factsToHome({ annual_kwh: 4800 }).demand_is_default).toBe(false);
     expect(factsToHome({ heating: "gas", roof_type: "concrete_tile" })).toMatchObject({ heating: "Gas", roof_type: "Concrete tile" });
     expect(factsToHome({ existing_pv_kwp: 8 }).has_existing_pv).toBe(true);
+  });
+});
+
+describe("callToLive: a calls row from update_facts → chips, engine home, location", () => {
+  const row = {
+    customer_name: "Anna Weber",
+    address: "Ungererstraße 80, 80805 München",
+    facts: {
+      annual_kwh: 4250, inhabitants: 4, has_ev: true, ev_km_year: 15000, has_existing_pv: false, existing_pv_kwp: null,
+      existing_battery_kwh: null, heating: "Gas", roof_type: "clay_tile", load_profile: "H0", orientation_deg: 214, tilt_deg: 32,
+      demand_is_default: false, price_eur_kwh: null, house_sqm: null, heating_demand_kwh: null,
+      stated: { household: "family of four", has_ev: "planned" },
+      voice: { customer_name: "Anna Weber", household: 4, has_ev: true, ev_km_year: null, heating: "gas", annual_kwh: null, has_existing_pv: false },
+      assumptions: ["Annual use estimated from household size (4 people): 4250 kWh."],
+      updated_fields: ["household"],
+      facts_updated_at: "2026-11-08T02:09:34.613Z",
+      solar: { status: "ok", lat: 48.17, lng: 11.59 },
+      conversation_id: "conv_x",
+    },
+  };
+  it("chips come from the caller's answers (voice), with the row's name and address", () => {
+    const l = callToLive(row);
+    expect(l.facts).toMatchObject({ customer_name: "Anna Weber", address: "Ungererstraße 80, 80805 München", household: 4, has_ev: true, heating: "gas" });
+    expect(l.facts.annual_kwh_estimate).toBe(4250); // derived from the household, shown as an estimate
+    expect(revealFromFacts(l.facts, null, true).warm).toBe(true);
+  });
+  it("the engine gets d-voice's derived home (same as create_design), without the bookkeeping keys", () => {
+    const l = callToLive(row);
+    expect(l.home).toMatchObject({ annual_kwh: 4250, inhabitants: 4, has_ev: true, heating: "Gas", orientation_deg: 214, tilt_deg: 32 });
+    for (const k of ["stated", "voice", "assumptions", "updated_fields", "facts_updated_at", "solar", "conversation_id"]) expect(l.home).not.toHaveProperty(k);
+  });
+  it("ready to draft once the derived home has a yearly use", () => {
+    expect(callToLive(row).ready).toBe(true);
+    expect(callToLive({ ...row, facts: { voice: { customer_name: "A" } } }).ready).toBe(false);
+  });
+  it("Google's roof lookup gives the stage its location", () => {
+    expect(callToLive(row).location).toEqual({ lat: 48.17, lng: 11.59, address: "Ungererstraße 80, 80805 München" });
+    expect(callToLive({ ...row, facts: { ...row.facts, solar: undefined } }).location).toBeUndefined();
+  });
+  it("the update time is passed through for latency measurement", () => {
+    expect(callToLive(row).updatedAt).toBe("2026-11-08T02:09:34.613Z");
+  });
+  it("an older row (facts = VoiceFacts, no voice key) still works through factsToHome", () => {
+    const l = callToLive({ customer_name: null, address: null, facts: { annual_kwh: 4800, household: 4, has_ev: false } as never });
+    expect(l.facts.household).toBe(4);
+    expect(l.home).toEqual(factsToHome({ annual_kwh: 4800, household: 4, has_ev: false }));
+    expect(l.ready).toBe(true);
   });
 });

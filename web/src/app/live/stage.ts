@@ -29,7 +29,7 @@ export function revealFromFacts(f: Facts, draft: DesignResponse | null, active: 
   const heating = (f.heating ?? "").replace(/_/g, " ");
   return {
     shell: active,
-    warm: active && (f.annual_kwh != null || f.monthly_bill_eur != null),
+    warm: active && (f.annual_kwh != null || f.monthly_bill_eur != null || f.annual_kwh_estimate != null),
     panels: active && pv,
     battery: active && battery,
     car: active && wallbox,
